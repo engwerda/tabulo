@@ -2,20 +2,25 @@ import path from "node:path"
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers"
 import { defineConfig } from "vitest/config"
 
-// Wrangler reads required secrets from process.env and warns when they are absent.
-process.env.FORGEJO_CLIENT_SECRET = "test-client-secret"
-process.env.SESSION_ENCRYPTION_KEY = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+const testSecrets = {
+  FORGEJO_CLIENT_SECRET: "test-client-secret",
+  SESSION_ENCRYPTION_KEY: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+}
+// Wrangler warns when required secrets are missing from .dev.vars and process.env.
+Object.assign(process.env, testSecrets)
 
 export default defineConfig({
   plugins: [
     cloudflareTest(async () => ({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
+        // Explicit bindings win over a developer's .dev.vars, so tests never see local values.
         bindings: {
-          TEST_MIGRATIONS: await readD1Migrations(path.join(import.meta.dirname, "migrations")),
+          ...testSecrets,
           APP_URL: "https://tabulo.example",
           FORGEJO_URL: "https://forgejo.example",
           FORGEJO_CLIENT_ID: "test-client-id",
+          TEST_MIGRATIONS: await readD1Migrations(path.join(import.meta.dirname, "migrations")),
         },
       },
     })),
