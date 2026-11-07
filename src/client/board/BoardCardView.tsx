@@ -1,6 +1,6 @@
 import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import type { MouseEvent } from "react"
+import { type MouseEvent, memo, useMemo } from "react"
 import type { BoardCard, BoardColumn } from "../../shared/api.ts"
 import { AvatarStack } from "../Avatar.tsx"
 import { absoluteTime, repoColor, shortAge } from "../format.ts"
@@ -18,14 +18,15 @@ import {
 import { LabelList } from "../ui/LabelChip.tsx"
 import { buttonClass, Popover } from "../ui/primitives.tsx"
 
-/** What a card can do besides being dragged. */
+/**
+ * What a card can do besides being dragged. Cards are memoized, so the board passes one object
+ * that keeps its identity across renders.
+ */
 export type CardActions = {
   readonly open: (card: BoardCard) => void
   readonly moveTo: (card: BoardCard, column: string) => void
   readonly toggleAssigned: (card: BoardCard) => void
   readonly copyLink: (card: BoardCard) => void
-  /** The address that opens the card's panel, for the title link. */
-  readonly href: (card: BoardCard) => string
 }
 
 export const RepoTag = ({ repo }: { repo: string }) => (
@@ -241,57 +242,49 @@ type SortableCardProps = {
   readonly showRepo: boolean
   readonly selected: boolean
   readonly actions: CardActions
+  /** The board's query string without the search text, which the title link keeps. */
+  readonly hrefBase: string
 }
 
-export const SortableCard = ({
+type CardContentsProps = {
+  readonly card: BoardCard
+  readonly columns: ReadonlyArray<BoardColumn>
+  readonly movable: boolean
+  readonly assigned: boolean
+  readonly showRepo: boolean
+  readonly actions: CardActions
+  readonly href: string
+  readonly handle: {
+    readonly ref: (element: HTMLElement | null) => void
+    readonly attributes: object
+    readonly listeners: object
+  }
+}
+
+/**
+ * Everything inside a card. dnd-kit re-renders every sortable card on each pointer move, so
+ * this part is memoized and only the outer list item follows the drag.
+ */
+const CardContents = memo(function CardContents({
   card,
   columns,
-  viewerCanArrange,
-  viewer,
+  movable,
+  assigned,
   showRepo,
-  selected,
   actions,
-}: SortableCardProps) => {
-  const movable = viewerCanArrange && card.readOnlyReason === null
-  const sortable = useSortable({
-    id: card.key,
-    data: { column: card.column },
-    disabled: !movable,
-  })
-  // The whole card drags with a mouse or a long press; only the handle starts a keyboard drag.
-  const listenerEntries = Object.entries(sortable.listeners ?? {})
-  const pointerListeners = Object.fromEntries(
-    listenerEntries.filter(([name]) => name !== "onKeyDown"),
-  )
-  const keyboardListeners = Object.fromEntries(
-    listenerEntries.filter(([name]) => name === "onKeyDown"),
-  )
-  const assigned = card.assignees.some((assignee) => assignee.login === viewer)
+  href,
+  handle,
+}: CardContentsProps) {
   const openPanel = (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
     event.preventDefault()
     actions.open(card)
   }
   return (
-    <li
-      ref={sortable.setNodeRef}
-      data-card-key={card.key}
-      style={{
-        transform: CSS.Translate.toString(sortable.transform),
-        transition: sortable.transition,
-      }}
-      {...(movable ? pointerListeners : {})}
-      className={`${cardBase} transition-[border-color,box-shadow,opacity] ${
-        sortable.isDragging
-          ? "border-dashed border-zinc-300 bg-zinc-50 opacity-50 shadow-none dark:border-zinc-700 dark:bg-zinc-900/40 [&>*]:invisible"
-          : selected
-            ? "border-indigo-400 shadow-card ring-3 ring-indigo-500/15 dark:border-indigo-500"
-            : "border-zinc-200/90 shadow-card hover:border-zinc-300 hover:shadow-md hover:shadow-zinc-900/5 dark:border-zinc-800 dark:hover:border-zinc-700"
-      } ${movable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
-    >
+    <>
       <div className="flex h-5 items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
         <a
-          href={actions.href(card)}
+          href={href}
           onClick={openPanel}
           draggable={false}
           className="flex min-w-0 items-center gap-1.5 rounded font-medium text-zinc-500 after:absolute after:inset-0 after:rounded-xl hover:text-zinc-800 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-offset-2 focus-visible:after:outline-indigo-500 dark:text-zinc-400 dark:hover:text-zinc-200"
@@ -320,9 +313,9 @@ export const SortableCard = ({
           {movable && (
             <button
               type="button"
-              ref={sortable.setActivatorNodeRef}
-              {...sortable.attributes}
-              {...keyboardListeners}
+              ref={handle.ref}
+              {...handle.attributes}
+              {...handle.listeners}
               aria-label={`Move ${card.repo}#${card.number} with the keyboard`}
               title="Drag to move, or press Space to pick up"
               className={`${buttonClass.iconSmall} cursor-grab touch-none`}
@@ -335,9 +328,67 @@ export const SortableCard = ({
       <div className="mt-1">
         <CardFace card={card} />
       </div>
+    </>
+  )
+})
+
+export const SortableCard = memo(function SortableCard({
+  card,
+  columns,
+  viewerCanArrange,
+  viewer,
+  showRepo,
+  selected,
+  actions,
+  hrefBase,
+}: SortableCardProps) {
+  const movable = viewerCanArrange && card.readOnlyReason === null
+  const sortable = useSortable({ id: card.key, disabled: !movable })
+  const { listeners, attributes, setActivatorNodeRef } = sortable
+  // The whole card drags with a mouse or a long press; only the handle starts a keyboard drag.
+  const [pointerListeners, handle] = useMemo(() => {
+    const entries = Object.entries(listeners ?? {})
+    return [
+      Object.fromEntries(entries.filter(([name]) => name !== "onKeyDown")),
+      {
+        ref: setActivatorNodeRef,
+        attributes,
+        listeners: Object.fromEntries(entries.filter(([name]) => name === "onKeyDown")),
+      },
+    ] as const
+  }, [listeners, attributes, setActivatorNodeRef])
+  const assigned = card.assignees.some((assignee) => assignee.login === viewer)
+  const href = `?${hrefBase}${hrefBase === "" ? "" : "&"}card=${encodeURIComponent(`${card.repo}#${card.number}`)}`
+  return (
+    <li
+      ref={sortable.setNodeRef}
+      data-card-key={card.key}
+      style={{
+        transform: CSS.Translate.toString(sortable.transform),
+        transition: sortable.transition,
+      }}
+      {...(movable ? pointerListeners : {})}
+      className={`${cardBase} transition-[border-color,box-shadow,opacity] ${
+        sortable.isDragging
+          ? "border-dashed border-zinc-300 bg-zinc-50 opacity-50 shadow-none dark:border-zinc-700 dark:bg-zinc-900/40 [&>*]:invisible"
+          : selected
+            ? "border-indigo-400 shadow-card ring-3 ring-indigo-500/15 dark:border-indigo-500"
+            : "border-zinc-200/90 shadow-card hover:border-zinc-300 hover:shadow-md hover:shadow-zinc-900/5 dark:border-zinc-800 dark:hover:border-zinc-700"
+      } ${movable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+    >
+      <CardContents
+        card={card}
+        columns={columns}
+        movable={movable}
+        assigned={assigned}
+        showRepo={showRepo}
+        actions={actions}
+        href={href}
+        handle={handle}
+      />
     </li>
   )
-}
+})
 
 // dnd-kit measures the overlay's only child for collisions and keyboard moves, so the tilt sits
 // one level down: a rotated box is wider than the card and would shift every comparison.
