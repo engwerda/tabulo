@@ -75,41 +75,62 @@ Forgejo stays the single source of truth: Tabulo stores only what Forgejo cannot
 A board shows the issues of chosen repositories in one organization. Pull requests are not on
 the board.
 
-- **Columns.** The status labels are the organization's exclusive labels whose name starts with
-  `BOARD_STATUS_SCOPE`. The columns are Todo, the status labels, and Done, in the order of
-  `BOARD_COLUMNS`. Status labels it does not list come before Done in name order. A configured
-  label that the organization does not have is skipped.
+- **Columns.** The status labels are the organization's exclusive, non-archived labels whose
+  name starts with `BOARD_STATUS_SCOPE`. The columns are Todo, the status labels, and Done, in
+  the order of `BOARD_COLUMNS`. Status labels it does not list come before Done in name order.
+  A configured label that the organization does not have is skipped.
 - **Card column.** A closed issue is in Done if it was closed within `BOARD_DONE_DAYS`, and is
-  left off the board otherwise. An open issue with a status label is in that label's column.
-  Every other open issue is in Todo. `boardLayout` in `src/worker/board.ts` is the only code
-  that applies this rule.
-- **Card order.** Ranked cards come first, ordered by rank compared by code unit, then the
-  unranked cards with the most recently updated first. A rank counts only while the card is in
-  the column it was ranked in.
+  left off the board otherwise. An open issue with a label named like a status column is in
+  that column, whether the label is the organization's or the repository's own. Every other
+  open issue is in Todo. Such labels are hidden from the card; other labels in the scope, such
+  as a repository's `Status/Abandoned`, show as ordinary labels. `boardLayout` in
+  `src/worker/board.ts` is the only code that applies this rule.
+- **Card order.** Every card has a rank, compared by code unit, and the order belongs to the
+  organization, across all its repositories. Cards sort by rank, then by key. Two moves that
+  land in the same gap at the same moment can store equal ranks; the key then orders them the
+  same way for everyone, and a later move places a card after both.
+- **Who arranges.** Only members of the organization may move or reorder cards. Forgejo
+  authorizes each issue write as the user, so Tabulo does not check push access. Cards of
+  archived repositories cannot be moved.
 
 | Endpoint | Result |
 |---|---|
 | `GET /api/orgs` | The organizations the user belongs to. |
-| `GET /api/orgs/:org/repos` | The organization's repositories the user can see, with `canWrite` (push or admin). |
-| `GET /api/board?org=&repos=a,b` | Columns, cards, and `failedRepos`. At most 20 repositories. |
-| `POST /api/board/move` | Moves one card and answers with the updated card. |
+| `GET /api/orgs/:org/repos` | The organization's repositories the user can see, with `archived`. |
+| `GET /api/board?org=&repos=a,b` | Columns, cards, `viewerCanArrange`, and `failedRepos`. At most 20 repositories. |
+| `POST /api/board/move` | Moves one card and answers with `{ card, orderSaved }`. |
 
-`GET /api/board` reads the organization's labels, then for each repository its permissions, its
-open issues, and the issues closed since the start of the Done window. A repository that fails
-to load is listed in `failedRepos` with a message, and the other repositories still show.
+`GET /api/board` reads the organization's labels and whether the user is a member, then for each
+repository the repository, its open issues, and the issues closed since the start of the Done
+window. A repository that fails to load is listed in `failedRepos` with a message, and the
+other repositories still show. Before it answers, it stores ranks in one D1 batch:
 
-`POST /api/board/move` takes `{ org, repo, number, toColumn, orderedKeys }`. `orderedKeys` is
-the full order of the destination column after the move, ignoring any filters. The server:
+- A shown card without a stored rank for its current column, for example one moved in Forgejo,
+  gets a rank after the largest stored rank of that column in the organization. Several such
+  cards are ranked most recently updated first.
+- Rows of issues that a loaded repository no longer lists (closed before the Done window,
+  deleted, or transferred) are deleted. Rows of other repositories are kept.
 
-1. Reads the issue and the repository permissions. Without push or admin it answers 403 and
-   changes nothing.
-2. If the column changes, writes to Forgejo as the user. To Done it closes the issue. From Done
-   it reopens the issue first. To a status column it replaces the labels with the issue's labels
-   outside the status scope plus the target label. To Todo it sends the same set without a
-   status label. A Forgejo 403 or 404 answers 403 or 404 and stores no order.
-3. Stores the order in the `card_ranks` table with fractional indexing. If both neighbours of
-   the moved card already have ranks in that column, only the moved card gets a new rank.
-   Otherwise the whole column is ranked again in one batch.
+`POST /api/board/move` takes `{ org, repo, number, toColumn, afterKey, beforeKey }`. `afterKey`
+and `beforeKey` are the keys of the cards shown directly above and below the drop, or null.
+Keys are `owner/repo#number`, lowercased, in the request's organization, at most 200
+characters. The server:
+
+1. Answers 400 to an invalid key, and 403 unless the user is a member of the organization or
+   if the repository is archived.
+2. Checks the neighbours against the stored ranks. If `afterKey` or `beforeKey` has no rank in
+   the destination column, or `beforeKey` sorts before `afterKey`, the user's board is out of
+   date: it answers 409 and changes nothing.
+3. If the column changes, writes to Forgejo as the user. To a status column it adds that label,
+   and Forgejo removes the issue's other labels in the same exclusive scope. To Todo it removes
+   each status column label. To Done it closes the issue. From Done it changes the labels
+   first, then reopens the issue. It never replaces the whole label set, so labels changed in
+   Forgejo meanwhile survive. A Forgejo refusal of the first write answers with its status and
+   changes nothing; a failure after an earlier write answers 502 saying Forgejo applied part
+   of the move.
+4. Stores one rank, the moved card's, directly after `afterKey` in the column's order across
+   the organization: between that rank and the next larger stored rank. Cards the user cannot
+   see keep their places. If D1 fails here, it answers 200 with `orderSaved: false`.
 
 ### Configuration
 
