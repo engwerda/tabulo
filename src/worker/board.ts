@@ -367,7 +367,15 @@ const labelIdentifier = (orgLabels: ReadonlyArray<ForgejoLabel>, label: ForgejoL
 /** One Forgejo write of a move, given the issue as the previous write left it. */
 type IssueWrite = (
   issue: ForgejoRepoIssue,
-) => Effect.Effect<ForgejoRepoIssue, ForgejoError, ForgejoClient>
+) => Effect.Effect<ForgejoRepoIssue, ForgejoError | ForgejoMovePartlyApplied, ForgejoClient>
+
+/** A step that runs after a write Forgejo already applied: its failure leaves the move half done. */
+const afterApplied = <A, R>(step: Effect.Effect<A, ForgejoError, R>) =>
+  step.pipe(
+    Effect.mapError(
+      (error) => new ForgejoMovePartlyApplied({ reason: describeForgejoError(error) }),
+    ),
+  )
 
 /**
  * The Forgejo writes that put the issue in `target`. Labels are added or removed one at a time,
@@ -385,36 +393,53 @@ const columnWrites = (
     (state: "open" | "closed"): IssueWrite =>
     (current) =>
       ForgejoClient.use((forgejo) => forgejo.setIssueState(token, repo, current.number, state))
+  const readBack = (number: number) =>
+    ForgejoClient.use((forgejo) => forgejo.issue(token, repo, number))
+  const remove = (number: number, label: ForgejoLabel) =>
+    ForgejoClient.use((forgejo) =>
+      forgejo.removeIssueLabel(token, repo, number, labelIdentifier(orgLabels, label)),
+    )
+  // Forgejo answers 204 even when a repository label of the same name shadows the organization's
+  // and nothing is removed, so the issue is read back, and a label still there is a refusal.
+  const removeColumnLabel =
+    (label: ForgejoLabel): IssueWrite =>
+    (current) =>
+      remove(current.number, label).pipe(
+        Effect.andThen(afterApplied(readBack(current.number))),
+        Effect.flatMap((after) =>
+          after.labels.some((other) => other.id === label.id)
+            ? Effect.fail(new ForgejoForbidden())
+            : Effect.succeed(after),
+        ),
+      )
+  // Adding a status label makes Forgejo drop the others only in its exclusive scope; a
+  // repository's non-exclusive label with a column's name stays and is removed here.
+  const addColumnLabel =
+    (label: BoardLabel): IssueWrite =>
+    (current) =>
+      ForgejoClient.use((forgejo) =>
+        forgejo.addIssueLabels(token, repo, current.number, [label.id]),
+      ).pipe(
+        Effect.flatMap((labels) => {
+          const leftovers = labels.filter(
+            (other) => layout.isColumnLabel(other) && other.name !== label.name,
+          )
+          return leftovers.length === 0
+            ? Effect.succeed({ ...current, labels })
+            : afterApplied(
+                Effect.forEach(leftovers, (other) => remove(current.number, other), {
+                  discard: true,
+                }).pipe(Effect.andThen(readBack(current.number))),
+              )
+        }),
+      )
   if (target._tag === "Done") return [setState("closed")]
   const labelWrites: ReadonlyArray<IssueWrite> =
     layout.labelColumnOf(issue) === target.key
       ? []
       : target._tag === "Status"
-        ? [
-            (current) =>
-              ForgejoClient.use((forgejo) =>
-                forgejo.addIssueLabels(token, repo, current.number, [target.label.id]),
-              ).pipe(Effect.map((labels) => ({ ...current, labels }))),
-          ]
-        : issue.labels.filter(layout.isColumnLabel).map(
-            (label): IssueWrite =>
-              (current) =>
-                ForgejoClient.use(
-                  (forgejo) =>
-                    forgejo.removeIssueLabel(
-                      token,
-                      repo,
-                      current.number,
-                      labelIdentifier(orgLabels, label),
-                    ),
-                  // Forgejo answers 204 even when a repository label of the same name shadows the
-                  // organization's and nothing is removed, so the issue is read back.
-                ).pipe(
-                  Effect.andThen(
-                    ForgejoClient.use((forgejo) => forgejo.issue(token, repo, current.number)),
-                  ),
-                ),
-          )
+        ? [addColumnLabel(target.label)]
+        : issue.labels.filter(layout.isColumnLabel).map(removeColumnLabel)
   return issue.state === "closed" ? [...labelWrites, setState("open")] : labelWrites
 }
 
@@ -429,8 +454,10 @@ const applyWrites = (issue: ForgejoRepoIssue, writes: ReadonlyArray<IssueWrite>)
       current = yield* index === 0
         ? write(current)
         : write(current).pipe(
-            Effect.mapError(
-              (error) => new ForgejoMovePartlyApplied({ reason: describeForgejoError(error) }),
+            Effect.mapError((error) =>
+              error._tag === "ForgejoMovePartlyApplied"
+                ? error
+                : new ForgejoMovePartlyApplied({ reason: describeForgejoError(error) }),
             ),
           )
     }
@@ -509,8 +536,10 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
     // Forgejo can leave a label in place without an error; storing a rank for a column the
     // issue is not in would show the card there until the next board read.
     if (layout.columnOf(moved) !== target.key) {
+      // Only column labels count: someone may have changed other labels meanwhile.
       const labelsOf = (candidate: ForgejoRepoIssue) =>
         candidate.labels
+          .filter(layout.isColumnLabel)
           .map((label) => label.id)
           .sort()
           .join(",")
