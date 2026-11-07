@@ -49,7 +49,11 @@ const toBoardLabel = ({ id, name, color }: ForgejoLabel): BoardLabel => ({
 export type BoardLayout = {
   readonly columns: ReadonlyArray<BoardColumn>
   readonly column: (key: string) => BoardColumn | undefined
-  readonly isStatusLabel: (label: ForgejoLabel) => boolean
+  /**
+   * Whether the label names a Status column. Repository-level labels count too: repositories
+   * can define their own label with an organization status label's name.
+   */
+  readonly isColumnLabel: (label: ForgejoLabel) => boolean
   /** The column an issue belongs in, ignoring the Done window: every closed issue is Done. */
   readonly columnOf: (issue: ForgejoRepoIssue) => string
 }
@@ -58,10 +62,15 @@ export const boardLayout = (
   settings: BoardSettings,
   orgLabels: ReadonlyArray<ForgejoLabel>,
 ): BoardLayout => {
-  const isStatusLabel = (label: ForgejoLabel) =>
-    label.exclusive && label.name.startsWith(settings.statusScope)
   const statusLabels = new Map(
-    orgLabels.filter(isStatusLabel).map((label) => [label.name, label] as const),
+    orgLabels
+      .filter(
+        (label) =>
+          label.exclusive &&
+          label.is_archived !== true &&
+          label.name.startsWith(settings.statusScope),
+      )
+      .map((label) => [label.name, label] as const),
   )
 
   type Slot =
@@ -97,15 +106,15 @@ export const boardLayout = (
     }
   })
   const byKey = new Map(columns.map((column) => [column.key, column] as const))
+  const isColumnLabel = (label: ForgejoLabel) => statusLabels.has(label.name)
 
   return {
     columns,
     column: (key) => byKey.get(key),
-    isStatusLabel,
+    isColumnLabel,
     columnOf: (issue) => {
       if (issue.state === "closed") return DONE.key
-      const status = issue.labels.find((label) => isStatusLabel(label) && byKey.has(label.name))
-      return status?.name ?? TODO.key
+      return issue.labels.find(isColumnLabel)?.name ?? TODO.key
     },
   }
 }
@@ -131,7 +140,7 @@ export const toBoardCard = (
   title: issue.title,
   url: issue.html_url,
   state: issue.state,
-  labels: issue.labels.filter((label) => !layout.isStatusLabel(label)).map(toBoardLabel),
+  labels: issue.labels.filter((label) => !layout.isColumnLabel(label)).map(toBoardLabel),
   assignees: (issue.assignees ?? []).map(({ login, avatar_url }) => ({
     login,
     avatarUrl: avatar_url,
@@ -284,7 +293,7 @@ const putInColumn = (
         ? yield* forgejo.setIssueState(token, repo, issue.number, "open")
         : issue
     const kept = open.labels
-      .filter((label) => !layout.isStatusLabel(label))
+      .filter((label) => !layout.isColumnLabel(label))
       .map((label) => label.id)
     const labels = yield* forgejo.replaceIssueLabels(
       token,

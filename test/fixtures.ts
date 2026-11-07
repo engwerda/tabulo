@@ -91,11 +91,24 @@ const label = (id: number, name: string, color: string, exclusive: boolean): Fak
   is_archived: false,
 })
 
+/** A repository-level label of `acme/<repo>`, which Forgejo serves beside the org's labels. */
+export const repoLabel = (
+  repo: string,
+  id: number,
+  name: string,
+  color: string,
+  exclusive: boolean,
+): FakeLabel => ({
+  ...label(id, name, color, exclusive),
+  url: `https://forgejo.example/api/v1/repos/acme/${repo}/labels/${id}`,
+})
+
 export const backlog = label(10, "Status/Backlog", "c5def5", true)
 export const inProgress = label(11, "Status/In Progress", "fbca04", true)
 export const review = label(12, "Status/Review", "5319e7", true)
 export const bug = label(20, "Kind/Bug", "d73a4a", false)
 export const highPriority = label(21, "Priority/High", "b60205", true)
+export const retired = { ...label(13, "Status/Retired", "cccccc", true), is_archived: true }
 
 export const grace = {
   id: 9,
