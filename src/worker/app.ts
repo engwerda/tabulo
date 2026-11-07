@@ -1,7 +1,7 @@
-import { Cause, Clock, Effect, Exit } from "effect"
+import { Cause, Clock, Effect, Exit, Schema } from "effect"
 import { type Context, Hono } from "hono"
 import { deleteCookie, getCookie, setCookie } from "hono/cookie"
-import type { Dashboard } from "../shared/api.ts"
+import { type Dashboard, MoveCardRequest } from "../shared/api.ts"
 import { beginLogin, completeLogin } from "./auth/oauth.ts"
 import { currentSession, withAccessToken } from "./auth/session.ts"
 import {
@@ -9,20 +9,22 @@ import {
   listOrgRepos,
   listOrgs,
   loadBoard,
+  moveCard,
   parseBoardQuery,
   parseName,
 } from "./board.ts"
+import { CardRanks, makeCardRanks } from "./card-ranks.ts"
 import { loadConfig } from "./config.ts"
 import { loadDashboardSections } from "./dashboard.ts"
-import type {
+import {
   BoardRequestInvalid,
-  ConfigInvalid,
-  ForgejoError,
-  OAuthCallbackInvalid,
-  OAuthGrantRejected,
-  OAuthStateInvalid,
-  RepoWriteForbidden,
-  SessionNotFound,
+  type ConfigInvalid,
+  type ForgejoError,
+  type OAuthCallbackInvalid,
+  type OAuthGrantRejected,
+  type OAuthStateInvalid,
+  type RepoWriteForbidden,
+  type SessionNotFound,
 } from "./errors.ts"
 import { ForgejoClient, type HttpFetch, makeForgejoClient } from "./forgejo/client.ts"
 import {
@@ -107,7 +109,11 @@ const errorResponse = (c: AppContext, error: AppError): Response => {
 export const createApp = (dependencies: Dependencies) => {
   const run = async (
     c: AppContext,
-    program: Effect.Effect<Response, AppError, BoardConfig | ForgejoClient | SessionStore>,
+    program: Effect.Effect<
+      Response,
+      AppError,
+      BoardConfig | CardRanks | ForgejoClient | SessionStore
+    >,
   ): Promise<Response> => {
     const exit = await Effect.runPromiseExit(
       Effect.gen(function* () {
@@ -119,6 +125,7 @@ export const createApp = (dependencies: Dependencies) => {
           ),
           Effect.provideService(SessionStore, makeSessionStore(c.env.DB, config.tokenKey)),
           Effect.provideService(BoardConfig, config.board),
+          Effect.provideService(CardRanks, makeCardRanks(c.env.DB)),
         )
       }).pipe(Effect.provideService(Clock.Clock, dependencies.clock ?? Clock.Clock.defaultValue())),
     )
@@ -239,6 +246,27 @@ export const createApp = (dependencies: Dependencies) => {
       Effect.flatMap(parseBoardQuery(c.req.query("org"), c.req.query("repos")), (query) =>
         withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
           loadBoard(token, query).pipe(Effect.map((board) => c.json(board))),
+        ),
+      ),
+    ),
+  )
+
+  app.post("/api/board/move", (c) =>
+    run(
+      c,
+      Effect.tryPromise({
+        try: () => c.req.json<unknown>(),
+        catch: () => new BoardRequestInvalid({ message: "The body is not JSON" }),
+      }).pipe(
+        Effect.flatMap((body) =>
+          Schema.decodeUnknownEffect(MoveCardRequest)(body).pipe(
+            Effect.mapError((error) => new BoardRequestInvalid({ message: error.message })),
+          ),
+        ),
+        Effect.flatMap((request) =>
+          withAccessToken(getCookie(c, SESSION_COOKIE), (token, session) =>
+            moveCard(token, session.user.login, request).pipe(Effect.map((card) => c.json(card))),
+          ),
         ),
       ),
     ),
