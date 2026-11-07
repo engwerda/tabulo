@@ -21,11 +21,16 @@
     "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
+    "@dnd-kit/core": "6.3.1",
+    "@dnd-kit/sortable": "10.0.0",
+    "@dnd-kit/utilities": "3.2.2",
     "@tanstack/react-query": "5.104.5",
     "effect": "4.0.6",
+    "fractional-indexing": "4.0.0",
     "hono": "4.13.13",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "wouter": "3.13.0"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.2",
