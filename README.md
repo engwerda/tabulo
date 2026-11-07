@@ -87,6 +87,11 @@ because sign-in and the session cookie work only on the one origin in `APP_URL`.
    npm run deploy
    ```
 
+Each `GET /auth/login` writes a sign-in state to D1 before the user has signed in. If your
+Tabulo is reachable from the internet, add a
+[rate limiting rule](https://developers.cloudflare.com/waf/rate-limiting-rules/) for the path
+`/auth/login` in the Cloudflare dashboard.
+
 ## Configuration
 
 | Variable | Kind | Purpose |
