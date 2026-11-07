@@ -266,7 +266,7 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
     >
       <div
         aria-hidden="true"
-        className="absolute inset-0 -z-10 animate-palette-fade bg-zinc-950/40 backdrop-blur-[3px] dark:bg-black/60"
+        className="pointer-events-none absolute inset-0 -z-10 animate-palette-fade bg-zinc-950/40 backdrop-blur-[3px] dark:bg-black/60"
       />
       <div
         role="dialog"
