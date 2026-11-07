@@ -426,9 +426,10 @@ export const BoardColumns = ({
                 {cards.length === 0 && !isComposing && (
                   <EmptyColumn filtered={filtered && all.length > 0} column={column} />
                 )}
-                {cards.map((card) => (
+                {cards.map((card, position) => (
                   <SortableCard
                     key={card.key}
+                    tabbable={position === 0}
                     card={card}
                     columns={board.columns}
                     viewerCanArrange={board.viewerCanArrange}
