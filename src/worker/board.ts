@@ -14,6 +14,8 @@ import {
   BoardRequestInvalid,
   describeForgejoError,
   FORGEJO_READ_ERRORS,
+  type ForgejoError,
+  ForgejoMovePartlyApplied,
   type ForgejoUnauthorized,
   RepoWriteForbidden,
 } from "./errors.ts"
@@ -56,6 +58,8 @@ export type BoardLayout = {
   readonly isColumnLabel: (label: ForgejoLabel) => boolean
   /** The column an issue belongs in, ignoring the Done window: every closed issue is Done. */
   readonly columnOf: (issue: ForgejoRepoIssue) => string
+  /** The open column the issue's labels name, Todo when none does, whatever its state. */
+  readonly labelColumnOf: (issue: ForgejoRepoIssue) => string
 }
 
 export const boardLayout = (
@@ -107,15 +111,15 @@ export const boardLayout = (
   })
   const byKey = new Map(columns.map((column) => [column.key, column] as const))
   const isColumnLabel = (label: ForgejoLabel) => statusLabels.has(label.name)
+  const labelColumnOf = (issue: ForgejoRepoIssue) =>
+    issue.labels.find(isColumnLabel)?.name ?? TODO.key
 
   return {
     columns,
     column: (key) => byKey.get(key),
     isColumnLabel,
-    columnOf: (issue) => {
-      if (issue.state === "closed") return DONE.key
-      return issue.labels.find(isColumnLabel)?.name ?? TODO.key
-    },
+    columnOf: (issue) => (issue.state === "closed" ? DONE.key : labelColumnOf(issue)),
+    labelColumnOf,
   }
 }
 
@@ -276,32 +280,69 @@ export const loadBoard = (
     } satisfies Board
   })
 
-/** Changes the issue in Forgejo so that it belongs in `target`, and returns it as changed. */
-const putInColumn = (
+/** One Forgejo write of a move, given the issue as the previous write left it. */
+type IssueWrite = (
+  issue: ForgejoRepoIssue,
+) => Effect.Effect<ForgejoRepoIssue, ForgejoError, ForgejoClient>
+
+/**
+ * The Forgejo writes that put the issue in `target`. Labels are added or removed one at a time,
+ * never replaced as a set, so labels changed in Forgejo since Tabulo read the issue survive.
+ */
+const columnWrites = (
   token: AccessToken,
   layout: BoardLayout,
   repo: RepoRef,
   issue: ForgejoRepoIssue,
   target: BoardColumn,
-) =>
+): ReadonlyArray<IssueWrite> => {
+  const setState =
+    (state: "open" | "closed"): IssueWrite =>
+    (current) =>
+      ForgejoClient.use((forgejo) => forgejo.setIssueState(token, repo, current.number, state))
+  if (target._tag === "Done") return [setState("closed")]
+  const labelWrites: ReadonlyArray<IssueWrite> =
+    layout.labelColumnOf(issue) === target.key
+      ? []
+      : target._tag === "Status"
+        ? [
+            (current) =>
+              ForgejoClient.use((forgejo) =>
+                forgejo.addIssueLabels(token, repo, current.number, [target.label.id]),
+              ).pipe(Effect.map((labels) => ({ ...current, labels }))),
+          ]
+        : issue.labels.filter(layout.isColumnLabel).map(
+            (label): IssueWrite =>
+              (current) =>
+                ForgejoClient.use((forgejo) =>
+                  forgejo.removeIssueLabel(token, repo, current.number, label.id),
+                ).pipe(
+                  Effect.as({
+                    ...current,
+                    labels: current.labels.filter((other) => other.id !== label.id),
+                  }),
+                ),
+          )
+  return issue.state === "closed" ? [...labelWrites, setState("open")] : labelWrites
+}
+
+/**
+ * Runs the writes in order and returns the issue as the last one left it. A failure after an
+ * earlier write succeeded becomes ForgejoMovePartlyApplied, because Forgejo keeps that write.
+ */
+const applyWrites = (issue: ForgejoRepoIssue, writes: ReadonlyArray<IssueWrite>) =>
   Effect.gen(function* () {
-    const forgejo = yield* ForgejoClient
-    if (target._tag === "Done")
-      return yield* forgejo.setIssueState(token, repo, issue.number, "closed")
-    const open =
-      issue.state === "closed"
-        ? yield* forgejo.setIssueState(token, repo, issue.number, "open")
-        : issue
-    const kept = open.labels
-      .filter((label) => !layout.isColumnLabel(label))
-      .map((label) => label.id)
-    const labels = yield* forgejo.replaceIssueLabels(
-      token,
-      repo,
-      issue.number,
-      target._tag === "Status" ? [...kept, target.label.id] : kept,
-    )
-    return { ...open, labels }
+    let current = issue
+    for (const [index, write] of writes.entries()) {
+      current = yield* index === 0
+        ? write(current)
+        : write(current).pipe(
+            Effect.mapError(
+              (error) => new ForgejoMovePartlyApplied({ reason: describeForgejoError(error) }),
+            ),
+          )
+    }
+    return current
   })
 
 /**
@@ -348,7 +389,7 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
     const moved =
       layout.columnOf(issue) === target.key
         ? issue
-        : yield* putInColumn(token, layout, repoRef, issue, target)
+        : yield* applyWrites(issue, columnWrites(token, layout, repoRef, issue, target))
 
     const ranks = yield* CardRanks
     const stored = yield* ranks.forOrg(org)

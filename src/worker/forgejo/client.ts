@@ -101,13 +101,22 @@ export class ForgejoClient extends Context.Service<
       number: number,
       state: "open" | "closed",
     ) => Effect.Effect<ForgejoRepoIssue, ForgejoError>
-    /** Replaces the issue's whole label set. */
-    readonly replaceIssueLabels: (
+    /**
+     * Adds labels and answers with the issue's labels. Forgejo removes the issue's other labels
+     * in each added label's exclusive scope in the same transaction and leaves the rest alone.
+     */
+    readonly addIssueLabels: (
       token: AccessToken,
       repo: RepoRef,
       number: number,
       labelIds: ReadonlyArray<number>,
     ) => Effect.Effect<ReadonlyArray<ForgejoLabel>, ForgejoError>
+    readonly removeIssueLabel: (
+      token: AccessToken,
+      repo: RepoRef,
+      number: number,
+      labelId: number,
+    ) => Effect.Effect<void, ForgejoError>
   }
 >()("tabulo/ForgejoClient") {}
 
@@ -151,15 +160,18 @@ export const makeForgejoClient = (
   config: ForgejoConfig,
   fetch: HttpFetch,
 ): ForgejoClient["Service"] => {
-  const api = <A>(
+  /** Sends an API request and turns error statuses into errors. */
+  const request = (
     token: AccessToken,
     path: string,
     query: Record<string, string>,
-    schema: Schema.Decoder<A>,
-    write?: { readonly method: "PATCH" | "PUT"; readonly body: unknown },
+    write?:
+      | { readonly method: "PATCH" | "POST"; readonly body: unknown }
+      | { readonly method: "DELETE" },
   ) =>
     Effect.gen(function* () {
       const url = `${config.baseUrl}/api/v1${path}?${new URLSearchParams(query)}`
+      const body = write !== undefined && "body" in write ? JSON.stringify(write.body) : undefined
       const response = yield* send(
         fetch,
         new Request(url, {
@@ -167,18 +179,30 @@ export const makeForgejoClient = (
           headers: {
             accept: "application/json",
             authorization: `Bearer ${Redacted.value(token)}`,
-            ...(write === undefined ? {} : { "content-type": "application/json" }),
+            ...(body === undefined ? {} : { "content-type": "application/json" }),
           },
-          ...(write === undefined ? {} : { body: JSON.stringify(write.body) }),
+          ...(body === undefined ? {} : { body }),
         }),
       )
       if (response.status === 401) return yield* new ForgejoUnauthorized()
       if (response.status === 403) return yield* new ForgejoForbidden()
       if (response.status === 404) return yield* new ForgejoNotFound()
       if (!response.ok) return yield* new ForgejoRequestFailed({ status: response.status })
-      const body = yield* readJson(response, schema)
-      return { body, response }
+      return response
     })
+
+  const api = <A>(
+    token: AccessToken,
+    path: string,
+    query: Record<string, string>,
+    schema: Schema.Decoder<A>,
+    write?: { readonly method: "PATCH" | "POST"; readonly body: unknown },
+  ) =>
+    request(token, path, query, write).pipe(
+      Effect.flatMap((response) =>
+        readJson(response, schema).pipe(Effect.map((body) => ({ body, response }))),
+      ),
+    )
 
   const page = <A>(
     token: AccessToken,
@@ -321,10 +345,19 @@ export const makeForgejoClient = (
         method: "PATCH",
         body: { state },
       }).pipe(Effect.map(({ body }) => body)),
-    replaceIssueLabels: (token, repo, number, labelIds) =>
+    addIssueLabels: (token, repo, number, labelIds) =>
       api(token, `${repoPath(repo)}/issues/${number}/labels`, {}, Schema.Array(ForgejoLabel), {
-        method: "PUT",
+        method: "POST",
         body: { labels: labelIds },
       }).pipe(Effect.map(({ body }) => body)),
+    removeIssueLabel: (token, repo, number, labelId) =>
+      request(
+        token,
+        `${repoPath(repo)}/issues/${number}/labels/${labelId}`,
+        {},
+        {
+          method: "DELETE",
+        },
+      ).pipe(Effect.asVoid),
   }
 }

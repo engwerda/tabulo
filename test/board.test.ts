@@ -382,11 +382,11 @@ const labelNames = (issue: { labels: ReadonlyArray<{ name: string }> } | undefin
 
 describe("POST /api/board/move", () => {
   it.each([
-    ["a status and a plain label", 2, [12, 20]],
-    ["an exclusive label of another scope", 6, [12, 21]],
+    ["a status and a plain label", 2, ["Kind/Bug", "Status/Review"]],
+    ["an exclusive label of another scope", 6, ["Priority/High", "Status/Review"]],
   ])(
-    "moving an issue with %s to a status column replaces only its status label",
-    async (_, number, labelIds) => {
+    "moving an issue with %s to a status column adds only the target label",
+    async (_, number, labels) => {
       const { forgejo, move } = await boardSession()
 
       const response = await move({
@@ -399,13 +399,12 @@ describe("POST /api/board/move", () => {
       expect(response.status).toBe(200)
       expect(writes(forgejo)).toEqual([
         {
-          method: "PUT",
+          method: "POST",
           path: `/api/v1/repos/acme/api/issues/${number}/labels`,
-          body: { labels: expect.any(Array) },
+          body: { labels: [12] },
         },
       ])
-      const sent = writes(forgejo).flatMap((write) => (write.body as { labels: number[] }).labels)
-      expect(sent.sort((a, b) => a - b)).toEqual(labelIds)
+      expect(labelNames(forgejo.issue("acme", "api", number))).toEqual(labels)
       expect(await response.json()).toMatchObject({
         key: `acme/api#${number}`,
         column: "Status/Review",
@@ -413,6 +412,39 @@ describe("POST /api/board/move", () => {
       })
     },
   )
+
+  it("keeps a label added in Forgejo between Tabulo's read and its write", async () => {
+    let added = false
+    const { forgejo, move } = await boardSession({
+      intercept: (method, path) => {
+        if (method !== "GET" && path.endsWith("/issues/2/labels") && !added) {
+          added = true
+          forgejo.issue("acme", "api", 2)?.labels.push(highPriority)
+        }
+        return undefined
+      },
+    })
+
+    const response = await move({
+      repo: "api",
+      number: 2,
+      toColumn: "Status/Review",
+      orderedKeys: ["acme/api#2"],
+    })
+
+    expect(response.status).toBe(200)
+    expect(labelNames(forgejo.issue("acme", "api", 2))).toEqual([
+      "Kind/Bug",
+      "Priority/High",
+      "Status/Review",
+    ])
+    expect(await response.json()).toMatchObject({
+      labels: [
+        { id: 20, name: "Kind/Bug", color: "#d73a4a" },
+        { id: 21, name: "Priority/High", color: "#b60205" },
+      ],
+    })
+  })
 
   it("moving to Done closes the issue and leaves its labels alone", async () => {
     const { forgejo, move } = await boardSession()
@@ -437,40 +469,88 @@ describe("POST /api/board/move", () => {
     })
   })
 
-  it("moving out of Done reopens the issue, then sets its status label", async () => {
+  it.each([
+    [
+      "a status column sets its label, then reopens the issue",
+      "Status/In Progress",
+      { method: "POST", path: "/api/v1/repos/acme/api/issues/3/labels", body: { labels: [11] } },
+      ["Status/In Progress"],
+    ],
+    [
+      "Todo removes its status label, then reopens the issue",
+      "todo",
+      { method: "DELETE", path: "/api/v1/repos/acme/api/issues/3/labels/12" },
+      [],
+    ],
+  ])("moving out of Done to %s", async (_, toColumn, labelWrite, labels) => {
     const { forgejo, move } = await boardSession()
+
+    const response = await move({ repo: "api", number: 3, toColumn, orderedKeys: ["acme/api#3"] })
+
+    expect(response.status).toBe(200)
+    expect(writes(forgejo)).toEqual([
+      { body: undefined, ...labelWrite },
+      { method: "PATCH", path: "/api/v1/repos/acme/api/issues/3", body: { state: "open" } },
+    ])
+    expect(forgejo.issue("acme", "api", 3)?.state).toBe("open")
+    expect(labelNames(forgejo.issue("acme", "api", 3))).toEqual(labels)
+    expect(await response.json()).toMatchObject({ column: toColumn, state: "open", closedAt: null })
+  })
+
+  it("answers 502 saying Forgejo applied part of the move when a later step fails", async () => {
+    const { forgejo, move } = await boardSession({
+      intercept: (method, path) =>
+        method === "PATCH" && path === "/api/v1/repos/acme/api/issues/3"
+          ? new Response("{}", { status: 500 })
+          : undefined,
+    })
 
     const response = await move({
       repo: "api",
       number: 3,
       toColumn: "Status/In Progress",
-      orderedKeys: ["acme/api#2", "acme/api#3"],
+      orderedKeys: ["acme/api#3"],
     })
 
-    expect(response.status).toBe(200)
-    expect(writes(forgejo)).toEqual([
-      { method: "PATCH", path: "/api/v1/repos/acme/api/issues/3", body: { state: "open" } },
-      { method: "PUT", path: "/api/v1/repos/acme/api/issues/3/labels", body: { labels: [11] } },
-    ])
-    expect(forgejo.issue("acme", "api", 3)?.state).toBe("open")
+    expect(response.status).toBe(502)
+    expect(((await response.json()) as { error: string }).error).toMatch(
+      /Forgejo applied part of the move/,
+    )
     expect(labelNames(forgejo.issue("acme", "api", 3))).toEqual(["Status/In Progress"])
+    expect(forgejo.issue("acme", "api", 3)?.state).toBe("closed")
+    expect(await rankRows()).toEqual([])
   })
 
-  it("moving to Todo removes the status label and keeps the others", async () => {
-    const { forgejo, move } = await boardSession()
+  it("moving to Todo removes each status column label and keeps the others", async () => {
+    const repoReview = repoLabel("api", 30, "Status/Review", "00aabb", true)
+    const abandoned = repoLabel("api", 31, "Status/Abandoned", "999999", true)
+    const org = boardOrg()
+    const api = org.repos[0]
+    if (api === undefined) throw new Error("fixture has no api repository")
+    api.labels = [repoReview, abandoned]
+    api.issues.push(boardIssue("api", 7, { labels: [repoReview, bug] }))
+    const { forgejo, move } = await boardSession({ orgs: [org] })
 
-    const response = await move({
+    const fromOrgLabel = await move({
       repo: "api",
       number: 2,
       toColumn: "todo",
       orderedKeys: ["acme/api#1", "acme/api#2", "acme/api#6"],
     })
+    const fromRepoLabel = await move({
+      repo: "api",
+      number: 7,
+      toColumn: "todo",
+      orderedKeys: ["acme/api#7"],
+    })
 
-    expect(response.status).toBe(200)
+    expect([fromOrgLabel.status, fromRepoLabel.status]).toEqual([200, 200])
     expect(writes(forgejo)).toEqual([
-      { method: "PUT", path: "/api/v1/repos/acme/api/issues/2/labels", body: { labels: [20] } },
+      { method: "DELETE", path: "/api/v1/repos/acme/api/issues/2/labels/11", body: undefined },
+      { method: "DELETE", path: "/api/v1/repos/acme/api/issues/7/labels/30", body: undefined },
     ])
     expect(labelNames(forgejo.issue("acme", "api", 2))).toEqual(["Kind/Bug"])
+    expect(labelNames(forgejo.issue("acme", "api", 7))).toEqual(["Kind/Bug"])
   })
 
   it("stores the column order for everyone, and a move between ranked cards writes one row", async () => {
@@ -555,7 +635,7 @@ describe("POST /api/board/move", () => {
     })
 
     expect(response.status).toBe(403)
-    expect(writes(forgejo).map((write) => write.method)).toEqual(["PUT"])
+    expect(writes(forgejo).map((write) => write.method)).toEqual(["DELETE"])
     expect(await rankRows()).toEqual(before)
     expect(labelNames(forgejo.issue("acme", "api", 2))).toEqual(["Kind/Bug", "Status/In Progress"])
   })
