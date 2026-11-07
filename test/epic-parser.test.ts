@@ -25,6 +25,9 @@ describe("epic task-list references", () => {
     ["- [ ] [#12](https://forgejo.example/acme/api/issues/12)", "acme/api#12"],
     ["1. [ ] #12", "acme/api#12"],
     ["10) [x] #12", "acme/api#12"],
+    ["- [ ]\t#12", "acme/api#12"],
+    ["> - [ ] #12", "acme/api#12"],
+    ["- [ ] [#12 Fix login](https://forgejo.example/other/web/issues/3)", "acme/api#12"],
   ])("parses %s", (line, ref) => expect(parse(line)).toEqual([ref]))
 
   it("deduplicates all forms and casing while preserving body order", () => {
@@ -51,6 +54,11 @@ describe("epic task-list references", () => {
     "- [ ] `#12`",
     "1- [ ] #12",
     "- [ ] https://forgejo.example/api/v1/repos/acme/api/issues/12",
+    "- \\[ ] #12",
+    "- **[ ]** #12",
+    "- [ ]#12",
+    "- [ ] [Fix login](https://elsewhere.example/acme/api/issues/12)",
+    "- [ ] <!-- #8 --> #9",
   ])("ignores invalid or non-task reference %s", (line) => expect(parse(line)).toEqual([]))
 
   it("ignores backtick and tilde fences, including longer fences and unfinished fences", () => {
@@ -79,15 +87,21 @@ describe("epic task-list references", () => {
           "<!--",
           "- [ ] #7",
           "-->",
-          "- [ ] <!-- #8 --> #9",
         ].join("\n"),
       ),
-    ).toEqual(["acme/api#2", "acme/api#4", "acme/api#5", "acme/api#9"])
+    ).toEqual(["acme/api#2", "acme/api#4", "acme/api#5"])
   })
 
   it("ignores a fence opened right after a list marker, until it closes or its item ends", () => {
     expect(parse("- ```md\n  - [ ] #99\n  ```\n- [ ] #12")).toEqual(["acme/api#12"])
     expect(parse("- [ ] #1\n  ```\n  - [ ] #2\n- [ ] #3")).toEqual(["acme/api#1", "acme/api#3"])
+  })
+
+  it("reads the checkbox from the source, so a link definition named x cannot hide it", () => {
+    expect(parse("- [x] #12\n- [ ] #13\n\n[x]: https://example.org")).toEqual([
+      "acme/api#12",
+      "acme/api#13",
+    ])
   })
 
   it("hides everything after an unclosed HTML comment", () => {

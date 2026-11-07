@@ -188,6 +188,7 @@ list children as tasks:
 
 A bare number belongs to the epic's repository; `web#34` belongs to the same organization.
 Only the first reference after a task checkbox counts, and pull request references count too.
+Write the checkbox plainly, as Forgejo shows a checkbox only then: `\[ ]` and `**[ ]**` are text.
 Tabulo reads the body as CommonMark, as Forgejo renders it, so code, HTML comments, and Forgejo
 dependencies do not create links. An HTML comment that starts a line and is never closed hides
 the rest of the body. Tabulo keeps the first 200 unique references in body order.

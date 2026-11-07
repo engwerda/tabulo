@@ -214,16 +214,20 @@ organization and repository selection. It shows open epics and epics closed with
 `BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
 
 - **Children.** `parseEpicChildren` in `src/worker/epics.ts` parses the body as CommonMark
-  with the reference parser, as Forgejo renders it, and reads its task-list items. A task-list
-  item is a bullet (`-`, `*`, `+`) or ordered (`1.`, `1)`) list item, at any nesting depth,
-  whose first paragraph starts with `[ ]`, `[x]`, or `[X]` and whitespace. The first word after
-  the checkbox on that line is `#12`, `repo#12`, `owner/repo#12`, or an issue or pull request
-  URL on `FORGEJO_URL`, as text, an autolink, or a link destination. It may be wrapped in `(`,
-  `<`, `[`, `*`, or `_` and followed by punctuation, so `#12: Login`, `(#12)`, `**#12**`, and
-  `[#12](…)` count. Only the first reference of an item counts. A bare number refers to the
-  epic's repository, a repo-only reference to its organization. Text inside code blocks, HTML
-  blocks, and HTML comments forms no list items, so it adds no children. A word in a code span
-  is not a reference, and inline HTML is skipped. The parser preserves body order, deduplicates case-insensitively, and caps each
+  with the reference parser, as Forgejo renders it, to find its list items: bullet (`-`, `*`,
+  `+`) and ordered (`1.`, `1)`) items at any nesting depth, in block quotes too. Code blocks,
+  HTML blocks, and HTML comments hold no list items, so they add no children. An item is a task
+  when the source text of its first line, after the list marker, starts with `[ ]`, `[x]`, or
+  `[X]` and a space or tab. Forgejo's task list extension reads the checkbox the same way, so an
+  escaped (`\[ ]`) or emphasized (`**[ ]**`) checkbox is plain text, and a link definition
+  named `x` does not change `[x]`.
+- **References.** The first word after the checkbox, in the same source text, is `#12`,
+  `repo#12`, `owner/repo#12`, or an issue or pull request URL on `FORGEJO_URL`, bare or as an
+  autolink. It may be wrapped in `(`, `<`, `[`, `*`, or `_` and followed by punctuation, so
+  `#12: Login`, `(#12)`, `**#12**`, `<https://…/issues/12>`, and `[#12](…)` count. A word in a
+  code span or after an inline HTML comment is not a reference. Only the first reference of an
+  item counts. A bare number refers to the epic's repository, a repo-only reference to its
+  organization. The parser preserves body order, deduplicates case-insensitively, and caps each
   epic at 200 children. Forgejo dependencies do not create epic links.
 - **Progress.** Checkbox state is ignored. The child's real issue state and labels determine
   its column through `boardLayout`, including repository status labels matching an organization

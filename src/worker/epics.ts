@@ -1,4 +1,4 @@
-import { type Node, Parser } from "commonmark"
+import { Parser } from "commonmark"
 import { Clock, Context, Effect } from "effect"
 import type { Epic, EpicChild, Epics, IncompleteEpicListing } from "../shared/api.ts"
 import { BoardConfig, boardLayout, cardKey, toBoardCard } from "./board.ts"
@@ -18,25 +18,9 @@ const MAX_CHILDREN = 200
 const NAME = "[A-Za-z0-9_.-]+"
 const SHORT_REF = new RegExp(`^(?:(?:(${NAME})/)?(${NAME}))?#([1-9][0-9]*)(?![A-Za-z0-9])`)
 const ISSUE_PATH = new RegExp(`^/(${NAME})/(${NAME})/(?:issues|pulls)/([1-9][0-9]*)/?$`)
+// Forgejo's Goldmark task list extension reads the checkbox from the source of the item's first
+// line, so escapes, emphasis, and link definitions there make it plain text.
 const TASK = /^\[[ xX]\][\t ]+(\S+)/
-
-/**
- * The first line of a paragraph as text. Emphasis and inline HTML are dropped, code keeps its
- * backticks, and a link or image keeps its destination after its text, as in `[#12](url)`.
- */
-const firstLine = (paragraph: Node) => {
-  let line = ""
-  const walker = paragraph.walker()
-  for (let step = walker.next(); step !== null; step = walker.next()) {
-    const { node, entering } = step
-    if (node.type === "softbreak" || node.type === "linebreak") break
-    if (node.type === "text") line += node.literal ?? ""
-    else if (node.type === "code") line += `\`${node.literal ?? ""}\``
-    else if (node.type === "link" || node.type === "image")
-      line += entering ? (node.type === "image" ? "![" : "[") : `](${node.destination ?? ""})`
-  }
-  return line
-}
 
 /** The issue that `token`, the first word after a checkbox, names, if Tabulo accepts the form. */
 const referenceOf = (
@@ -74,7 +58,8 @@ const referenceOf = (
 
 /**
  * The issues that the task-list items of an epic's body reference, in body order. The body is
- * parsed as CommonMark, as Forgejo renders it, so code and HTML never hold task items.
+ * parsed as CommonMark, as Forgejo renders it, so code and HTML never hold task items. The
+ * checkbox and reference come from the source text of each item's first line.
  */
 export const parseEpicChildren = (
   body: string,
@@ -84,11 +69,13 @@ export const parseEpicChildren = (
   const base = new URL(forgejoUrl)
   const prefix = base.pathname.replace(/\/$/, "")
   const children = new Map<string, EpicReference>()
+  const lines = body.split(/\r\n|\r|\n/)
   const walker = new Parser().parse(body).walker()
   for (let step = walker.next(); step !== null; step = walker.next()) {
     const paragraph = step.node.firstChild
     if (!step.entering || step.node.type !== "item" || paragraph?.type !== "paragraph") continue
-    const token = TASK.exec(firstLine(paragraph))?.[1]
+    const [[line, column]] = paragraph.sourcepos
+    const token = TASK.exec(lines[line - 1]?.slice(column - 1) ?? "")?.[1]
     const reference = token === undefined ? undefined : referenceOf(token, repository, base, prefix)
     if (reference === undefined) continue
     children.set(reference.ref, reference)
