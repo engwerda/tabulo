@@ -73,6 +73,13 @@ export const shortcutKeys = (id: ShortcutId, mac: boolean): ReadonlyArray<string
   }
 }
 
+/** Keys that work inside the command menu; listed in the help dialog, handled by the menu. */
+export const MENU_KEYS: ReadonlyArray<{ readonly keys: ReadonlyArray<string>; label: string }> = [
+  { keys: ["↑", "↓"], label: "Move through the results" },
+  { keys: ["↵"], label: "Run the highlighted result" },
+  { keys: ["Esc"], label: "Close the menu" },
+]
+
 /** How long `g` waits for its second key. */
 export const SEQUENCE_TIMEOUT_MS = 1000
 

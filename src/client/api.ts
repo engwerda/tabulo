@@ -91,7 +91,12 @@ const decodeSearchResults = Schema.decodeUnknownPromise(SearchResults)
 const decodeInstance = Schema.decodeUnknownPromise(Instance)
 
 export const fetchSearch = async (q: string, signal?: AbortSignal): Promise<SearchResults> =>
-  decodeSearchResults(await requestJson(`/api/search?${new URLSearchParams({ q })}`, { signal }))
+  decodeSearchResults(
+    await requestJson(
+      `/api/search?${new URLSearchParams({ q })}`,
+      signal === undefined ? {} : { signal },
+    ),
+  )
 
 export const fetchInstance = async (): Promise<Instance> =>
   decodeInstance(await requestJson("/api/instance"))
