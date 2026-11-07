@@ -117,8 +117,6 @@ const Picker = ({
             <span className="sr-only">Search {searchName}</span>
             <SearchIcon className="pointer-events-none absolute top-2 left-2.5 size-4 text-zinc-400" />
             <input
-              // biome-ignore lint/a11y/noAutofocus: the menu opened to search it
-              autoFocus
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}

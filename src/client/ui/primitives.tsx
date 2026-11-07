@@ -117,6 +117,22 @@ const moveMenuFocus = (event: ReactKeyboardEvent<HTMLElement>) => {
 
 const GAP = 6
 
+/** Whether `element` is scrolled out of the screen or out of a scrolling ancestor's view. */
+const outOfSight = (element: HTMLElement) => {
+  const rect = element.getBoundingClientRect()
+  const outside = (box: { top: number; bottom: number; left: number; right: number }) =>
+    rect.bottom < box.top || rect.top > box.bottom || rect.right < box.left || rect.left > box.right
+  if (outside({ top: 0, bottom: window.innerHeight, left: 0, right: window.innerWidth }))
+    return true
+  for (let parent = element.parentElement; parent !== null; parent = parent.parentElement) {
+    const style = getComputedStyle(parent)
+    if (/auto|scroll|hidden|clip/.test(`${style.overflowX} ${style.overflowY}`)) {
+      if (outside(parent.getBoundingClientRect())) return true
+    }
+  }
+  return false
+}
+
 /** Where the panel goes: below the trigger, or above it when it would overflow, inside the screen. */
 const panelPosition = (trigger: DOMRect, panel: HTMLElement, align: "start" | "end") => {
   const below = trigger.bottom + GAP + panel.offsetHeight <= window.innerHeight - GAP
@@ -178,31 +194,31 @@ export const Popover = ({
     // The panel follows its trigger when something scrolls, and closes once the trigger has
     // scrolled out of sight.
     const follow = () => {
-      const rect = trigger.current?.getBoundingClientRect()
-      if (rect === undefined) return
-      if (
-        rect.bottom < 0 ||
-        rect.top > window.innerHeight ||
-        rect.right < 0 ||
-        rect.left > window.innerWidth
-      ) {
-        closeRef.current()
-      } else {
-        place()
-      }
+      if (trigger.current === null) return
+      if (outOfSight(trigger.current)) closeRef.current()
+      else place()
     }
     window.addEventListener("scroll", follow, true)
     window.addEventListener("resize", place)
+    // Content that grows or shrinks, such as a filtered list, keeps the panel against its trigger.
+    const resized = new ResizeObserver(place)
+    if (panel.current !== null) resized.observe(panel.current)
     return () => {
       window.removeEventListener("scroll", follow, true)
       window.removeEventListener("resize", place)
+      resized.disconnect()
     }
   }, [open, align])
 
-  // Focus moves in once the panel is placed and visible; a hidden element cannot take it.
+  // React's autoFocus would run while the panel is still hidden for placing, so the panel's
+  // search box, or its first menu item for a menu button, takes focus here instead.
   const placed = open && position !== null
   useEffect(() => {
-    if (placed && focusFirstItem) panel.current?.querySelector<HTMLElement>(MENU_ITEMS)?.focus()
+    if (!placed) return
+    const target = focusFirstItem
+      ? panel.current?.querySelector<HTMLElement>(MENU_ITEMS)
+      : panel.current?.querySelector<HTMLElement>("input")
+    target?.focus()
   }, [placed, focusFirstItem])
 
   return (
@@ -234,7 +250,19 @@ export const Popover = ({
             // A press inside the panel must not reach a draggable card around its trigger.
             onMouseDown={(event) => event.stopPropagation()}
             onTouchStart={(event) => event.stopPropagation()}
-            onKeyDown={moveMenuFocus}
+            // Clicks stay in the panel too: React bubbles them through the portal to the trigger's
+            // ancestors, such as a card that opens its details on click.
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              // Tab leaves a menu: it closes and focus goes back to where it was opened.
+              if (event.key === "Tab") {
+                event.preventDefault()
+                setOpen(false)
+                ;(returnFocus ?? trigger).current?.focus()
+                return
+              }
+              moveMenuFocus(event)
+            }}
             className={`fixed z-50 max-w-[calc(100vw-0.75rem)] animate-pop-in ${panelClass} ${extraPanelClass}`}
           >
             {children(() => {

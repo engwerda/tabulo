@@ -94,8 +94,6 @@ const FilterMenu = ({
               <span className="sr-only">Search {plural}</span>
               <SearchIcon className="pointer-events-none absolute top-2 left-2.5 size-4 text-zinc-400" />
               <input
-                // biome-ignore lint/a11y/noAutofocus: the menu opened to search it
-                autoFocus
                 type="search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
@@ -107,6 +105,7 @@ const FilterMenu = ({
           <div role="menu" aria-label={name} className="scroll-thin max-h-72 overflow-y-auto">
             <MenuOption
               selected={values.length === 0}
+              multiple={multiple}
               onSelect={() => {
                 onChange([])
                 close()
