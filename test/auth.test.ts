@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers"
 import { beforeEach, describe, expect, it } from "vitest"
+import { createFakeClock } from "./fake-clock.ts"
 import { createFakeForgejo, FORGEJO_URL } from "./fake-forgejo.ts"
 import {
   APP_URL,
@@ -70,6 +71,32 @@ describe("GET /auth/callback", () => {
 
     expect(replay.status).toBe(400)
     expect(setCookies(replay).has(SESSION_COOKIE)).toBe(false)
+    expect(await sessionCount()).toBe(1)
+  })
+
+  it("accepts a state for 10 minutes", async () => {
+    const forgejo = createFakeForgejo()
+    const clock = createFakeClock()
+    const call = tabulo(forgejo.fetch, { clock: clock.clock })
+    const fresh = await startLogin(call)
+    const stale = await startLogin(call)
+    clock.advance(10 * 60_000 - 1)
+
+    const accepted = await callback(
+      call,
+      { code: forgejo.approve(fresh.codeChallenge), state: fresh.state },
+      fresh.browserState,
+    )
+    clock.advance(1)
+    const rejected = await callback(
+      call,
+      { code: forgejo.approve(stale.codeChallenge), state: stale.state },
+      stale.browserState,
+    )
+
+    expect(accepted.status).toBe(302)
+    expect(rejected.status).toBe(400)
+    expect(setCookies(rejected).has(SESSION_COOKIE)).toBe(false)
     expect(await sessionCount()).toBe(1)
   })
 
@@ -168,6 +195,21 @@ describe("POST /auth/logout", () => {
 
     expect(response.status).toBe(204)
     expect(setCookies(response).get(SESSION_COOKIE)?.attributes).toContain("Max-Age=0")
+    expect((await call("/api/me", { headers: { cookie } })).status).toBe(401)
+    expect(await sessionCount()).toBe(0)
+  })
+})
+
+describe("session lifetime", () => {
+  it("ends a session 30 days after sign-in and deletes its row", async () => {
+    const forgejo = createFakeForgejo()
+    const clock = createFakeClock()
+    const call = tabulo(forgejo.fetch, { clock: clock.clock })
+    const cookie = await signIn(call, forgejo)
+
+    clock.advance(30 * 24 * 60 * 60_000 - 1)
+    expect((await call("/api/me", { headers: { cookie } })).status).toBe(200)
+    clock.advance(1)
     expect((await call("/api/me", { headers: { cookie } })).status).toBe(401)
     expect(await sessionCount()).toBe(0)
   })

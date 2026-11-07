@@ -110,7 +110,7 @@ The token needs read access to issues, repositories, notifications, and the user
 - Sign-in uses OAuth2 with PKCE (S256) and a single-use `state` that expires after 10 minutes
   and is bound to the browser that started the sign-in.
 - The session cookie is a random value marked `HttpOnly`, `Secure`, and `SameSite=Lax`. D1
-  stores only its SHA-256 hash.
+  stores only its SHA-256 hash. A session ends 30 days after sign-in.
 - Access and refresh tokens are encrypted with AES-GCM before they are written to D1, and never
   reach the browser.
 - Requests that change state must send an `Origin` header equal to `APP_URL`.

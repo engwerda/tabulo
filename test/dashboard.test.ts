@@ -161,8 +161,10 @@ describe("access token refresh", () => {
     const response = await call("/api/dashboard", { headers: { cookie } })
 
     expect(response.status).toBe(200)
-    const lastSearch = forgejo.requests.findLast((r) => r.path === "/api/v1/repos/issues/search")
-    expect(lastSearch?.authorization).toBe("Bearer access-2")
+    expect(refreshGrants(forgejo)).toEqual(["refresh-1"])
+    const searches = forgejo.requests.filter((r) => r.path === "/api/v1/repos/issues/search")
+    expect(searches.at(0)?.authorization).toBe("Bearer access-1")
+    expect(searches.at(-1)?.authorization).toBe("Bearer access-2")
   })
 
   it("deletes the session and returns 401 when Forgejo answers invalid_grant", async () => {
