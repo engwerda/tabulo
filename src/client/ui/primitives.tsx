@@ -216,9 +216,11 @@ export const Popover = ({
   const placed = open && position !== null
   useEffect(() => {
     if (!placed) return
-    const target = focusFirstItem
-      ? panel.current?.querySelector<HTMLElement>(MENU_ITEMS)
-      : panel.current?.querySelector<HTMLElement>("input")
+    const within = (selector: string) => panel.current?.querySelector<HTMLElement>(selector)
+    const target =
+      (focusFirstItem ? null : within("input")) ??
+      within(MENU_ITEMS) ??
+      within("a[href], button, input")
     target?.focus()
   }, [placed, focusFirstItem])
 

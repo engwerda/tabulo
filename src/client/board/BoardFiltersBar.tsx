@@ -1,4 +1,4 @@
-import { type ReactNode, type RefObject, useState } from "react"
+import { type ReactNode, type RefObject, useRef, useState } from "react"
 import type { SetSearchParams } from "wouter"
 import type { BoardCard } from "../../shared/api.ts"
 import { Avatar } from "../Avatar.tsx"
@@ -43,7 +43,8 @@ const FilterMenu = ({
   choices: ReadonlyArray<Choice>
   onChange: (values: ReadonlyArray<string>) => void
 }) => {
-  const [search, setSearch] = useState("")
+  const [query, setQuery] = useState("")
+  const search = useRef<HTMLInputElement>(null)
   // Keep values from the address selectable even when no card has them any more.
   const all: ReadonlyArray<Choice> = [
     ...choices,
@@ -53,7 +54,7 @@ const FilterMenu = ({
   ]
   const chosen = all.filter((choice) => values.includes(choice.value))
   const first = chosen[0]
-  const shown = all.filter((choice) => choice.label.toLowerCase().includes(search.toLowerCase()))
+  const shown = all.filter((choice) => choice.label.toLowerCase().includes(query.toLowerCase()))
   const toggle = (value: string) =>
     onChange(
       values.includes(value) ? values.filter((other) => other !== value) : [...values, value],
@@ -65,7 +66,7 @@ const FilterMenu = ({
         chosen.length === 0 ? `${name}: any` : `${name}: ${chosen.map((c) => c.label).join(", ")}`
       }
       onOpenChange={(open) => {
-        if (!open) setSearch("")
+        if (!open) setQuery("")
       }}
       label={
         <>
@@ -95,8 +96,9 @@ const FilterMenu = ({
               <SearchIcon className="pointer-events-none absolute top-2 left-2.5 size-4 text-zinc-400" />
               <input
                 type="search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                ref={search}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
                 placeholder={`Search ${plural}`}
                 className={`${inputClass} pl-8 shadow-none`}
               />
@@ -127,8 +129,11 @@ const FilterMenu = ({
                   selected={on}
                   multiple={multiple}
                   onSelect={() => {
-                    if (multiple) toggle(choice.value)
-                    else {
+                    if (multiple) {
+                      toggle(choice.value)
+                      // Typing goes on into the search box after a pick.
+                      search.current?.focus()
+                    } else {
                       onChange([choice.value])
                       close()
                     }
@@ -206,9 +211,10 @@ export const BoardFiltersBar = ({
           value={filters.text}
           onChange={(event) => set("text", event.target.value)}
           onKeyDown={(event) => {
+            // Escape clears the search and stays; on an empty search it goes to the first card.
             if (event.key === "Escape") {
               if (filters.text !== "") set("text", null)
-              event.currentTarget.blur()
+              else document.querySelector<HTMLElement>("a[data-card-link]")?.focus()
             }
           }}
           placeholder="Search cards"

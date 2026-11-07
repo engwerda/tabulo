@@ -279,3 +279,10 @@ export const AtIcon = ({ className }: IconProps) => (
     <path d="M10.5 8v1a1.75 1.75 0 0 0 3.5 0V8a6 6 0 1 0-2.4 4.8" />
   </Stroke>
 )
+
+export const ArchiveIcon = ({ className }: IconProps) => (
+  <Stroke className={className}>
+    <rect x="2" y="2.75" width="12" height="3.5" rx="1" />
+    <path d="M3 6.25v6a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-6M6.5 9h3" />
+  </Stroke>
+)
