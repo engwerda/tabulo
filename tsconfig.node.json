@@ -10,6 +10,7 @@
     "vite.config.ts",
     "vitest.config.ts",
     "scripts",
+    "test/fake-forgejo.ts",
     "src/shared",
     "src/worker/forgejo",
     "src/worker/dashboard.ts",
