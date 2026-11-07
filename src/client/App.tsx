@@ -11,6 +11,7 @@ import { InsightsPage } from "./insights/InsightsPage.tsx"
 import { OrgPicker } from "./scope/OrgPicker.tsx"
 import { useLastScope } from "./scope/remembered.ts"
 import { isOrgViewPath, ORG_VIEWS, type OrgViewId, orgViewHref } from "./scope/views.ts"
+import { ThemeControl } from "./ThemeControl.tsx"
 
 export const SESSION_USER = ["session-user"] as const
 
@@ -87,6 +88,7 @@ const Header = ({ user }: { user: User }) => {
           </ul>
         </nav>
         <div className="ml-auto flex items-center gap-3">
+          <ThemeControl />
           <Avatar url={user.avatarUrl} name={user.name} />
           <span className="hidden text-sm lg:inline">
             <span className="font-medium">{user.name}</span>{" "}

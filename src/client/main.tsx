@@ -3,7 +3,10 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { App, SESSION_USER } from "./App.tsx"
 import { Unauthenticated } from "./api.ts"
+import { startTheme } from "./theme.ts"
 import "./styles.css"
+
+startTheme()
 
 // Any request that finds the session gone sends the app back to the sign-in screen.
 const signOutOnUnauthenticated = (error: Error) => {

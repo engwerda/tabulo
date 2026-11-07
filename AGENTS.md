@@ -49,5 +49,7 @@ major version.
   `views.ts` lists them, `useRepoSelection` owns `?repos=` and the remembered selection, and
   `ScopeBar` is each view's heading. A view added to `ORG_VIEWS` appears in the header and the
   scope tabs, and `ORG_VIEW_PAGES` in `src/client/App.tsx` then requires its page.
+- `src/client/theme.ts` owns the light, dark, and system theme. `public/theme-init.js` applies
+  it before first paint with the same storage key.
 - `src/shared/api.ts` holds the API payload schemas. The client decodes responses with them.
 - Imports use explicit `.ts` extensions so `scripts/` runs under Node without a build step.
