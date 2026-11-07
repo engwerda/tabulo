@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import type { Dashboard, DashboardItem, NotificationItem } from "../shared/api.ts"
+import { ActivityCard } from "./ActivityCard.tsx"
 import { fetchDashboard } from "./api.ts"
 import { ItemRow, NotificationRow } from "./rows.tsx"
 import { SectionCard } from "./SectionCard.tsx"
@@ -44,6 +45,7 @@ export const DashboardView = () => {
       <p className="sr-only" aria-live="polite">
         {dashboard.isFetching ? "Refreshing dashboard" : ""}
       </p>
+      <ActivityCard />
       {dashboard.data === undefined ? (
         dashboard.isError ? (
           <div
