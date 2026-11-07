@@ -228,9 +228,9 @@ organization and repository selection. It shows open epics and epics closed with
   `repo#12`, `owner/repo#12`, or an issue or pull request URL on `FORGEJO_URL`, bare or as an
   autolink. It may be wrapped in `(`, `<`, `[`, `*`, or `_` and followed by punctuation, so
   `#12: Login`, `(#12)`, `**#12**`, and `<https://…/issues/12>` count. When the text after the
-  checkbox starts with an inline link `[text](destination)`, the first word of its text is tried
+  checkbox starts with an inline link `[text](destination)`, as CommonMark reads it, the first word of its text is tried
   first and the destination URL second, so `[#12](…)` and `[Fix login](https://…/issues/12)`
-  count. The destination must be an absolute URL, and a reference-style link counts only by its
+  count. The destination must be an absolute `http` or `https` URL, and a reference-style link counts only by its
   text. A word in a code span or after an inline HTML comment is not a reference. Only the
   first reference of an item counts. A bare number refers to the epic's repository, a repo-only
   reference to its organization. The parser preserves body order, deduplicates case-insensitively, and caps each

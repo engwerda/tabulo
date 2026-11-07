@@ -21,9 +21,19 @@ const ISSUE_PATH = new RegExp(`^/(${NAME})/(${NAME})/(?:issues|pulls)/([1-9][0-9
 // Forgejo's Goldmark task list extension reads the checkbox from the source of the item's first
 // line, so escapes, emphasis, and link definitions there make it plain text.
 const TASK = /^\[[ xX]\][\t ]+(.*)/
-// An inline link: its text, then its destination, optionally in <> and followed by a title.
-const LINK = /^\[([^[\]]*)\]\(<?([^\s<>()]*)>?(?:[\t ][^)]*)?\)/
 const firstWord = (text: string) => /^\S*/.exec(text.trimStart())?.[0] ?? ""
+
+/** The text and destination of the inline link `text` starts with, as CommonMark reads it. */
+const leadingLink = (text: string) => {
+  const link = new Parser().parse(text).firstChild?.firstChild
+  if (link?.type !== "link") return undefined
+  let label = ""
+  const walker = link.walker()
+  for (let step = walker.next(); step !== null; step = walker.next()) {
+    if (step.entering && step.node !== link) label += step.node.literal ?? ""
+  }
+  return { label, destination: link.destination ?? "" }
+}
 
 /** The issue that `token`, a word or link destination after a checkbox, names, if valid. */
 const referenceOf = (
@@ -82,11 +92,12 @@ export const parseEpicChildren = (
     const [[line, column]] = paragraph.sourcepos
     const text = TASK.exec(lines[line - 1]?.slice(column - 1) ?? "")?.[1]
     if (text === undefined) continue
-    const link = LINK.exec(text)
+    const link = leadingLink(text)
     const reference =
-      link === null
+      link === undefined
         ? named(firstWord(text))
-        : (named(firstWord(link[1] ?? "")) ?? named(link[2] ?? ""))
+        : (named(firstWord(link.label)) ??
+          (/^https?:\/\//i.test(link.destination) ? named(link.destination) : undefined))
     if (reference === undefined) continue
     children.set(reference.ref, reference)
     if (children.size === MAX_CHILDREN) break

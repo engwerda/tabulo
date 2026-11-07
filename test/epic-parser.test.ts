@@ -114,6 +114,13 @@ describe("epic task-list references", () => {
       "acme/api#13",
     ])
     expect(parse("- [ ] [Fix login](/acme/api/issues/13)")).toEqual([])
+    expect(parse("- [ ] [Fix login](#12)")).toEqual([])
+    expect(parse("- [ ] [Fix login](web#12)")).toEqual([])
+  })
+
+  it("ignores text that CommonMark does not read as a link", () => {
+    expect(parse("- [ ] [Fix](https://forgejo.example/acme/api/issues/12 nonsense)")).toEqual([])
+    expect(parse("- [ ] [Fix](<https://forgejo.example/acme/api/issues/12)")).toEqual([])
   })
 
   it("hides everything after an unclosed HTML comment", () => {
