@@ -73,6 +73,12 @@ export const ForgejoRepoIssue = Schema.Struct({
 })
 export type ForgejoRepoIssue = typeof ForgejoRepoIssue.Type
 
+export const ForgejoEpicIssue = Schema.Struct({
+  ...ForgejoRepoIssue.fields,
+  body: Schema.NullOr(Schema.String),
+})
+export type ForgejoEpicIssue = typeof ForgejoEpicIssue.Type
+
 export const ForgejoOrg = Schema.Struct({
   name: Schema.String,
   full_name: Schema.String,

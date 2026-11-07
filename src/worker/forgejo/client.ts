@@ -10,6 +10,7 @@ import {
   OAuthGrantRejected,
 } from "../errors.ts"
 import {
+  ForgejoEpicIssue,
   ForgejoIssue,
   ForgejoLabel,
   ForgejoNotification,
@@ -96,6 +97,11 @@ export class ForgejoClient extends Context.Service<
       repo: RepoRef,
       listing: IssueListing,
     ) => Effect.Effect<ReadonlyArray<ForgejoRepoIssue>, ForgejoError>
+    readonly repoEpicIssues: (
+      token: AccessToken,
+      repo: RepoRef,
+      listing: IssueListing,
+    ) => Effect.Effect<ReadonlyArray<ForgejoEpicIssue>, ForgejoError>
     readonly issue: (
       token: AccessToken,
       repo: RepoRef,
@@ -352,6 +358,15 @@ export const makeForgejoClient = (
           ? { type: "issues", state: "open" }
           : { type: "issues", state: "closed", since: listing.updatedSince },
         ForgejoRepoIssue,
+      ),
+    repoEpicIssues: (token, repo, listing) =>
+      all(
+        token,
+        `${repoPath(repo)}/issues`,
+        listing.state === "open"
+          ? { type: "issues", state: "open" }
+          : { type: "issues", state: "closed", since: listing.updatedSince },
+        ForgejoEpicIssue,
       ),
     issue: (token, repo, number) =>
       api(token, `${repoPath(repo)}/issues/${number}`, {}, ForgejoRepoIssue).pipe(

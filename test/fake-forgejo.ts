@@ -30,6 +30,7 @@ export type FakeIssue = {
   id: number
   number: number
   title: string
+  body: string | null
   html_url: string
   state: "open" | "closed"
   labels: Array<FakeLabel>

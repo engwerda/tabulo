@@ -16,6 +16,7 @@ import {
 import { CardRanks, makeCardRanks } from "./card-ranks.ts"
 import { loadConfig } from "./config.ts"
 import { loadDashboardSections } from "./dashboard.ts"
+import { EpicsConfig, loadEpics } from "./epics.ts"
 import {
   type BoardChanged,
   BoardRequestInvalid,
@@ -126,7 +127,7 @@ export const createApp = (dependencies: Dependencies) => {
     program: Effect.Effect<
       Response,
       AppError,
-      BoardConfig | CardRanks | ForgejoClient | SessionStore
+      BoardConfig | CardRanks | EpicsConfig | ForgejoClient | SessionStore
     >,
   ): Promise<Response> => {
     const exit = await Effect.runPromiseExit(
@@ -139,6 +140,10 @@ export const createApp = (dependencies: Dependencies) => {
           ),
           Effect.provideService(SessionStore, makeSessionStore(c.env.DB, config.tokenKey)),
           Effect.provideService(BoardConfig, config.board),
+          Effect.provideService(EpicsConfig, {
+            label: config.epicLabel,
+            forgejoUrl: config.forgejo.baseUrl,
+          }),
           Effect.provideService(CardRanks, makeCardRanks(c.env.DB)),
         )
       }).pipe(Effect.provideService(Clock.Clock, dependencies.clock ?? Clock.Clock.defaultValue())),
@@ -260,6 +265,17 @@ export const createApp = (dependencies: Dependencies) => {
       Effect.flatMap(parseBoardQuery(c.req.query("org"), c.req.query("repos")), (query) =>
         withAccessToken(getCookie(c, SESSION_COOKIE), (token, session) =>
           loadBoard(token, session.user.login, query).pipe(Effect.map((board) => c.json(board))),
+        ),
+      ),
+    ),
+  )
+
+  app.get("/api/epics", (c) =>
+    run(
+      c,
+      Effect.flatMap(parseBoardQuery(c.req.query("org"), c.req.query("repos")), (query) =>
+        withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
+          loadEpics(token, query).pipe(Effect.map((epics) => c.json(epics))),
         ),
       ),
     ),
