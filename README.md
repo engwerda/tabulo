@@ -170,7 +170,7 @@ Forgejo. When a busy organization needs more, the page says which listings it re
 part.
 
 The dashboard starts with your contribution calendar for the last year, with your current and
-longest streaks and your busiest day.
+longest streaks and your busiest day. Its **Table** button lists the days with contributions.
 
 ## Check a Forgejo instance
 

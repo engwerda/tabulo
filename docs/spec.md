@@ -195,8 +195,9 @@ page and the copied summary say which numbers are too low.
 | Overdue milestones | 10 each, at most 20 |
 
 The contribution calendar sums the user's Forgejo heatmap, which counts contributions in
-15-minute slots, per day in the browser's time zone over the last 365 days. A streak that has
-no contribution yet today still counts until the day ends.
+15-minute slots, per day in the browser's time zone over the last 365 days. The heatmap covers
+the last 365 times 24 hours, which always contains the whole first day in every time zone. A
+streak that has no contribution yet today still counts until the day ends.
 
 | Endpoint | Result |
 |---|---|
