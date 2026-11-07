@@ -1,16 +1,21 @@
 import { Schema } from "effect"
 import {
-  type AssignSelfRequest,
-  AssignSelfResult,
+  type AddCommentRequest,
+  AddCommentResult,
   Board,
   CardDetail,
+  CardUpdateResult,
   type CreateCardRequest,
   CreateCardResult,
   Dashboard,
+  IssueOptions,
   type MoveCardRequest,
   MoveCardResult,
   Org,
   OrgRepo,
+  type SetAssigneeRequest,
+  type SetLabelRequest,
+  type SetMilestoneRequest,
   User,
 } from "../shared/api.ts"
 
@@ -40,7 +45,9 @@ const decodeOrgRepos = Schema.decodeUnknownPromise(Schema.Array(OrgRepo))
 const decodeBoard = Schema.decodeUnknownPromise(Board)
 const decodeMoveCardResult = Schema.decodeUnknownPromise(MoveCardResult)
 const decodeCreateCardResult = Schema.decodeUnknownPromise(CreateCardResult)
-const decodeAssignSelfResult = Schema.decodeUnknownPromise(AssignSelfResult)
+const decodeCardUpdateResult = Schema.decodeUnknownPromise(CardUpdateResult)
+const decodeAddCommentResult = Schema.decodeUnknownPromise(AddCommentResult)
+const decodeIssueOptions = Schema.decodeUnknownPromise(IssueOptions)
 const decodeCardDetail = Schema.decodeUnknownPromise(CardDetail)
 
 const requestJson = async (path: string, init?: RequestInit): Promise<unknown> => {
@@ -97,8 +104,22 @@ export const moveCard = async (move: MoveCardRequest): Promise<MoveCardResult> =
 export const createCard = async (request: CreateCardRequest): Promise<CreateCardResult> =>
   decodeCreateCardResult(await postJson("/api/board/issues", request))
 
-export const assignSelf = async (request: AssignSelfRequest): Promise<AssignSelfResult> =>
-  decodeAssignSelfResult(await postJson("/api/board/assign", request))
+export const setAssignee = async (request: SetAssigneeRequest): Promise<CardUpdateResult> =>
+  decodeCardUpdateResult(await postJson("/api/board/assignees", request))
+
+export const setLabel = async (request: SetLabelRequest): Promise<CardUpdateResult> =>
+  decodeCardUpdateResult(await postJson("/api/board/labels", request))
+
+export const setMilestone = async (request: SetMilestoneRequest): Promise<CardUpdateResult> =>
+  decodeCardUpdateResult(await postJson("/api/board/milestone", request))
+
+export const addComment = async (request: AddCommentRequest): Promise<AddCommentResult> =>
+  decodeAddCommentResult(await postJson("/api/board/comment", request))
+
+export const fetchIssueOptions = async (org: string, repo: string): Promise<IssueOptions> =>
+  decodeIssueOptions(
+    await requestJson(`/api/board/issue-options?${new URLSearchParams({ org, repo })}`),
+  )
 
 export const fetchCardDetail = async (
   org: string,

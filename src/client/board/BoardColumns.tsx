@@ -1,5 +1,6 @@
 import {
   type Announcements,
+  type CollisionDetection,
   closestCorners,
   DndContext,
   type DragEndEvent,
@@ -7,6 +8,7 @@ import {
   DragOverlay,
   KeyboardSensor,
   MouseSensor,
+  pointerWithin,
   TouchSensor,
   useDroppable,
   useSensor,
@@ -17,9 +19,9 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
-import { type ReactNode, useState } from "react"
+import { type ReactNode, useRef, useState } from "react"
 import type { Board, BoardCard, BoardColumn } from "../../shared/api.ts"
-import { CollapseIcon, PlusIcon } from "../ui/icons.tsx"
+import { CollapseIcon, ExpandIcon, PlusIcon } from "../ui/icons.tsx"
 import { buttonClass } from "../ui/primitives.tsx"
 import { type CardActions, ColumnDot, OverlayCard, SortableCard } from "./BoardCardView.tsx"
 import {
@@ -116,7 +118,7 @@ const Column = ({
           title={`Expand ${column.title}`}
           className={buttonClass.iconSmall}
         >
-          <CollapseIcon className="size-3.5" />
+          <ExpandIcon className="size-3.5" />
         </button>
         <ColumnDot column={column} />
         <h2
@@ -158,7 +160,7 @@ const Column = ({
             title={`Collapse ${column.title}`}
             className={buttonClass.iconSmall}
           >
-            <CollapseIcon className="size-3.5 rotate-180" />
+            <CollapseIcon className="size-3.5" />
           </button>
         </span>
       </header>
@@ -204,7 +206,11 @@ export const BoardColumns = ({
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 6 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+      // Enter on a card opens its details, so only Space picks a card up.
+      keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space", "Enter"] },
+    }),
   )
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const [overColumn, setOverColumn] = useState<string | null>(null)
@@ -243,6 +249,17 @@ export const BoardColumns = ({
         ? `${describe(active.id)} was dropped outside the board and did not move.`
         : `${describe(active.id)} was dropped in ${columnTitle(targetColumn(over.id))}.`,
     onDragCancel: ({ active }) => `Moving ${describe(active.id)} was cancelled.`,
+  }
+
+  // A collapsed column is a narrow strip that corner distances never favour, so the pointer
+  // decides when it is over one; everything else goes by the closest corners.
+  const collision: CollisionDetection = (args) => {
+    const strips = args.droppableContainers.filter((container) => {
+      const id = String(container.id)
+      return id.startsWith(COLUMN_PREFIX) && collapsed.has(id.slice(COLUMN_PREFIX.length))
+    })
+    const onStrip = pointerWithin({ ...args, droppableContainers: strips })
+    return onStrip.length > 0 ? onStrip : closestCorners(args)
   }
 
   const finish = () => {
@@ -300,10 +317,21 @@ export const BoardColumns = ({
   }
 
   const active = activeKey === null ? undefined : cardsByKey.get(activeKey)
+  const scroller = useRef<HTMLDivElement>(null)
+  const [inView, setInView] = useState(0)
+  // On a phone one column fills the screen; the tabs above say which one and jump to others.
+  const trackColumn = () => {
+    const element = scroller.current
+    if (element === null) return
+    const columns = [...element.children] as Array<HTMLElement>
+    const left = element.scrollLeft + element.clientWidth / 3
+    const index = columns.findLastIndex((column) => column.offsetLeft <= left)
+    setInView(Math.max(0, index))
+  }
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCorners}
+      collisionDetection={collision}
       accessibility={{ announcements }}
       onDragStart={({ active }) => {
         setActiveKey(String(active.id))
@@ -313,57 +341,92 @@ export const BoardColumns = ({
       onDragEnd={dropped}
       onDragCancel={finish}
     >
-      <div className="scroll-thin flex h-full min-h-0 snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-4 sm:snap-none sm:px-6">
-        {board.columns.map((column, index) => {
-          const all = columnCards(board.cards, column.key)
-          const cards = shownDuringDrag(column.key).flatMap((key) => cardsByKey.get(key) ?? [])
-          const isComposing = composing === column.key
-          return (
-            <Column
+      <div className="flex h-full min-h-0 flex-col">
+        <nav
+          aria-label="Columns"
+          className="scroll-thin flex shrink-0 gap-1 overflow-x-auto px-4 pb-2 sm:hidden"
+        >
+          {board.columns.map((column, index) => (
+            <button
               key={column.key}
-              index={index}
-              column={column}
-              cards={cards}
-              shown={all.filter(visible).length}
-              total={all.length}
-              highlighted={activeKey !== null && overColumn === column.key}
-              collapsed={collapsed.has(column.key) && !isComposing}
-              onToggleCollapsed={() => onToggleCollapsed(column.key)}
-              header={
-                canCreate &&
-                column._tag !== "Done" && (
-                  <button
-                    type="button"
-                    onClick={() => onCompose(column.key)}
-                    aria-label={`New issue in ${column.title}`}
-                    title={`New issue in ${column.title}`}
-                    className={buttonClass.iconSmall}
-                  >
-                    <PlusIcon className="size-3.5" />
-                  </button>
-                )
+              type="button"
+              aria-current={inView === index ? "true" : undefined}
+              onClick={() =>
+                (scroller.current?.children[index] as HTMLElement | undefined)?.scrollIntoView({
+                  behavior: "smooth",
+                  inline: "start",
+                  block: "nearest",
+                })
               }
+              className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                inView === index
+                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
+                  : "border-zinc-200 bg-white text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
+              }`}
             >
-              {isComposing && <li>{composer}</li>}
-              {cards.length === 0 && !isComposing && (
-                <EmptyColumn filtered={filtered && all.length > 0} column={column} />
-              )}
-              {cards.map((card) => (
-                <SortableCard
-                  key={card.key}
-                  card={card}
-                  columns={board.columns}
-                  viewerCanArrange={board.viewerCanArrange}
-                  viewer={viewer}
-                  showRepo={showRepo}
-                  selected={selectedKey === card.key}
-                  actions={actions}
-                  hrefBase={hrefBase}
-                />
-              ))}
-            </Column>
-          )
-        })}
+              {column.title}
+              <span className="tabular-nums opacity-60">
+                {columnCards(board.cards, column.key).filter(visible).length}
+              </span>
+            </button>
+          ))}
+        </nav>
+        <div
+          ref={scroller}
+          onScroll={trackColumn}
+          className="scroll-thin flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-4 sm:snap-none sm:px-6"
+        >
+          {board.columns.map((column, index) => {
+            const all = columnCards(board.cards, column.key)
+            const cards = shownDuringDrag(column.key).flatMap((key) => cardsByKey.get(key) ?? [])
+            const isComposing = composing === column.key
+            return (
+              <Column
+                key={column.key}
+                index={index}
+                column={column}
+                cards={cards}
+                shown={cards.length}
+                total={all.length + (cards.length - all.filter(visible).length)}
+                highlighted={activeKey !== null && overColumn === column.key}
+                collapsed={collapsed.has(column.key) && !isComposing}
+                onToggleCollapsed={() => onToggleCollapsed(column.key)}
+                header={
+                  canCreate &&
+                  column._tag !== "Done" && (
+                    <button
+                      type="button"
+                      onClick={() => onCompose(column.key)}
+                      aria-label={`New issue in ${column.title}`}
+                      title={`New issue in ${column.title}`}
+                      className={buttonClass.iconSmall}
+                    >
+                      <PlusIcon className="size-3.5" />
+                    </button>
+                  )
+                }
+              >
+                {isComposing && <li>{composer}</li>}
+                {cards.length === 0 && !isComposing && (
+                  <EmptyColumn filtered={filtered && all.length > 0} column={column} />
+                )}
+                {cards.map((card) => (
+                  <SortableCard
+                    key={card.key}
+                    card={card}
+                    columns={board.columns}
+                    viewerCanArrange={board.viewerCanArrange}
+                    viewer={viewer}
+                    showRepo={showRepo}
+                    selected={selectedKey === card.key}
+                    actions={actions}
+                    hrefBase={hrefBase}
+                  />
+                ))}
+              </Column>
+            )
+          })}
+        </div>
       </div>
       <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" }}>
         {active === undefined ? null : <OverlayCard card={active} showRepo={showRepo} />}

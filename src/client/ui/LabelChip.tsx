@@ -1,8 +1,7 @@
-import type { CSSProperties } from "react"
-
 /**
- * A label on a soft tint of its Forgejo color. The text mixes the color toward black (or white
- * in dark mode), so any label color stays readable. A scoped label shows its scope dimmed.
+ * A label as a quiet chip: neutral text and border, with the label's Forgejo color only on its
+ * dot, so cards with several labels stay calm and any label color stays readable. A scoped label
+ * shows its scope in a lighter tone.
  */
 export const LabelChip = ({
   name,
@@ -19,14 +18,17 @@ export const LabelChip = ({
   return (
     <span
       title={name}
-      style={{ "--label": color } as CSSProperties}
-      className={`inline-flex max-w-full items-center gap-1 rounded-md border border-[color-mix(in_oklab,var(--label)_28%,transparent)] bg-[color-mix(in_oklab,var(--label)_12%,transparent)] font-medium text-[color-mix(in_oklab,var(--label)_62%,black)] dark:border-[color-mix(in_oklab,var(--label)_35%,transparent)] dark:bg-[color-mix(in_oklab,var(--label)_16%,transparent)] dark:text-[color-mix(in_oklab,var(--label)_50%,white)] ${
+      className={`inline-flex max-w-full items-center gap-1.5 rounded-md border border-zinc-200 bg-white font-medium text-zinc-700 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-300 ${
         size === "sm" ? "px-1.5 py-px text-[0.6875rem] leading-4" : "px-2 py-0.5 text-xs"
       }`}
     >
-      <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-(--label)" />
+      <span
+        aria-hidden="true"
+        className="size-2 shrink-0 rounded-full"
+        style={{ backgroundColor: color }}
+      />
       <span className="truncate">
-        {scope !== "" && <span className="opacity-65">{scope}/</span>}
+        {scope !== "" && <span className="text-zinc-500 dark:text-zinc-400">{scope}/</span>}
         {value}
       </span>
     </span>

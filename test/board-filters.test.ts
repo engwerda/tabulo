@@ -48,9 +48,10 @@ describe("board filters", () => {
     expect(shown("assignee=@me", "grace")).toEqual([1, 2])
   })
 
-  it("reads @none as cards without an assignee or without a milestone", () => {
+  it("reads @none as cards without an assignee, a milestone, or a label", () => {
     expect(shown("assignee=@none")).toEqual([3])
     expect(shown("milestone=@none")).toEqual([1])
+    expect(shown("label=@none")).toEqual([1, 2, 3])
   })
 
   it("still matches a login and a milestone title by name", () => {

@@ -182,7 +182,7 @@ export const DashboardView = () => {
                 kind="notification"
               />
             </nav>
-            <div className="mt-6 grid items-start gap-4 lg:grid-cols-2">
+            <div className="mt-6 gap-4 lg:columns-2 [&>section]:mb-4 [&>section]:break-inside-avoid">
               {ITEM_SECTIONS.map(({ key, title, icon, empty }) => (
                 <SectionCard<DashboardItem>
                   key={key}

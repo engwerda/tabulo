@@ -10,6 +10,7 @@ export type BoardFilters = {
   readonly assignee: string | null
   /** A milestone title or NONE. */
   readonly milestone: string | null
+  /** A full label name or NONE. */
   readonly label: string | null
   readonly text: string
 }
@@ -64,7 +65,10 @@ export const matchesFilters = (card: BoardCard, filters: BoardFilters, viewer: s
     (filters.milestone === NONE
       ? card.milestone === null
       : card.milestone === filters.milestone)) &&
-  (filters.label === null || card.labels.some((label) => label.name === filters.label)) &&
+  (filters.label === null ||
+    (filters.label === NONE
+      ? card.labels.length === 0
+      : card.labels.some((label) => label.name === filters.label))) &&
   matchesText(card, filters.text)
 
 const sortedUnique = (values: ReadonlyArray<string>) =>

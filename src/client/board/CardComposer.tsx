@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react"
 import { RepoIcon } from "../ui/icons.tsx"
-import { buttonClass, Kbd } from "../ui/primitives.tsx"
+import { buttonClass } from "../ui/primitives.tsx"
 
 type CardComposerProps = {
   readonly columnTitle: string
@@ -115,9 +115,6 @@ export const CardComposer = ({
           {pending ? "Adding…" : "Add"}
         </button>
       </div>
-      <p className="mt-1.5 hidden items-center gap-1 text-[0.6875rem] text-zinc-400 sm:flex">
-        <Kbd>Enter</Kbd> to add, <Kbd>Esc</Kbd> to close
-      </p>
     </form>
   )
 }
