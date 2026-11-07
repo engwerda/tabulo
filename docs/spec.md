@@ -103,6 +103,7 @@ the board.
 | `GET /api/orgs/:org/repos` | The organization's repositories the user can see, with `archived`. |
 | `GET /api/board?org=&repos=a,b` | Columns, cards, `viewerCanArrange`, and `failedRepos`. At most 20 repositories. |
 | `POST /api/board/move` | Moves one card and answers with `{ card, orderSaved }`. |
+| `GET /api/epics?org=&repos=a,b` | Epic cards, children, progress, board columns, and `failedRepos`. At most 20 repositories. |
 
 `GET /api/board` reads the organization's labels and whether the user is a member, then for each
 repository the repository, its open issues, and the issues closed since the start of the Done
@@ -139,6 +140,41 @@ characters. The server:
 4. Stores one rank, the moved card's, directly after `afterKey` in the column's order across
    the organization: between that rank and the next larger stored rank. Cards the user cannot
    see keep their places. If D1 fails here, it answers 200 with `orderSaved: false`.
+
+### Epics
+
+An epic is an issue bearing the full `EPIC_LABEL` name. The Epics view shares the board's
+organization and repository selection. It shows open epics and epics closed within
+`BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
+
+- **Children.** Task-list lines begin with `- [ ]`, `- [x]`, or the equivalent `*` or `+`
+  marker, followed by `#12`, `repo#12`, `owner/repo#12`, or an issue URL on `FORGEJO_URL`.
+  References may have trailing text. A bare number refers to the epic's repository, a repo-only
+  reference to its organization. The pure `parseEpicChildren` function in `src/worker/epics.ts`
+  ignores fenced code, preserves body order, deduplicates case-insensitively, and caps each
+  epic at 200 children. Forgejo dependencies do not create epic links.
+- **Progress.** Checkbox state is ignored. The child's real issue state and labels determine
+  its column through `boardLayout`, including repository status labels matching an organization
+  column. Every closed child is Done, however old. Pull request children are marked as pull
+  requests. Progress reports `total`, `done`, and `byColumn` keyed by the board's column keys.
+  Unavailable references stay in `total` but do not enter any column or count as Done.
+- **Reads.** The endpoint reads organization labels and each repository's metadata, open issues,
+  and issues updated since the Done window that are closed. Epic bodies use a separate Forgejo
+  schema; the board's decoder and payload are unchanged. Listed issues resolve children where
+  possible. Missing children, including older closed issues and pull requests, are read
+  individually with at most four concurrent requests and 200 unique lookups per endpoint call.
+  Duplicate references across epics share that lookup. A 403, 404, or lookup beyond that cap
+  becomes `{ _tag: "Unavailable", ref }`. Other child failures fail the request. Failed
+  repositories enter `failedRepos`; an authentication failure still ends the request. This
+  endpoint writes no Forgejo data or card ranks.
+- **Display.** Each epic exposes its issue details and board column, progress segments and
+  legend, completion percentage, and an expandable child list. The response is
+  `{ org, repos, columns, epics, failedRepos }`; children are tagged `Issue` or `Unavailable`.
+  Search (`q`), epic state (`state`), assignee (`assignee`), and sort (`sort`, values `updated`,
+  `progress`, `children`) live in the URL. The default sort is most recently updated; progress
+  and child-count sorts run descending with update time and key as tie breakers. The summary
+  covers all selected epics, counts child completions across those epics, and marks open epics
+  with zero completed children as at risk. The client refreshes every minute.
 
 ### Configuration
 

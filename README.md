@@ -10,8 +10,8 @@ a card changes the issue's status label, or closes or reopens it, in Forgejo.
 Forgejo stays the source of truth. Tabulo signs you in with Forgejo, acts with your own OAuth
 token, and links back to Forgejo for every issue and pull request. It needs no Forgejo plugin,
 no admin rights, and no shared service account. The only thing it stores besides sessions is
-the order of cards within a board column. An epics view follows in a later milestone;
-[docs/spec.md](docs/spec.md) describes the plan.
+the order of cards within a board column. The epics view tracks larger pieces of work through
+their child issues and pull requests. [docs/spec.md](docs/spec.md) describes the contract.
 
 Tabulo is one Cloudflare Worker that serves both the API and the React app, with sessions in D1.
 
@@ -140,6 +140,34 @@ triage member who can write issues but not code can move cards too.
 The order of cards within a column is shared by everyone who opens the organization's board,
 whichever repositories they chose. Only members of the organization can move and reorder
 cards; others see the board read-only. Cards of archived repositories cannot be moved.
+
+## Use the epics view
+
+Add `Type/Epic` (or the full name in `EPIC_LABEL`) to an issue in Forgejo. In its body,
+list children as tasks:
+
+```md
+- [ ] #12
+- [x] web#34
+- [ ] other-owner/repo#56
+- [ ] https://your-forgejo.example/owner/repo/issues/78
+```
+
+A bare number belongs to the epic's repository; `web#34` belongs to the same organization.
+Only task-list references count. Code fences and Forgejo dependencies do not create links.
+Tabulo keeps the first 200 unique references in body order.
+
+Open **Epics**, choose an organization and repositories, then expand a card to see its children.
+The address `/epics/<org>?repos=<repo>,<repo>` keeps your selection, filters, and sort order,
+so you can bookmark or share it. Search by title or reference, filter by state or epic assignee,
+and sort by recent updates, completion, or child count.
+
+Progress comes from each child's actual Forgejo state and the board's column rules, regardless
+of its checkbox. Closed children count as Done, even when closed before the board's Done window.
+Epics themselves appear while open or closed within `BOARD_DONE_DAYS`. Unavailable children
+stay in the total and show as unavailable, including references beyond the request's limit of
+200 individual child lookups. The summary counts open epics with no children done as at risk.
+The page refreshes every minute.
 
 ## Check a Forgejo instance
 
