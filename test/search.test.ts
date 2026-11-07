@@ -70,10 +70,28 @@ describe("GET /api/search", () => {
     await get("/api/search?q=rate&limit=5")
 
     expect(searches(forgejo).map((r) => Object.fromEntries(r.query))).toEqual([
-      { q: "rate", state: "open", limit: "5" },
-      { q: "rate", state: "closed", limit: "3" },
+      { q: "rate", state: "open", limit: "5", page: "1" },
+      { q: "rate", state: "closed", limit: "3", page: "1" },
     ])
     expect(searches(forgejo).every((r) => r.authorization?.startsWith("Bearer "))).toBe(true)
+  })
+
+  it("pages through open matches when Forgejo's page cap is below the limit", async () => {
+    const rateIssue = (number: number) => ({
+      ...openIssue,
+      number,
+      html_url: `https://forgejo.example/acme/web/issues/${number}`,
+    })
+    const { forgejo, get } = await setup({
+      maxPageSize: 2,
+      issues: { assigned: [rateIssue(1), rateIssue(2), rateIssue(3)], created: [closedIssue] },
+    })
+
+    const response = await get("/api/search?q=rate&limit=3")
+
+    const body = (await response.json()) as { items: Array<{ number: number }> }
+    expect(body.items.map(({ number }) => number)).toEqual([1, 2, 3])
+    expect(searches(forgejo).map((r) => r.query.get("state"))).toEqual(["open", "open"])
   })
 
   it("skips the closed search when open matches fill the limit", async () => {

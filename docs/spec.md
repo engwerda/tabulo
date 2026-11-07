@@ -194,7 +194,8 @@ client.
 descriptions. `limit` is a positive integer, default 10, and larger values answer with 20. The
 server answers 400 to a `q` or `limit` outside this. It asks Forgejo's `GET /repos/issues/search`
 as the user, first for `state=open` and then, for what is left of the limit, `state=closed`, so
-open items come first. The menu does not search before two characters, and waits 200 ms after
+open items come first. Each state is read page by page until the limit is met or the matches
+run out, because Forgejo's page size can be below the limit. The menu does not search before two characters, and waits 200 ms after
 the last key.
 
 ### Keyboard shortcuts

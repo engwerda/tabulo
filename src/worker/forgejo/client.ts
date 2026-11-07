@@ -233,21 +233,22 @@ export const makeForgejoClient = (
       Effect.map(({ body, response }) => ({ items: body, total: totalCount(response) })),
     )
 
-  /** Every item of a paginated list. */
+  /** Every item of a paginated list, or its first `max`. */
   const all = <A>(
     token: AccessToken,
     path: string,
     query: Record<string, string>,
     item: Schema.Decoder<A>,
+    max = Number.POSITIVE_INFINITY,
   ) =>
     Effect.gen(function* () {
       const items: Array<A> = []
       let fullPage = 0
-      for (let number = 1; number <= MAX_PAGES; number++) {
+      for (let number = 1; number <= MAX_PAGES && items.length < max; number++) {
         const { items: batch, total } = yield* page(
           token,
           path,
-          { ...query, limit: String(PAGE_SIZE), page: String(number) },
+          { ...query, limit: String(Math.min(PAGE_SIZE, max)), page: String(number) },
           item,
         )
         items.push(...batch)
@@ -257,7 +258,7 @@ export const makeForgejoClient = (
         if (batch.length === 0) break
         if (total === undefined ? batch.length < fullPage : items.length >= total) break
       }
-      return items as ReadonlyArray<A>
+      return items.slice(0, max) as ReadonlyArray<A>
     })
 
   const tokenRequest = (grant: Record<string, string>) =>
@@ -337,12 +338,7 @@ export const makeForgejoClient = (
         ForgejoIssue,
       ).pipe(Effect.map(knownTotal)),
     searchIssueText: (token, q, state, limit) =>
-      api(
-        token,
-        "/repos/issues/search",
-        { q, state, limit: String(limit) },
-        Schema.Array(ForgejoIssue),
-      ).pipe(Effect.map(({ body }) => body)),
+      all(token, "/repos/issues/search", { q, state }, ForgejoIssue, limit),
     unreadNotifications: (token, limit) =>
       page(token, "/notifications", { limit: String(limit) }, ForgejoNotification).pipe(
         Effect.map(knownTotal),

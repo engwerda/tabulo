@@ -32,8 +32,6 @@ export const searchItems = (token: AccessToken, query: { q: string; limit: numbe
       open.length >= query.limit
         ? []
         : yield* forgejo.searchIssueText(token, query.q, "closed", query.limit - open.length)
-    const items: ReadonlyArray<DashboardItem> = [...open, ...closed]
-      .slice(0, query.limit)
-      .map(toDashboardItem)
+    const items: ReadonlyArray<DashboardItem> = [...open, ...closed].map(toDashboardItem)
     return { items } satisfies SearchResults
   })
