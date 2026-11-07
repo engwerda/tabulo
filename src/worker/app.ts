@@ -27,6 +27,7 @@ import {
   type OAuthCallbackInvalid,
   type OAuthGrantRejected,
   type OAuthStateInvalid,
+  type PageBudgetExhausted,
   type SessionNotFound,
 } from "./errors.ts"
 import {
@@ -63,6 +64,7 @@ type AppError =
   | OAuthGrantRejected
   | OAuthStateInvalid
   | MoveForbidden
+  | PageBudgetExhausted
   | SessionNotFound
 
 type AppContext = Context<{ Bindings: Env }>
@@ -122,6 +124,11 @@ const errorResponse = (c: AppContext, error: AppError): Response => {
           code: "move_partly_applied",
         },
         502,
+      )
+    case "PageBudgetExhausted":
+      return c.json(
+        { error: "Too many Forgejo pages for one request; choose fewer repositories" },
+        503,
       )
     case "ConfigInvalid":
       console.error(`Tabulo is misconfigured: ${error.message}`)

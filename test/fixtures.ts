@@ -81,7 +81,7 @@ export const unreadNotification = {
 
 // Board fixtures: an organization with status labels, two repositories, and their issues.
 
-const label = (id: number, name: string, color: string, exclusive: boolean): FakeLabel => ({
+export const label = (id: number, name: string, color: string, exclusive: boolean): FakeLabel => ({
   id,
   name,
   color,

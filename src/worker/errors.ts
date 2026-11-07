@@ -66,6 +66,12 @@ export class ForgejoMovePartlyApplied extends Schema.TaggedError<ForgejoMovePart
   { reason: Schema.String },
 ) {}
 
+/** A listing that the whole response depends on did not fit in the request's Forgejo pages. */
+export class PageBudgetExhausted extends Schema.TaggedError<PageBudgetExhausted>()(
+  "PageBudgetExhausted",
+  {},
+) {}
+
 export class ConfigInvalid extends Schema.TaggedError<ConfigInvalid>()("ConfigInvalid", {
   message: Schema.String,
 }) {}

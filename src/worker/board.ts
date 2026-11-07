@@ -21,8 +21,9 @@ import {
   ForgejoMovePartlyApplied,
   type ForgejoUnauthorized,
   MoveForbidden,
+  PageBudgetExhausted,
 } from "./errors.ts"
-import { type AccessToken, ForgejoClient, type RepoRef } from "./forgejo/client.ts"
+import { type AccessToken, ForgejoClient, type PageBudget, type RepoRef } from "./forgejo/client.ts"
 import {
   type ForgejoLabel,
   type ForgejoRepo,
@@ -224,6 +225,19 @@ type RepoCards =
   | { readonly _tag: "Failed"; readonly repo: string; readonly message: string }
 
 /**
+ * The board layout from the organization's labels, read from `budget` (100 pages by default).
+ * Fails rather than build columns from part of the labels.
+ */
+export const loadLayout = (token: AccessToken, org: string, budget?: PageBudget) =>
+  Effect.gen(function* () {
+    const settings = yield* BoardConfig
+    const forgejo = yield* ForgejoClient
+    const labels = yield* forgejo.orgLabels(token, org, budget)
+    if (!labels.complete) return yield* new PageBudgetExhausted()
+    return boardLayout(settings, labels.items)
+  })
+
+/**
  * Reads the board as the user who owns `token`. A repository that fails to load is reported in
  * `failedRepos`; only an auth failure or a failure to read the organization's labels escapes.
  */
@@ -236,7 +250,10 @@ export const loadBoard = (
     const settings = yield* BoardConfig
     const forgejo = yield* ForgejoClient
     const [orgLabels, viewerCanArrange] = yield* Effect.all(
-      [forgejo.orgLabels(token, query.org), forgejo.isOrgMember(token, query.org, login)],
+      [
+        forgejo.orgLabels(token, query.org).pipe(Effect.map(({ items }) => items)),
+        forgejo.isOrgMember(token, query.org, login),
+      ],
       { concurrency: "unbounded" },
     )
     const layout = boardLayout(settings, orgLabels)
@@ -409,7 +426,7 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
       [
         forgejo.repo(token, repoRef),
         forgejo.issue(token, repoRef, request.number),
-        forgejo.orgLabels(token, org),
+        forgejo.orgLabels(token, org).pipe(Effect.map(({ items }) => items)),
       ],
       { concurrency: "unbounded" },
     )

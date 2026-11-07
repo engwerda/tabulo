@@ -1,7 +1,7 @@
 import { Parser } from "commonmark"
 import { Clock, Context, Effect } from "effect"
 import type { Epic, EpicChild, Epics, IncompleteEpicListing } from "../shared/api.ts"
-import { BoardConfig, boardLayout, cardKey, toBoardCard } from "./board.ts"
+import { BoardConfig, cardKey, loadLayout, toBoardCard } from "./board.ts"
 import { describeForgejoError, FORGEJO_READ_ERRORS } from "./errors.ts"
 import {
   type AccessToken,
@@ -122,7 +122,7 @@ export const loadEpics = Effect.fn("loadEpics")(function* (
   const settings = yield* BoardConfig
   const config = yield* EpicsConfig
   const forgejo = yield* ForgejoClient
-  const layout = boardLayout(settings, yield* forgejo.orgLabels(token, query.org))
+  const layout = yield* loadLayout(token, query.org, pool)
   const windowStart = (yield* Clock.currentTimeMillis) - settings.doneDays * 86_400_000
   const updatedSince = new Date(windowStart).toISOString()
   const share = sharePages(pool, query.repos.length)

@@ -11,6 +11,7 @@ import {
   epicLabel,
   grace,
   inProgress,
+  label,
   repoLabel,
   review,
 } from "./fixtures.ts"
@@ -89,7 +90,15 @@ const fixtures = (): Partial<FakeForgejoFixtures> => ({
 })
 
 // Requests that take a page from the budget: organization labels, listings, and child lookups.
-const PAGE_READ = /\/issues(\/\d+)?$/
+const PAGE_READ = /\/labels$|\/issues(\/\d+)?$/
+
+const TOO_MANY_PAGES = {
+  error: "Too many Forgejo pages for one request; choose fewer repositories",
+}
+
+/** Plain labels that fill an organization's label list up to `count`. */
+const filler = (count: number) =>
+  Array.from({ length: count }, (_, i) => label(1000 + i, `Area/${i}`, "ededed", false))
 
 /** Twenty repositories of `open` and `closed` issues; r0#1 is an epic with 200 external children. */
 const crowdedOrg = (open: number, closed: number) => {
@@ -352,7 +361,7 @@ describe("GET /api/epics", () => {
     const data = Schema.decodeUnknownSync(Epics)(await response.json())
     const reads = forgejo.requests.slice(before)
     expect(reads.length).toBeLessThan(1000)
-    // Listings and child lookups share 800 pages; labels and each repository's own read do not.
+    // Labels, listings, and child lookups share 800 pages; each repository also reads itself.
     expect(reads.filter(({ path }) => PAGE_READ.test(path))).toHaveLength(800)
     // Each repository needs 60 listing pages, more than its share of 800.
     expect(data.incomplete.listings).toHaveLength(40)
@@ -366,7 +375,7 @@ describe("GET /api/epics", () => {
   it.each([
     // 600 of the 800 pages go to listings before Forgejo rejects the token.
     { read: "listing", closed: 60, rejects: /^\/api\/v1\/repos\/acme\/r\d+\/issues$/, at: 600 },
-    // Listings take 621 pages, leaving 179 child lookups; the 150th is rejected.
+    // Labels and listings take 624 pages, leaving 176 child lookups; the 150th is rejected.
     { read: "child lookup", closed: 0, rejects: /\/external\/issues\//, at: 150 },
   ])("keeps one page budget when a late $read 401 refreshes the token", async (scenario) => {
     const { names, org } = crowdedOrg(60, scenario.closed)
@@ -392,6 +401,63 @@ describe("GET /api/epics", () => {
     expect(reads.filter(({ path }) => path === "/login/oauth/access_token")).toHaveLength(1)
     expect(reads.filter(({ path }) => PAGE_READ.test(path)).length).toBeLessThanOrEqual(800)
     expect(reads.length).toBeLessThan(1000)
+  })
+
+  it.each([
+    // Labels take 100 of the 800 pages, so listings stop at 700 and the 780th never runs.
+    { at: 780, status: 200, refreshes: 0 },
+    // The retry reads the 100 label pages again from the 400 the first attempt left.
+    { at: 300, status: 200, refreshes: 1 },
+    // About 50 pages are left after the 650th listing read, too few to read the labels again.
+    { at: 650, status: 503, refreshes: 1 },
+  ])(
+    "reads 200 labels from the same pages on each attempt (401 at listing $at)",
+    async (scenario) => {
+      const { names, org } = crowdedOrg(60, 60)
+      org.labels = [...org.labels, ...filler(200 - org.labels.length)]
+      let matched = 0
+      const forgejo = createFakeForgejo({
+        orgs: [org],
+        maxPageSize: 2,
+        intercept: (_, path) =>
+          /^\/api\/v1\/repos\/acme\/r\d+\/issues$/.test(path) && ++matched === scenario.at
+            ? new Response(null, { status: 401 })
+            : undefined,
+      })
+      const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
+      const cookie = await signIn(call, forgejo)
+      const before = forgejo.requests.length
+
+      const response = await call(`/api/epics?org=acme&repos=${names.join(",")}`, {
+        headers: { cookie },
+      })
+
+      expect(response.status).toBe(scenario.status)
+      if (scenario.status === 503) expect(await response.json()).toEqual(TOO_MANY_PAGES)
+      const reads = forgejo.requests.slice(before)
+      expect(reads.filter(({ path }) => path === "/login/oauth/access_token")).toHaveLength(
+        scenario.refreshes,
+      )
+      expect(reads.filter(({ path }) => PAGE_READ.test(path)).length).toBeLessThanOrEqual(800)
+      expect(reads.length).toBeLessThan(1000)
+    },
+  )
+
+  it("places an epic by a status label past the hundredth page of labels", async () => {
+    const late = label(999, "Status/Late", "e99695", true)
+    const org = acme([
+      boardRepo("api", { issues: [boardIssue("api", 1, { labels: [epicLabel, late] })] }),
+    ])
+    org.labels = [...org.labels, ...filler(200 - org.labels.length), late]
+    const forgejo = createFakeForgejo({ orgs: [org], maxPageSize: 2 })
+    const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
+    const cookie = await signIn(call, forgejo)
+
+    const response = await call("/api/epics?org=acme&repos=api", { headers: { cookie } })
+
+    expect(response.status).toBe(200)
+    const data = Schema.decodeUnknownSync(Epics)(await response.json())
+    expect(data.epics.map(({ column }) => column)).toEqual(["Status/Late"])
   })
 
   it("bounds concurrent child reads to four", async () => {

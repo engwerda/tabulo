@@ -58,8 +58,9 @@ export type Page<A> = { readonly items: ReadonlyArray<A>; readonly total: number
 export type PageBudget = { remaining: number }
 
 // Workers allow 1,000 subrequests per request. Listing pages share this budget, which leaves
-// room for the reads besides them: each of at most 20 repositories reads itself (and, for
-// Insights, its languages), and the session may refresh its token.
+// room for the reads besides them: on each of at most two attempts, each of at most 20
+// repositories reads itself (and, for Insights, its languages), and the session may refresh
+// its token once.
 export const PAGE_BUDGET = 800
 
 /**
@@ -141,11 +142,12 @@ export class ForgejoClient extends Context.Service<
       org: string,
       login: string,
     ) => Effect.Effect<boolean, ForgejoError>
-    /** Every label, or as many as `budget` reaches. */
+    /** The labels, as far as `budget` reaches (100 pages by default). */
     readonly orgLabels: (
       token: AccessToken,
       org: string,
-    ) => Effect.Effect<ReadonlyArray<ForgejoLabel>, ForgejoError>
+      budget?: PageBudget,
+    ) => Effect.Effect<Listing<ForgejoLabel>, ForgejoError>
     readonly repo: (token: AccessToken, repo: RepoRef) => Effect.Effect<ForgejoRepo, ForgejoError>
     readonly repoIssues: (
       token: AccessToken,
@@ -507,8 +509,8 @@ export const makeForgejoClient = (
         Effect.as(true),
         Effect.catchTag("ForgejoNotFound", () => Effect.succeed(false)),
       ),
-    orgLabels: (token, org) =>
-      all(token, `/orgs/${encodeURIComponent(org)}/labels`, {}, ForgejoLabel),
+    orgLabels: (token, org, budget = { remaining: MAX_PAGES }) =>
+      listing(token, `/orgs/${encodeURIComponent(org)}/labels`, {}, ForgejoLabel, budget),
     repo: (token, repo) =>
       api(token, repoPath(repo), {}, ForgejoRepo).pipe(Effect.map(({ body }) => body)),
     repoIssues: (token, repo, issues) =>

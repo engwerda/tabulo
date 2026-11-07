@@ -247,14 +247,18 @@ organization and repository selection. It shows open epics and epics closed with
   request. Failed
   repositories enter `failedRepos`; an authentication failure still ends the request. This
   endpoint writes no Forgejo data or card ranks.
-- **Page budget.** The repository listings and child lookups of one request share the
-  800-page budget that Insights uses, in that order. The organization labels are read in full
-  first and outside the budget, because the columns depend on them. As on Insights, a retry
-  after a token refresh reads only the pages the first attempt left. A repository takes an
-  equal share of the pages left when it starts and gives back what it does not use. Each child
-  lookup takes one page when it starts. A listing that runs out of pages is named in `incomplete.listings`,
-  and epics in its unread part are missing. `incomplete.children` counts the child references
-  that were not looked up.
+- **Page budget.** The organization labels, repository listings, and child lookups of one
+  request share the 800-page budget that Insights uses, in that order. As on Insights, a retry
+  after a token refresh reads only the pages the first attempt left, and it reads the labels
+  again first. The columns depend on every label, so when the labels do not fit in the pages
+  left, the request fails with HTTP 503 and
+  `{ error: "Too many Forgejo pages for one request; choose fewer repositories" }`. A
+  repository takes an equal share of the pages left when it starts and gives back what it does
+  not use. Each child lookup takes one page when it starts. A listing that runs out of pages is
+  named in `incomplete.listings`, and epics in its unread part are missing.
+  `incomplete.children` counts the child references that were not looked up. With at most 20
+  repositories read on each of two attempts and one token refresh, a request makes at most 841
+  Forgejo requests.
 - **Display.** Each epic exposes its issue details and board column, progress segments and
   legend, completion percentage, and an expandable child list. The response is
   `{ org, repos, columns, epics, failedRepos, incomplete }`; children are tagged `Issue` or
