@@ -20,7 +20,10 @@ export const relativeTime = (iso: string, now: number = Date.now()) => {
 export const absoluteTime = (iso: string) =>
   new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
 
-/** Black or white, whichever reads better on `hex` (WCAG relative luminance). */
+/**
+ * White when it reaches WCAG AA contrast (4.5:1) on `hex`, otherwise black. Near the crossover
+ * both pass and black wins by a hair, but white reads better on saturated reds and greens.
+ */
 export const textColorOn = (hex: string) => {
   const digits = /^#?([0-9a-f]{6})$/i.exec(hex)?.[1]
   if (digits === undefined) return "#000000"
@@ -29,7 +32,7 @@ export const textColorOn = (hex: string) => {
     return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
   }
   const luminance = 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4)
-  return luminance > 0.179 ? "#000000" : "#ffffff"
+  return 1.05 / (luminance + 0.05) >= 4.5 ? "#ffffff" : "#000000"
 }
 
 export const initials = (name: string) =>
