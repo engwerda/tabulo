@@ -249,14 +249,10 @@ export const loadBoard = (
   Effect.gen(function* () {
     const settings = yield* BoardConfig
     const forgejo = yield* ForgejoClient
-    const [orgLabels, viewerCanArrange] = yield* Effect.all(
-      [
-        forgejo.orgLabels(token, query.org).pipe(Effect.map(({ items }) => items)),
-        forgejo.isOrgMember(token, query.org, login),
-      ],
+    const [layout, viewerCanArrange] = yield* Effect.all(
+      [loadLayout(token, query.org), forgejo.isOrgMember(token, query.org, login)],
       { concurrency: "unbounded" },
     )
-    const layout = boardLayout(settings, orgLabels)
     const windowStart = (yield* Clock.currentTimeMillis) - settings.doneDays * DAY_MS
     const updatedSince = new Date(windowStart).toISOString()
     // `since` filters by update time; an issue closed long ago may have been updated since.
@@ -417,16 +413,15 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
       })
     }
 
-    const settings = yield* BoardConfig
     const forgejo = yield* ForgejoClient
     if (!(yield* forgejo.isOrgMember(token, org, login))) {
       return yield* new MoveForbidden({ message: `Only members of ${org} can arrange its board` })
     }
-    const [repo, issue, orgLabels] = yield* Effect.all(
+    const [repo, issue, layout] = yield* Effect.all(
       [
         forgejo.repo(token, repoRef),
         forgejo.issue(token, repoRef, request.number),
-        forgejo.orgLabels(token, org).pipe(Effect.map(({ items }) => items)),
+        loadLayout(token, org),
       ],
       { concurrency: "unbounded" },
     )
@@ -438,7 +433,6 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
         message: `${repo.full_name} is archived, so its issues cannot be moved`,
       })
     }
-    const layout = boardLayout(settings, orgLabels)
     const target = layout.column(request.toColumn)
     if (target === undefined) {
       return yield* new BoardRequestInvalid({ message: `There is no column ${request.toColumn}` })

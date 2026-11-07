@@ -109,7 +109,10 @@ the board.
 `GET /api/board` reads the organization's labels and whether the user is a member, then for each
 repository the repository, its open issues, and the issues closed since the start of the Done
 window. A repository that fails to load is listed in `failedRepos` with a message, and the
-other repositories still show. Before it answers, it stores ranks in one D1 batch:
+other repositories still show. The columns depend on every label, so when the labels need more
+than 100 pages, the board and `POST /api/board/move` answer HTTP 503 with
+`{ error: "Too many Forgejo pages for one request; choose fewer repositories" }` instead of
+using part of them. Before it answers, it stores ranks in one D1 batch:
 
 - A shown card without a stored rank for its current column, for example one moved in Forgejo,
   gets a rank after the largest stored rank of that column in the organization. Several such

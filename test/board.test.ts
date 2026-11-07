@@ -11,6 +11,7 @@ import {
   grace,
   highPriority,
   inProgress,
+  label,
   outsider,
   repoLabel,
   retired,
@@ -204,6 +205,30 @@ describe("GET /api/board", () => {
       "acme/api#3",
       "acme/api#6",
     ])
+  })
+
+  it("answers 503 rather than build columns from part of the labels", async () => {
+    // At two labels a page, 201 labels need more than the 100 pages one label read may take.
+    const org = boardOrg()
+    org.labels = [
+      ...org.labels,
+      ...Array.from({ length: 201 - org.labels.length }, (_, i) =>
+        label(1000 + i, `Area/${i}`, "ededed", false),
+      ),
+    ]
+    const { forgejo, call, cookie, move } = await boardSession({ orgs: [org], maxPageSize: 2 })
+    const tooManyPages = {
+      error: "Too many Forgejo pages for one request; choose fewer repositories",
+    }
+
+    const board = await call("/api/board?org=acme&repos=api", { headers: { cookie } })
+    expect(board.status).toBe(503)
+    expect(await board.json()).toEqual(tooManyPages)
+
+    const moved = await move({ repo: "api", number: 1, toColumn: "Status/Review" })
+    expect(moved.status).toBe(503)
+    expect(await moved.json()).toEqual(tooManyPages)
+    expect(writes(forgejo)).toEqual([])
   })
 
   it("orders columns as BOARD_COLUMNS says and puts unlisted status labels before Done", async () => {
