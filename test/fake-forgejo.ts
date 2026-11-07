@@ -75,6 +75,8 @@ export type FakeForgejoFixtures = {
   readonly tokenScope: "read" | "write"
   /** Forgejo's MAX_RESPONSE_ITEMS: the largest page any list endpoint returns. */
   readonly maxPageSize: number
+  /** Leaves out X-Total-Count, as a proxy that strips headers would. */
+  readonly omitTotalCount: boolean
   /** The time Forgejo stamps on issues it changes. */
   readonly now: string
   readonly issues: Partial<Record<SearchFilter, ReadonlyArray<unknown>>>
@@ -125,6 +127,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     orgs: [],
     tokenScope: "write",
     maxPageSize: 50,
+    omitTotalCount: false,
     now: "2026-11-07T09:00:00Z",
     ...overrides,
   }
@@ -199,7 +202,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     const limit = Math.min(Number(query.get("limit") ?? 30) || 30, fixtures.maxPageSize)
     const page = Math.max(Number(query.get("page") ?? 1) || 1, 1)
     return json(items.slice((page - 1) * limit, page * limit), {
-      headers: { "x-total-count": String(items.length) },
+      headers: fixtures.omitTotalCount ? {} : { "x-total-count": String(items.length) },
     })
   }
 

@@ -129,13 +129,18 @@ const readJson = <A>(response: Response, schema: Schema.Decoder<A>) =>
     ),
   )
 
-/** `X-Total-Count` is the number of matches across all pages. */
-const totalCount = (response: Response, fallback: number) => {
+/** `X-Total-Count` is the number of matches across all pages, when Forgejo sends it. */
+const totalCount = (response: Response) => {
   const total = Number.parseInt(response.headers.get("x-total-count") ?? "", 10)
-  return Number.isNaN(total) ? fallback : total
+  return Number.isNaN(total) ? undefined : total
 }
 
 // Forgejo caps every page at MAX_RESPONSE_ITEMS (50 by default), whatever `limit` asks for.
+const knownTotal = <A>(page: {
+  readonly items: ReadonlyArray<A>
+  readonly total: number | undefined
+}): Page<A> => ({ items: page.items, total: page.total ?? page.items.length })
+
 const PAGE_SIZE = 50
 const MAX_PAGES = 100
 
@@ -182,10 +187,7 @@ export const makeForgejoClient = (
     item: Schema.Decoder<A>,
   ) =>
     api(token, path, query, Schema.Array(item)).pipe(
-      Effect.map(({ body, response }) => ({
-        items: body,
-        total: totalCount(response, body.length),
-      })),
+      Effect.map(({ body, response }) => ({ items: body, total: totalCount(response) })),
     )
 
   /** Every item of a paginated list. */
@@ -197,6 +199,7 @@ export const makeForgejoClient = (
   ) =>
     Effect.gen(function* () {
       const items: Array<A> = []
+      let fullPage = 0
       for (let number = 1; number <= MAX_PAGES; number++) {
         const { items: batch, total } = yield* page(
           token,
@@ -205,7 +208,11 @@ export const makeForgejoClient = (
           item,
         )
         items.push(...batch)
-        if (batch.length === 0 || items.length >= total) break
+        // Without a total, a short page is the last one. The longest page seen stands in for
+        // the page size because MAX_RESPONSE_ITEMS can be below the limit Tabulo asks for.
+        fullPage = Math.max(fullPage, batch.length)
+        if (batch.length === 0) break
+        if (total === undefined ? batch.length < fullPage : items.length >= total) break
       }
       return items as ReadonlyArray<A>
     })
@@ -285,9 +292,11 @@ export const makeForgejoClient = (
           ...(search === "review_requested" ? { type: "pulls" } : {}),
         },
         ForgejoIssue,
-      ),
+      ).pipe(Effect.map(knownTotal)),
     unreadNotifications: (token, limit) =>
-      page(token, "/notifications", { limit: String(limit) }, ForgejoNotification),
+      page(token, "/notifications", { limit: String(limit) }, ForgejoNotification).pipe(
+        Effect.map(knownTotal),
+      ),
     userOrgs: (token) => all(token, "/user/orgs", {}, ForgejoOrg),
     orgRepos: (token, org) => all(token, `/orgs/${encodeURIComponent(org)}/repos`, {}, ForgejoRepo),
     orgLabels: (token, org) =>
