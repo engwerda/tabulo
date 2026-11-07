@@ -149,11 +149,16 @@ export class ForgejoClient extends Context.Service<
       number: number,
       labelIds: ReadonlyArray<number>,
     ) => Effect.Effect<ReadonlyArray<ForgejoLabel>, ForgejoError>
+    /**
+     * Removes one label, named by `identifier`. Forgejo 15 and later look the identifier up as
+     * a name among the repository's labels, then among the organization's, and only then as
+     * the id of a repository label, so an organization label must go by name.
+     */
     readonly removeIssueLabel: (
       token: AccessToken,
       repo: RepoRef,
       number: number,
-      labelId: number,
+      identifier: string,
     ) => Effect.Effect<void, ForgejoError>
   }
 >()("tabulo/ForgejoClient") {}
@@ -438,14 +443,12 @@ export const makeForgejoClient = (
         method: "POST",
         body: { labels: labelIds },
       }).pipe(Effect.map(({ body }) => body)),
-    removeIssueLabel: (token, repo, number, labelId) =>
+    removeIssueLabel: (token, repo, number, identifier) =>
       request(
         token,
-        `${repoPath(repo)}/issues/${number}/labels/${labelId}`,
+        `${repoPath(repo)}/issues/${number}/labels/${encodeURIComponent(identifier)}`,
         {},
-        {
-          method: "DELETE",
-        },
+        { method: "DELETE" },
       ).pipe(Effect.asVoid),
   }
 }
