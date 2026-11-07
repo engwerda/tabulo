@@ -146,7 +146,9 @@ cards; others see the board read-only. Cards of archived repositories cannot be 
 Open **Insights** in the header, choose an organization, and choose its repositories, as for
 the board. Pick a period of 30 days, 90 days, 6 months, or a year. The address is
 `/insights/<org>?repos=<repo>,<repo>&days=<days>`, so a view can be bookmarked or shared.
-Weeks start on Monday and hours are read in your browser's time zone.
+Weeks start on Monday and hours are read in your browser's time zone. A period starts on the
+Monday of its first week, so the page shows whole weeks; the current week is drawn lighter
+because it is still in progress.
 
 - **Stat tiles** show open issues and pull requests, issues opened and closed, pull requests
   merged, median times to close and merge, and the CI pass rate, each with its change from the

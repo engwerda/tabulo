@@ -269,6 +269,10 @@ export const Insights = Schema.Struct({
   days: Schema.Literals(INSIGHT_DAYS),
   tz: Schema.String,
   generatedAt: Schema.String,
+  /**
+   * The first and last day of the window in `tz`, `YYYY-MM-DD`. It starts at midnight on a
+   * Monday and ends now, so the last week in `weekly` is still in progress.
+   */
   window: Schema.Struct({ start: Schema.String, end: Schema.String }),
   tiles: Schema.Struct({
     /** `previous` is the count at the start of the window. */

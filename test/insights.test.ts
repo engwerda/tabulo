@@ -129,6 +129,31 @@ describe("buildInsights", () => {
     ])
   })
 
+  it("starts the window at midnight on the Monday of its first week", () => {
+    const loaded = [
+      activity({
+        open: [
+          // Before 8 October, 30 days ago, but in the window's first week.
+          issue(1, { created_at: "2026-10-06T08:00:00Z" }),
+          // Sunday 4 October 23:00 UTC is Monday 5 October 01:00 in Amsterdam.
+          issue(2, { created_at: "2026-10-04T23:00:00Z" }),
+          // The window before is as long: 33 days and 9 hours from 1 September 15:00 UTC.
+          issue(3, { created_at: "2026-09-01T16:00:00Z" }),
+          issue(4, { created_at: "2026-09-01T14:00:00Z" }),
+        ],
+      }),
+    ]
+
+    const utc = insights(loaded)
+    const amsterdam = insights(loaded, { tz: "Europe/Amsterdam" })
+
+    expect(utc.window).toEqual({ start: "2026-10-05", end: "2026-11-07" })
+    expect(utc.tiles.issuesOpened).toEqual({ value: 1, previous: 2 })
+    expect(utc.weekly[0]).toMatchObject({ weekStart: "2026-10-05", issuesOpened: 1 })
+    expect(amsterdam.tiles.issuesOpened.value).toBe(2)
+    expect(amsterdam.weekly[0]).toMatchObject({ weekStart: "2026-10-05", issuesOpened: 2 })
+  })
+
   it("counts the backlog at each week's end and at the window start", () => {
     const loaded = [
       activity({

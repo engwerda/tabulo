@@ -49,7 +49,16 @@ const DAY_NAMES = [
   "Sundays",
 ]
 
-const weekTitle = (weekStart: string) => `Week of ${formatDay(weekStart)}`
+/** The last week of `weeks` is the current one, still in progress. */
+const weekTitle = (weeks: ReadonlyArray<{ readonly weekStart: string }>, index: number) =>
+  `Week of ${formatDay(weeks[index]?.weekStart ?? "")}${index === weeks.length - 1 ? ", so far" : ""}`
+
+const weekCategories = (weeks: ReadonlyArray<{ readonly weekStart: string }>) =>
+  weeks.map((week, index) => ({
+    key: week.weekStart,
+    label: formatDay(week.weekStart),
+    partial: index === weeks.length - 1,
+  }))
 
 const sum = (values: ReadonlyArray<number>) => values.reduce((total, value) => total + value, 0)
 
@@ -88,10 +97,7 @@ const Empty = ({ children }: { readonly children: string }) => (
 
 const Throughput = ({ insights }: { readonly insights: Insights }) => {
   const [kind, setKind] = useState<"issues" | "pulls">("issues")
-  const categories = insights.weekly.map((week) => ({
-    key: week.weekStart,
-    label: formatDay(week.weekStart),
-  }))
+  const categories = weekCategories(insights.weekly)
   const up = {
     label: "Opened",
     color: SERIES.opened,
@@ -129,7 +135,7 @@ const Throughput = ({ insights }: { readonly insights: Insights }) => {
           columns={["Week", "Opened", down.label]}
           rows={insights.weekly.map((week, index) => ({
             key: week.weekStart,
-            cells: [weekTitle(week.weekStart), up.values[index], down.values[index]],
+            cells: [weekTitle(insights.weekly, index), up.values[index], down.values[index]],
           }))}
         />
       }
@@ -140,7 +146,7 @@ const Throughput = ({ insights }: { readonly insights: Insights }) => {
         down={down}
         height={240}
         ariaLabel={`Weekly ${noun}: ${sum(up.values)} opened and ${sum(down.values)} ${down.label.toLowerCase()} over ${insights.weekly.length} weeks.`}
-        tooltipTitle={(index) => weekTitle(insights.weekly[index]?.weekStart ?? "")}
+        tooltipTitle={(index) => weekTitle(insights.weekly, index)}
       />
       <div className="mt-3">
         <Legend
@@ -166,9 +172,9 @@ const Backlog = ({ insights }: { readonly insights: Insights }) => {
         <DataTable
           caption="Open issues at the end of each week"
           columns={["Week", "Open issues"]}
-          rows={insights.weekly.map((week) => ({
+          rows={insights.weekly.map((week, index) => ({
             key: week.weekStart,
-            cells: [weekTitle(week.weekStart), week.openIssues],
+            cells: [weekTitle(insights.weekly, index), week.openIssues],
           }))}
         />
       }
@@ -177,8 +183,9 @@ const Backlog = ({ insights }: { readonly insights: Insights }) => {
         labels={insights.weekly.map((week) => formatDay(week.weekStart))}
         values={values}
         seriesLabel="open issues"
+        partialLast
         ariaLabel={`Open issues went from ${first} to ${last} over ${values.length} weeks.`}
-        tooltipTitle={(index) => weekTitle(insights.weekly[index]?.weekStart ?? "")}
+        tooltipTitle={(index) => weekTitle(insights.weekly, index)}
       />
     </ChartCard>
   )
@@ -261,9 +268,9 @@ const CiHealth = ({
       <DataTable
         caption="Workflow runs per week by outcome"
         columns={["Week", "Passed", "Failed", "Other"]}
-        rows={ci.weekly.map((week) => ({
+        rows={ci.weekly.map((week, index) => ({
           key: week.weekStart,
-          cells: [weekTitle(week.weekStart), week.success, week.failure, week.other],
+          cells: [weekTitle(ci.weekly, index), week.success, week.failure, week.other],
         }))}
       />
     }
@@ -285,10 +292,7 @@ const CiHealth = ({
       )}
     </div>
     <StackedColumns
-      categories={ci.weekly.map((week) => ({
-        key: week.weekStart,
-        label: formatDay(week.weekStart),
-      }))}
+      categories={weekCategories(ci.weekly)}
       series={[
         { label: "passed", color: SERIES.success, values: ci.weekly.map((week) => week.success) },
         { label: "failed", color: SERIES.failure, values: ci.weekly.map((week) => week.failure) },
@@ -296,7 +300,7 @@ const CiHealth = ({
       ]}
       height={150}
       ariaLabel={`Weekly CI runs: ${sum(ci.weekly.map((week) => week.success))} passed, ${sum(ci.weekly.map((week) => week.failure))} failed.`}
-      tooltipTitle={(index) => weekTitle(ci.weekly[index]?.weekStart ?? "")}
+      tooltipTitle={(index) => weekTitle(ci.weekly, index)}
     />
     <div className="mt-3">
       <Legend
@@ -591,8 +595,8 @@ const Repositories = ({ insights }: { readonly insights: Insights }) => {
 /** Every card of the insights page, for one loaded payload. */
 export const InsightsDashboard = ({ insights }: { readonly insights: Insights }) => {
   const { tiles, weekly } = insights
-  const since = `since ${formatDay(insights.window.start.slice(0, 10))}`
-  const previous = `vs prior ${RANGE_LABELS[insights.days].short}`
+  const since = `since ${formatDay(insights.window.start)}`
+  const previous = "vs period before"
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">

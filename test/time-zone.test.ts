@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { zonedTime } from "../src/worker/time-zone.ts"
+import { startOfDay, zonedTime } from "../src/worker/time-zone.ts"
 
 describe("zonedTime", () => {
   it("follows a daylight saving change within the day", () => {
@@ -25,6 +25,14 @@ describe("zonedTime", () => {
       weekday: 0,
       hour: 0,
     })
+  })
+
+  it("finds the instant a calendar day starts", () => {
+    expect(startOfDay("Europe/Amsterdam", "2026-10-05")).toBe(Date.UTC(2026, 9, 4, 22))
+    // Amsterdam is on winter time at midnight on 29 March 2026, before the change at 02:00.
+    expect(startOfDay("Europe/Amsterdam", "2026-03-29")).toBe(Date.UTC(2026, 2, 28, 23))
+    expect(startOfDay("America/New_York", "2026-11-02")).toBe(Date.UTC(2026, 10, 2, 5))
+    expect(startOfDay("Asia/Kathmandu", "2026-11-08")).toBe(Date.UTC(2026, 10, 7, 18, 15))
   })
 
   it("handles offsets that are not whole hours", () => {

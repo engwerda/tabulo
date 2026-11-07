@@ -1,5 +1,5 @@
 import type { AttentionKind, IncompleteListing, InsightDays, Insights } from "../../shared/api.ts"
-import { formatCount, formatDay, formatHours, formatPercent } from "../charts/scale.ts"
+import { formatCount, formatDay, formatHours, formatPercent, formatSpan } from "../charts/scale.ts"
 
 export const RANGE_LABELS: Record<InsightDays, { readonly short: string; readonly long: string }> =
   {
@@ -31,27 +31,24 @@ export const incompleteNotice = (incomplete: ReadonlyArray<IncompleteListing>) =
 
 const signed = (value: number) => `${value > 0 ? "+" : ""}${formatCount(value)}`
 
-const isoDay = (iso: string) => iso.slice(0, 10)
-
 /** A Markdown summary of the insights for pasting into a chat or a status report. */
 export const insightsSummary = (insights: Insights): string => {
   const { tiles } = insights
   const range = RANGE_LABELS[insights.days].long
-  const start = formatDay(isoDay(insights.window.start))
-  const end = formatDay(isoDay(insights.window.end))
+  const start = formatDay(insights.window.start)
   const flow = (label: string, tile: { value: number; previous: number }) =>
-    `- **${label}:** ${formatCount(tile.value)} (previous ${range}: ${formatCount(tile.previous)})`
+    `- **${label}:** ${formatCount(tile.value)} (period before: ${formatCount(tile.previous)})`
   const duration = (label: string, tile: { value: number | null; previous: number | null }) =>
     tile.value === null
       ? []
       : [
-          `- **${label}:** ${formatHours(tile.value)}${tile.previous === null ? "" : ` (previous ${range}: ${formatHours(tile.previous)})`}`,
+          `- **${label}:** ${formatHours(tile.value)}${tile.previous === null ? "" : ` (period before: ${formatHours(tile.previous)})`}`,
         ]
 
   const lines = [
     `# ${insights.org} insights`,
     "",
-    `${insights.repoStats.length === 1 ? "1 repository" : `${insights.repoStats.length} repositories`}, last ${range} (${start} to ${end}, ${insights.tz}).`,
+    `${insights.repoStats.length === 1 ? "1 repository" : `${insights.repoStats.length} repositories`}, last ${range} in whole weeks (${formatSpan(insights.window.start, insights.window.end)}, ${insights.tz}).`,
     "",
     "## Headline numbers",
     "",
@@ -65,7 +62,7 @@ export const insightsSummary = (insights: Insights): string => {
     ...(tiles.ciSuccessRate.value === null
       ? []
       : [
-          `- **CI success rate:** ${formatPercent(tiles.ciSuccessRate.value)}${tiles.ciSuccessRate.previous === null ? "" : ` (previous ${range}: ${formatPercent(tiles.ciSuccessRate.previous)})`}`,
+          `- **CI success rate:** ${formatPercent(tiles.ciSuccessRate.value)}${tiles.ciSuccessRate.previous === null ? "" : ` (period before: ${formatPercent(tiles.ciSuccessRate.previous)})`}`,
         ]),
   ]
 

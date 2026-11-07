@@ -143,10 +143,11 @@ characters. The server:
 
 ### Insights
 
-Insights aggregate the chosen repositories of one organization over a window of 30, 90, 180,
-or 365 days that ends now. Every number has the same number for the window before it, so the
-page can show a change. Weeks start on Monday and hours are read in the time zone the browser
-sends. Pull requests are counted apart from issues everywhere. `buildInsights` in
+Insights aggregate the chosen repositories of one organization over a window that ends now and
+starts at midnight on the Monday of the week 30, 90, 180, or 365 days ago. Every week in it is
+whole except the current one, which the page marks as in progress. Every number has the same
+number for the window before it, which is as long, so the page can show a change. Weeks start
+on Monday and days and hours are read in the time zone the browser sends. Pull requests are counted apart from issues everywhere. `buildInsights` in
 `src/worker/insights.ts` computes every aggregate from decoded Forgejo data; loading only reads.
 
 For each repository Tabulo reads, as the user, the repository, its open issues and pull

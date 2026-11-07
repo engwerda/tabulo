@@ -58,3 +58,11 @@ const longDayFormat = new Intl.DateTimeFormat("en", {
 /** `YYYY-MM-DD` as "Nov 2". The date has no time zone, so it is read as UTC. */
 export const formatDay = (date: string) => dayFormat.format(new Date(`${date}T00:00:00Z`))
 export const formatLongDay = (date: string) => longDayFormat.format(new Date(`${date}T00:00:00Z`))
+
+/** Two `YYYY-MM-DD` dates as "Oct 5 to Nov 7, 2026", with both years when they differ. */
+export const formatSpan = (start: string, end: string) => {
+  const [startYear, endYear] = [start.slice(0, 4), end.slice(0, 4)]
+  return startYear === endYear
+    ? `${formatDay(start)} to ${formatDay(end)}, ${endYear}`
+    : `${formatDay(start)}, ${startYear} to ${formatDay(end)}, ${endYear}`
+}

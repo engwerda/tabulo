@@ -19,8 +19,8 @@ export const isTimeZone = (name: string) => {
   }
 }
 
-/** Reads instants (epoch milliseconds) as calendar times in `timeZone`. */
-export const zonedTime = (timeZone: string) => {
+/** Reads `timeZone`'s UTC offset, in milliseconds, at an instant (epoch milliseconds). */
+const offsetReader = (timeZone: string) => {
   const format = new Intl.DateTimeFormat("en-US", {
     timeZone,
     year: "numeric",
@@ -30,8 +30,7 @@ export const zonedTime = (timeZone: string) => {
     minute: "numeric",
     hourCycle: "h23",
   })
-  /** The zone's UTC offset at `millis`, in milliseconds. */
-  const offsetAt = (millis: number) => {
+  return (millis: number) => {
     const parts = Object.fromEntries(
       format.formatToParts(millis).map((part) => [part.type, Number(part.value)] as const),
     )
@@ -44,6 +43,19 @@ export const zonedTime = (timeZone: string) => {
     )
     return local - Math.floor(millis / 60_000) * 60_000
   }
+}
+
+/** The instant (epoch milliseconds) that `date` (`YYYY-MM-DD`) starts in `timeZone`. */
+export const startOfDay = (timeZone: string, date: string) => {
+  const offsetAt = offsetReader(timeZone)
+  const midnight = Date.parse(`${date}T00:00:00Z`)
+  // The offset at midnight UTC can differ from the one at local midnight; the second read fixes it.
+  return midnight - offsetAt(midnight - offsetAt(midnight))
+}
+
+/** Reads instants (epoch milliseconds) as calendar times in `timeZone`. */
+export const zonedTime = (timeZone: string) => {
+  const offsetAt = offsetReader(timeZone)
   // formatToParts is slow next to the rest of an aggregation, and an offset changes at most
   // once a day: a UTC day whose offset is the same at both ends has that offset throughout.
   const dayOffsets = new Map<number, number | null>()

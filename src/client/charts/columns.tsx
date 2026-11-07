@@ -4,7 +4,12 @@ import { Tooltip, type TooltipRow } from "./Tooltip.tsx"
 import { useActiveIndex } from "./use-active-index.ts"
 import { useSize } from "./use-width.ts"
 
-export type Category = { readonly key: string; readonly label: string }
+export type Category = {
+  readonly key: string
+  readonly label: string
+  /** Still filling, as the current week is: drawn as a lighter, dashed outline. */
+  readonly partial?: boolean
+}
 
 export type Series = {
   readonly label: string
@@ -45,6 +50,12 @@ export const useBox = (minHeight: number) => {
   const [ref, size] = useSize<HTMLDivElement>()
   return { ref, width: size.width, height: Math.max(minHeight, size.height), minHeight }
 }
+
+/** The fill of a column, lighter and outlined for a partial category. */
+const columnStyle = (color: string, partial: boolean | undefined) =>
+  partial === true
+    ? { fill: color, fillOpacity: 0.35, stroke: color, strokeDasharray: "3 2", strokeWidth: 1 }
+    : { fill: color }
 
 const growDelay = (index: number, count: number) => ({
   animationDelay: `${Math.round((index / Math.max(count, 1)) * 240)}ms`,
@@ -229,7 +240,7 @@ export const StackedColumns = ({
                     ? barPath(x(index), bar, base, end)
                     : `M${x(index)},${base}V${end}H${x(index) + bar}V${base}Z`
                 }
-                style={{ fill: entry.color }}
+                style={columnStyle(entry.color, category.partial)}
               />
             )
             base = end - SURFACE_GAP
@@ -304,12 +315,18 @@ export const MirrorColumns = ({
             <g key={category.key} opacity={active === null || active === index ? 1 : 0.55}>
               <path
                 className="chart-rise"
-                style={{ ...growDelay(index, categories.length), fill: up.color }}
+                style={{
+                  ...growDelay(index, categories.length),
+                  ...columnStyle(up.color, category.partial),
+                }}
                 d={barPath(x(index), bar, y(0) - 1, y(up.values[index] ?? 0) - 1)}
               />
               <path
                 className="chart-drop"
-                style={{ ...growDelay(index, categories.length), fill: down.color }}
+                style={{
+                  ...growDelay(index, categories.length),
+                  ...columnStyle(down.color, category.partial),
+                }}
                 d={barPath(x(index), bar, y(0) + 1, y(-(down.values[index] ?? 0)) + 1)}
               />
             </g>

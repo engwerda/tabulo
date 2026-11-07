@@ -3,6 +3,7 @@ import { useState } from "react"
 import { useSearchParams } from "wouter"
 import { INSIGHT_DAYS, type InsightDays, type Insights } from "../../shared/api.ts"
 import { browserTimeZone, fetchInsights } from "../api.ts"
+import { formatSpan } from "../charts/scale.ts"
 import { relativeTime } from "../format.ts"
 import { ScopeBar } from "../scope/ScopeBar.tsx"
 import { useRepoSelection } from "../scope/use-repo-selection.ts"
@@ -189,7 +190,8 @@ export const InsightsPage = ({ org }: { org: string }) => {
         ) : (
           <div className={`transition-opacity ${insights.isPlaceholderData ? "opacity-60" : ""}`}>
             <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-              Last {RANGE_LABELS[data.days].long} across {data.repoStats.length}{" "}
+              {formatSpan(data.window.start, data.window.end)}, the last{" "}
+              {RANGE_LABELS[data.days].long} in whole weeks, across {data.repoStats.length}{" "}
               {data.repoStats.length === 1 ? "repository" : "repositories"}, weeks and hours in{" "}
               {data.tz}. Updated {relativeTime(data.generatedAt)}.
             </p>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { formatHours, niceTicks } from "../src/client/charts/scale.ts"
+import { formatHours, formatSpan, niceTicks } from "../src/client/charts/scale.ts"
 import { insightsSummary } from "../src/client/insights/summary.ts"
 import type { Insights } from "../src/shared/api.ts"
 
@@ -9,7 +9,7 @@ const insights: Insights = {
   days: 30,
   tz: "Europe/Amsterdam",
   generatedAt: "2026-11-07T09:00:00.000Z",
-  window: { start: "2026-10-08T09:00:00.000Z", end: "2026-11-07T09:00:00.000Z" },
+  window: { start: "2026-10-05", end: "2026-11-07" },
   tiles: {
     openIssues: { value: 12, previous: 9 },
     openPulls: { value: 3, previous: 4 },
@@ -77,17 +77,17 @@ describe("insightsSummary", () => {
   it("summarizes the headline numbers, attention, and health, riskiest first", () => {
     expect(insightsSummary(insights)).toBe(`# acme insights
 
-2 repositories, last 30 days (Oct 8 to Nov 7, Europe/Amsterdam).
+2 repositories, last 30 days in whole weeks (Oct 5 to Nov 7, 2026, Europe/Amsterdam).
 
 ## Headline numbers
 
-- **Open issues:** 12 (+3 since Oct 8)
-- **Open pull requests:** 3 (-1 since Oct 8)
-- **Issues opened:** 8 (previous 30 days: 5)
-- **Issues closed:** 5 (previous 30 days: 6)
-- **Pull requests merged:** 7 (previous 30 days: 2)
+- **Open issues:** 12 (+3 since Oct 5)
+- **Open pull requests:** 3 (-1 since Oct 5)
+- **Issues opened:** 8 (period before: 5)
+- **Issues closed:** 5 (period before: 6)
+- **Pull requests merged:** 7 (period before: 2)
 - **Median time to close an issue:** 30h
-- **CI success rate:** 75% (previous 30 days: 50%)
+- **CI success rate:** 75% (period before: 50%)
 
 ## Needs attention
 
@@ -131,5 +131,10 @@ describe("chart scale", () => {
     expect(formatHours(0.5)).toBe("30m")
     expect(formatHours(14.3)).toBe("14.3h")
     expect(formatHours(105.2)).toBe("4.4d")
+  })
+
+  it("names the year of a span of days once, or at both ends across a new year", () => {
+    expect(formatSpan("2026-10-05", "2026-11-07")).toBe("Oct 5 to Nov 7, 2026")
+    expect(formatSpan("2025-11-03", "2026-11-07")).toBe("Nov 3, 2025 to Nov 7, 2026")
   })
 })

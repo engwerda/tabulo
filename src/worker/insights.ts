@@ -18,7 +18,7 @@ import {
   type ForgejoMilestone,
   labelHexColor,
 } from "./forgejo/schemas.ts"
-import { addDays, DAY_MS, weekStart, zonedTime } from "./time-zone.ts"
+import { addDays, DAY_MS, startOfDay, weekStart, zonedTime } from "./time-zone.ts"
 
 const HOUR_MS = 60 * 60 * 1000
 
@@ -341,11 +341,22 @@ const failingWorkflows = (repo: ForgejoInsightRepo, runs: ReadonlyArray<Run>, no
   })
 }
 
+/**
+ * The shown window runs from midnight on the Monday of the week `days` days ago, in `tz`, to
+ * now. `first` is that Monday. The window before it is as long and ends where it starts.
+ */
+export const insightPeriods = (now: number, days: InsightDays, tz: string) => {
+  const first = weekStart(zonedTime(tz)(now - days * DAY_MS))
+  const start = startOfDay(tz, first)
+  const window: Period = { start, end: Number.POSITIVE_INFINITY }
+  const previous: Period = { start: start - (now - start), end: start }
+  return { first, window, previous }
+}
+
 /** Every aggregate on the insights page, from the repositories Tabulo read. */
 export const buildInsights = (input: InsightsInput): Insights => {
   const { now, days } = input
-  const window: Period = { start: now - days * DAY_MS, end: Number.POSITIVE_INFINITY }
-  const previous: Period = { start: window.start - days * DAY_MS, end: window.start }
+  const { first, window, previous } = insightPeriods(now, days, input.tz)
   const zoned = zonedTime(input.tz)
   const weekOf = (time: number) => weekStart(zoned(time))
   const ageDays = (time: number) => Math.floor((now - time) / DAY_MS)
@@ -392,9 +403,9 @@ export const buildInsights = (input: InsightsInput): Insights => {
     previous: roundedOrNull(measure(previous)),
   })
 
-  // Weeks, Monday first, from the week the window starts in to the current week.
+  // Weeks, Monday first, from the window's first week to the current one.
   const weeks: Array<string> = []
-  for (let week = weekOf(window.start); week <= weekOf(now); week = addDays(week, 7)) {
+  for (let week = first; week <= weekOf(now); week = addDays(week, 7)) {
     weeks.push(week)
   }
   const weekIndex = new Map(weeks.map((week, index) => [week, index] as const))
@@ -607,7 +618,7 @@ export const buildInsights = (input: InsightsInput): Insights => {
     days,
     tz: input.tz,
     generatedAt: new Date(now).toISOString(),
-    window: { start: new Date(window.start).toISOString(), end: new Date(now).toISOString() },
+    window: { start: first, end: zoned(now).date },
     tiles: {
       openIssues: { value: openNow(issues), previous: openAt(issues, window.start) },
       openPulls: { value: openNow(pulls), previous: openAt(pulls, window.start) },

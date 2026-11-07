@@ -156,7 +156,8 @@ describe("GET /api/insights", () => {
       (request) =>
         request.path === "/api/v1/repos/acme/api/issues" && request.query.get("state") === "closed",
     )
-    expect(closedListing?.query.get("since")).toBe("2026-09-08T09:00:00.000Z")
+    // The window starts at midnight on Monday 5 October in Amsterdam, 22:00 UTC the day before.
+    expect(closedListing?.query.get("since")).toBe("2026-09-01T11:00:00.000Z")
     expect(closedListing?.query.has("type")).toBe(false)
     // Paging stops at the first page that reaches back past the previous window.
     const runPages = forgejoReads

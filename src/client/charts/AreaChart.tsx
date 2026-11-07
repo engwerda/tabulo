@@ -6,7 +6,10 @@ import { useSize } from "./use-width.ts"
 const MARGIN = { top: 16, right: 12, bottom: 22, left: 34 }
 const MIN_LABEL_GAP = 56
 
-/** One series over time: a 2px line over a faint wash, with a crosshair that snaps to points. */
+/**
+ * One series over time: a 2px line over a faint wash, with a crosshair that snaps to points.
+ * With `partialLast`, the line to the last point is dashed because that point is still moving.
+ */
 export const AreaChart = ({
   labels,
   values,
@@ -16,6 +19,7 @@ export const AreaChart = ({
   ariaLabel,
   tooltipTitle,
   format = formatCount,
+  partialLast = false,
 }: {
   /** One axis label per point. */
   readonly labels: ReadonlyArray<string>
@@ -26,6 +30,7 @@ export const AreaChart = ({
   readonly ariaLabel: string
   readonly tooltipTitle: (index: number) => string
   readonly format?: (value: number) => string
+  readonly partialLast?: boolean
 }) => {
   const [ref, size] = useSize<HTMLDivElement>()
   const minHeight = requestedHeight
@@ -50,6 +55,7 @@ export const AreaChart = ({
   )
   const points = values.map((value, index) => `${x(index)},${y(value)}`)
   const line = `M${points.join("L")}`
+  const settled = partialLast && count > 1 ? `M${points.slice(0, -1).join("L")}` : line
   const area = `${line}L${x(count - 1)},${y(0)}L${x(0)},${y(0)}Z`
   const every = Math.max(1, Math.ceil(count / Math.max(1, Math.floor(plotWidth / MIN_LABEL_GAP))))
   const last = count - 1
@@ -90,13 +96,23 @@ export const AreaChart = ({
           <g className="chart-fade">
             <path d={area} style={{ fill: color }} fillOpacity={0.1} />
             <path
-              d={line}
+              d={settled}
               fill="none"
               style={{ stroke: color }}
               strokeWidth={2}
               strokeLinejoin="round"
               strokeLinecap="round"
             />
+            {settled !== line && (
+              <path
+                d={`M${points.slice(-2).join("L")}`}
+                fill="none"
+                style={{ stroke: color }}
+                strokeWidth={2}
+                strokeDasharray="3 3"
+                strokeLinecap="round"
+              />
+            )}
             <circle
               cx={x(last)}
               cy={y(lastValue)}

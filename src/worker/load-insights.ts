@@ -15,8 +15,8 @@ import {
   type ForgejoUnauthorized,
 } from "./errors.ts"
 import { type AccessToken, ForgejoClient, type PageBudget } from "./forgejo/client.ts"
-import { buildInsights, type RepoActivity } from "./insights.ts"
-import { DAY_MS, isTimeZone } from "./time-zone.ts"
+import { buildInsights, insightPeriods, type RepoActivity } from "./insights.ts"
+import { isTimeZone } from "./time-zone.ts"
 
 // Each repository needs three Forgejo reads at once; Workers allow six open connections.
 const REPO_CONCURRENCY = 2
@@ -81,7 +81,7 @@ export const loadInsights = (token: AccessToken, query: InsightsQuery) =>
     const forgejo = yield* ForgejoClient
     const now = yield* Clock.currentTimeMillis
     // The window before the shown one feeds the change on each stat tile.
-    const since = now - 2 * query.days * DAY_MS
+    const since = insightPeriods(now, query.days, query.tz).previous.start
     const updatedSince = new Date(since).toISOString()
 
     const pool: PageBudget = { remaining: PAGE_BUDGET }
