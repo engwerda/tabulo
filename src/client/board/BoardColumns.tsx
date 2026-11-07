@@ -56,7 +56,7 @@ const Column = ({
   return (
     <section
       aria-labelledby={headingId}
-      className={`flex w-72 shrink-0 flex-col rounded-xl border bg-zinc-100/70 dark:bg-zinc-900/60 ${
+      className={`flex w-64 shrink-0 flex-col rounded-xl border bg-zinc-100/70 dark:bg-zinc-900/60 ${
         highlighted
           ? "border-indigo-400 dark:border-indigo-500"
           : "border-zinc-200 dark:border-zinc-800"
