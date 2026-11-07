@@ -37,5 +37,11 @@ major version.
 - Time comes from Effect's `Clock`. Tests that depend on time or waiting pass the fake clock
   from `test/fake-clock.ts` to `tabulo()`, never real sleeps or timeouts.
 - `SessionStore` owns token encryption. Nothing else reads or writes token columns.
+- `boardLayout` in `src/worker/board.ts` is the one place that decides an issue's board column.
+  `CardRanks` in `src/worker/card-ranks.ts` owns the `card_ranks` table.
+- Board writes go through `moveCard`, which checks the repository permissions before any
+  Forgejo write and stores ranks only after the writes succeed.
+- `src/client/board/board-view.ts` holds the client's pure board logic (column order, filters,
+  move order). The worker tsconfig includes it so tests can import it.
 - `src/shared/api.ts` holds the API payload schemas. The client decodes responses with them.
 - Imports use explicit `.ts` extensions so `scripts/` runs under Node without a build step.
