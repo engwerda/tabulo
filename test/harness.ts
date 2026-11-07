@@ -7,12 +7,13 @@ export const APP_URL = "https://tabulo.example"
 
 export const tabulo = (
   forgejoFetch: (request: Request) => Promise<Response>,
-  options: { readonly clock?: Clock.Clock } = {},
+  options: { readonly clock?: Clock.Clock; readonly vars?: Partial<Env> } = {},
 ) => {
-  const app = createApp({ fetch: forgejoFetch, ...options })
+  const app = createApp({ fetch: forgejoFetch, clock: options.clock })
+  const bindings = { ...env, ...options.vars }
   return async (path: string, init?: RequestInit): Promise<Response> => {
     const ctx = createExecutionContext()
-    const response = await app.fetch(new Request(`${APP_URL}${path}`, init), env, ctx)
+    const response = await app.fetch(new Request(`${APP_URL}${path}`, init), bindings, ctx)
     await waitOnExecutionContext(ctx)
     return response
   }

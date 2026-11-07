@@ -71,7 +71,7 @@ Forgejo stays the single source of truth: Tabulo stores only what Forgejo cannot
 
 | Variable | Kind | Purpose |
 |---|---|---|
-| `APP_URL` | var | Public URL of Tabulo. Builds the OAuth redirect URL `APP_URL/auth/callback`. |
+| `APP_URL` | var | Public origin of Tabulo (https, no path). Builds the OAuth redirect URL `APP_URL/auth/callback`. |
 | `FORGEJO_URL` | var | Base URL of the Forgejo instance. |
 | `FORGEJO_CLIENT_ID` | var | OAuth2 application client ID. |
 | `FORGEJO_CLIENT_SECRET` | secret | OAuth2 application client secret. |

@@ -14,6 +14,20 @@ const parseUrl = (name: string, value: string) =>
     ? Effect.succeed(new URL(value))
     : Effect.fail(new ConfigInvalid({ message: `${name} is not an absolute URL` }))
 
+// Tabulo must own the whole origin: its cookies use the __Host- prefix (Path=/), and the
+// OAuth redirect URI and the Origin check are built from APP_URL.
+const parseAppUrl = (value: string) =>
+  Effect.gen(function* () {
+    const url = yield* parseUrl("APP_URL", value)
+    if ((url.protocol !== "https:" && url.protocol !== "http:") || url.href !== `${url.origin}/`) {
+      return yield* new ConfigInvalid({
+        message:
+          "APP_URL must be an http or https origin with no path, query, or credentials, such as https://tabulo.example",
+      })
+    }
+    return url
+  })
+
 const required = (name: string, value: string | undefined) =>
   value === undefined || value === ""
     ? Effect.fail(new ConfigInvalid({ message: `${name} is not set` }))
@@ -21,7 +35,7 @@ const required = (name: string, value: string | undefined) =>
 
 export const loadConfig = (env: Env) =>
   Effect.gen(function* () {
-    const appUrl = yield* parseUrl("APP_URL", env.APP_URL)
+    const appUrl = yield* parseAppUrl(env.APP_URL)
     const forgejoUrl = yield* parseUrl("FORGEJO_URL", env.FORGEJO_URL)
     const clientId = yield* required("FORGEJO_CLIENT_ID", env.FORGEJO_CLIENT_ID)
     const clientSecret = yield* required("FORGEJO_CLIENT_SECRET", env.FORGEJO_CLIENT_SECRET)

@@ -27,7 +27,7 @@ export type Dependencies = {
   /** Outbound HTTP to Forgejo. Tests pass a fake Forgejo here. */
   readonly fetch: HttpFetch
   /** Tests pass a clock they control. */
-  readonly clock?: Clock.Clock
+  readonly clock?: Clock.Clock | undefined
 }
 
 type AppError =

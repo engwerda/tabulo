@@ -52,6 +52,10 @@ You need Node.js 22.18 or later and an account on a Forgejo instance.
 Tabulo needs a Cloudflare account with Workers and D1. The steps use `wrangler`, which is
 installed as a development dependency.
 
+Tabulo runs on a custom domain that you have added to Cloudflare, such as
+`tabulo.example.com`. The `workers.dev` and preview URLs are turned off in `wrangler.jsonc`,
+because sign-in and the session cookie work only on the one origin in `APP_URL`.
+
 1. Create an OAuth2 application in Forgejo as in the local setup, with the redirect URI
    `https://<your Tabulo host>/auth/callback`.
 2. Create the database, then copy the `database_id` it prints into the `d1_databases` entry in
@@ -61,8 +65,9 @@ installed as a development dependency.
    npx wrangler d1 create tabulo
    ```
 
-3. In `wrangler.jsonc`, set `APP_URL` to your Tabulo URL, `FORGEJO_URL` to your Forgejo URL,
-   and `FORGEJO_CLIENT_ID` to the client ID.
+3. In `wrangler.jsonc`, set the `routes` pattern to your Tabulo host, `APP_URL` to
+   `https://<your Tabulo host>`, `FORGEJO_URL` to your Forgejo URL, and `FORGEJO_CLIENT_ID` to
+   the client ID. Wrangler attaches the custom domain when you deploy.
 4. Store the two secrets. Generate the encryption key with `openssl rand -base64 32`.
 
    ```sh
@@ -86,11 +91,16 @@ installed as a development dependency.
 
 | Variable | Kind | Purpose |
 |---|---|---|
-| `APP_URL` | var | Public URL of Tabulo. The OAuth redirect URL is `APP_URL/auth/callback`. |
+| `APP_URL` | var | Public origin of Tabulo, with no path, for example `https://tabulo.example.com`. The OAuth redirect URL is `APP_URL/auth/callback`. |
 | `FORGEJO_URL` | var | Base URL of the Forgejo instance. |
 | `FORGEJO_CLIENT_ID` | var | OAuth2 application client ID. |
 | `FORGEJO_CLIENT_SECRET` | secret | OAuth2 application client secret. |
 | `SESSION_ENCRYPTION_KEY` | secret | 32 random bytes, base64. Encrypts the Forgejo tokens stored in D1. |
+
+Production needs `https` in `APP_URL`. The session cookie uses the `__Host-` prefix, which
+browsers accept only over HTTPS, with `http://localhost` as the one exception. Tabulo cannot be
+served from a sub-path, and it refuses to start a request when `APP_URL` has a path, a query,
+or credentials.
 
 Changing `SESSION_ENCRYPTION_KEY` signs everyone out, because existing tokens no longer decrypt.
 
