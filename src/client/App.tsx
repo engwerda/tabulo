@@ -1,13 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import type { ComponentType } from "react"
+import { type ComponentType, lazy, Suspense } from "react"
 import { Link, Route, Switch, useLocation } from "wouter"
 import type { User } from "../shared/api.ts"
 import { Avatar } from "./Avatar.tsx"
 import { fetchSessionUser, signOut } from "./api.ts"
-import { BoardPage } from "./board/BoardPage.tsx"
 import { DashboardView } from "./Dashboard.tsx"
-import { EpicsPage } from "./epics/EpicsPage.tsx"
-import { InsightsPage } from "./insights/InsightsPage.tsx"
 import { SearchIcon } from "./palette/icons.tsx"
 import { ShortcutKeys } from "./palette/keys.tsx"
 import { PaletteProvider, usePalette } from "./palette/PaletteProvider.tsx"
@@ -35,10 +32,13 @@ const SignIn = () => (
   </main>
 )
 
+// Each view loads on first visit, so the dashboard does not download drag and drop or charts.
 const ORG_VIEW_PAGES: Record<OrgViewId, ComponentType<{ org: string }>> = {
-  board: BoardPage,
-  insights: InsightsPage,
-  epics: EpicsPage,
+  board: lazy(() => import("./board/BoardPage.tsx").then((m) => ({ default: m.BoardPage }))),
+  insights: lazy(() =>
+    import("./insights/InsightsPage.tsx").then((m) => ({ default: m.InsightsPage })),
+  ),
+  epics: lazy(() => import("./epics/EpicsPage.tsx").then((m) => ({ default: m.EpicsPage }))),
 }
 
 const useNav = () => {
@@ -150,21 +150,23 @@ const SignedIn = ({ user }: { user: User }) => {
   return (
     <PaletteProvider signOut={() => logout.mutate()}>
       <Header user={user} logout={logout} />
-      <Switch>
-        <Route path="/" component={DashboardView} />
-        {ORG_VIEWS.map(({ id, path }) => {
-          const Page = ORG_VIEW_PAGES[id]
-          return [
-            <Route key={id} path={path}>
-              <OrgPicker view={id} />
-            </Route>,
-            <Route key={`${id}/:org`} path={`${path}/:org`}>
-              {({ org }) => <Page key={org} org={org} />}
-            </Route>,
-          ]
-        })}
-        <Route component={NotFound} />
-      </Switch>
+      <Suspense fallback={null}>
+        <Switch>
+          <Route path="/" component={DashboardView} />
+          {ORG_VIEWS.map(({ id, path }) => {
+            const Page = ORG_VIEW_PAGES[id]
+            return [
+              <Route key={id} path={path}>
+                <OrgPicker view={id} />
+              </Route>,
+              <Route key={`${id}/:org`} path={`${path}/:org`}>
+                {({ org }) => <Page key={org} org={org} />}
+              </Route>,
+            ]
+          })}
+          <Route component={NotFound} />
+        </Switch>
+      </Suspense>
     </PaletteProvider>
   )
 }
