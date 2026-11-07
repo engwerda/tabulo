@@ -52,10 +52,11 @@ export class BoardRequestInvalid extends Schema.TaggedError<BoardRequestInvalid>
   { message: Schema.String },
 ) {}
 
-/** Tabulo refuses the move before writing anything: the viewer may not arrange this card. */
-export class MoveForbidden extends Schema.TaggedError<MoveForbidden>()("MoveForbidden", {
-  message: Schema.String,
-}) {}
+/** Tabulo refuses a board write before sending it: the viewer may not change this card. */
+export class BoardWriteForbidden extends Schema.TaggedError<BoardWriteForbidden>()(
+  "BoardWriteForbidden",
+  { message: Schema.String },
+) {}
 
 /** The neighbours of a move do not match the stored order: the mover's board is out of date. */
 export class BoardChanged extends Schema.TaggedError<BoardChanged>()("BoardChanged", {}) {}

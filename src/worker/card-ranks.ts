@@ -1,5 +1,5 @@
 import { Array as Arr, Clock, Context, Effect } from "effect"
-import { generateNKeysBetween } from "fractional-indexing"
+import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing"
 import type { CardPlace } from "../shared/card-order.ts"
 
 export type RankedCard = CardPlace & { readonly key: string }
@@ -27,6 +27,36 @@ export class CardRanks extends Context.Service<
   }
 >()("tabulo/CardRanks") {}
 
+/** The smallest and largest stored rank of the column, null when it has none. */
+const columnEdges = (stored: ReadonlyMap<string, CardPlace>, column: string) => {
+  let first: string | null = null
+  let last: string | null = null
+  for (const place of stored.values()) {
+    if (place.column !== column) continue
+    if (first === null || place.rank < first) first = place.rank
+    if (last === null || place.rank > last) last = place.rank
+  }
+  return { first, last }
+}
+
+/** A rank before every stored rank of the column, across the organization. */
+export const topRank = (stored: ReadonlyMap<string, CardPlace>, column: string) =>
+  generateKeyBetween(null, columnEdges(stored, column).first)
+
+/**
+ * The card's stored rank if it is for the card's column, otherwise the rank a board read would
+ * give it alone: after the largest stored rank of the column.
+ */
+export const rankOf = (
+  stored: ReadonlyMap<string, CardPlace>,
+  card: { readonly key: string; readonly column: string },
+) => {
+  const place = stored.get(card.key)
+  return place?.column === card.column
+    ? place.rank
+    : generateKeyBetween(columnEdges(stored, card.column).last, null)
+}
+
 /**
  * Every card with its rank. `kept` are the cards whose stored rank is for their column. `fresh`
  * are the others, ranked after the largest stored rank of their column, most recently updated
@@ -47,10 +77,7 @@ export const rankCards = <
   }
   const fresh = Object.entries(Arr.groupBy(unranked, (card) => card.column)).flatMap(
     ([column, group]) => {
-      let last: string | null = null
-      for (const place of stored.values()) {
-        if (place.column === column && (last === null || place.rank > last)) last = place.rank
-      }
+      const { last } = columnEdges(stored, column)
       const newestFirst = group.toSorted(
         (a, b) => b.updatedAt.localeCompare(a.updatedAt) || (a.key < b.key ? -1 : 1),
       )

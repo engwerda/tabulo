@@ -89,9 +89,10 @@ the board.
   organization, across all its repositories. Cards sort by rank, then by key. Two moves that
   land in the same gap at the same moment can store equal ranks; the key then orders them the
   same way for everyone, and a later move places a card after both.
-- **Who arranges.** Only members of the organization may move or reorder cards. Forgejo
-  authorizes each issue write as the user, so Tabulo does not check push access. Cards of
-  archived repositories cannot be moved.
+- **Who arranges.** Only members of the organization may move, reorder, or add cards. Anyone
+  may assign themselves; Forgejo decides. Forgejo authorizes each issue write as the user, so
+  Tabulo does not check push access. Cards of archived repositories cannot be moved, added, or
+  assigned.
 
 | Endpoint | Result |
 |---|---|
@@ -99,6 +100,9 @@ the board.
 | `GET /api/orgs/:org/repos` | The organization's repositories the user can see, with `archived`. |
 | `GET /api/board?org=&repos=a,b` | Columns, cards, `viewerCanArrange`, and `failedRepos`. At most 20 repositories. |
 | `POST /api/board/move` | Moves one card and answers with `{ card, orderSaved }`. |
+| `POST /api/board/issues` | Creates an issue in a column and answers with `{ card, orderSaved }`. |
+| `POST /api/board/assign` | Adds or removes the user as an assignee and answers with `{ card }`. |
+| `GET /api/board/issue?org=&repo=&number=` | The card's key and its description as HTML, `{ key, bodyHtml }`. |
 
 `GET /api/board` reads the organization's labels and whether the user is a member, then for each
 repository the repository, its open issues, and the issues closed since the start of the Done
@@ -136,6 +140,34 @@ characters. The server:
    the organization: between that rank and the next larger stored rank. Cards the user cannot
    see keep their places. If D1 fails here, it answers 200 with `orderSaved: false`.
 
+`POST /api/board/issues` takes `{ org, repo, title, column }`. The title is trimmed text of 1 to
+255 characters. The server:
+
+1. Answers 400 to an invalid name or title, and 403 unless the user is a member of the
+   organization or if the repository is archived.
+2. Answers 400 if `column` is Done, and 409 if it is no column of the current board, such as a
+   status label removed since the user's board was loaded.
+3. Creates the issue in Forgejo as the user, with the column's status label for a status
+   column. Forgejo drops the label without an error when the user cannot write the
+   repository's issues; the card then lands in Todo. A Forgejo refusal answers with its status.
+4. Stores the new card's rank before the smallest stored rank of the column it landed in,
+   across the organization, so it shows first. If D1 fails here, it answers 200 with
+   `orderSaved: false`.
+
+`POST /api/board/assign` takes `{ org, repo, number, assigned }`. It answers 400 to an invalid
+name or a pull request and 403 if the repository is archived. It reads the issue's assignees
+and, unless the user is already in the requested state, writes the whole list with the user
+added or removed. Forgejo has no endpoint that adds a single assignee, so an assignee change
+made by someone else between the read and the write is lost. Forgejo ignores the assignees
+without an error when the user cannot write the repository's issues; Tabulo then answers 403.
+The card's rank is its stored rank, or the rank a board read would give it.
+
+`GET /api/board/issue` reads the issue's description and has Forgejo render it
+(`POST /api/v1/markdown` in `comment` mode, as Forgejo shows an issue). An empty description
+answers `bodyHtml: ""` without a render. Anyone who can read the repository may ask; Forgejo
+answers 404 for an issue the user cannot see. The client sanitizes the HTML again before
+showing it.
+
 ### Configuration
 
 | Variable | Kind | Purpose |
@@ -157,6 +189,7 @@ characters. The server:
 
 ## Non-goals
 
-- Replacing Forgejo's issue pages. Tabulo links to them for reading and editing details.
+- Replacing Forgejo's issue pages. Tabulo shows a description read-only and links to Forgejo
+  for editing.
 - Supporting forges other than Forgejo and Gitea-compatible APIs.
 - Storing issue content as a second source of truth.

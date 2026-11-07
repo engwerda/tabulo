@@ -1,26 +1,32 @@
 import { Clock, Context, Effect, Exit } from "effect"
 import type {
+  AssignSelfRequest,
+  AssignSelfResult,
   Board,
   BoardCard,
   BoardColumn,
   BoardLabel,
+  CardDetail,
+  CreateCardRequest,
+  CreateCardResult,
   MoveCardRequest,
   MoveCardResult,
   Org,
   OrgRepo,
 } from "../shared/api.ts"
 import { rankForDrop } from "../shared/card-order.ts"
-import { CardRanks, rankCards } from "./card-ranks.ts"
+import { CardRanks, rankCards, rankOf, topRank } from "./card-ranks.ts"
 import type { BoardSettings } from "./config.ts"
 import {
   BoardChanged,
   BoardRequestInvalid,
+  BoardWriteForbidden,
   describeForgejoError,
   FORGEJO_READ_ERRORS,
   type ForgejoError,
+  ForgejoForbidden,
   ForgejoMovePartlyApplied,
   type ForgejoUnauthorized,
-  MoveForbidden,
 } from "./errors.ts"
 import { type AccessToken, ForgejoClient, type RepoRef } from "./forgejo/client.ts"
 import {
@@ -151,6 +157,9 @@ export const toBoardCard = (
     avatarUrl: avatar_url,
   })),
   milestone: issue.milestone?.title ?? null,
+  author: { login: issue.user.login, avatarUrl: issue.user.avatar_url },
+  comments: issue.comments,
+  createdAt: issue.created_at,
   updatedAt: issue.updated_at,
   closedAt: issue.closed_at,
   column: layout.columnOf(issue),
@@ -175,6 +184,22 @@ export const parseName = (what: string, value: string | undefined) =>
   value !== undefined && NAME.test(value) && value !== "." && value !== ".."
     ? Effect.succeed(value.toLowerCase())
     : Effect.fail(new BoardRequestInvalid({ message: `${what} is not a valid name` }))
+
+const ISSUE_NUMBER = /^[1-9][0-9]{0,9}$/
+
+/** The issue a card detail request names. */
+export const parseCardQuery = (
+  org: string | undefined,
+  repo: string | undefined,
+  number: string | undefined,
+) =>
+  Effect.gen(function* () {
+    const ref = { owner: yield* parseName("org", org), name: yield* parseName("repository", repo) }
+    if (number === undefined || !ISSUE_NUMBER.test(number)) {
+      return yield* new BoardRequestInvalid({ message: "number is not an issue number" })
+    }
+    return { repo: ref, number: Number(number) }
+  })
 
 export const parseBoardQuery = (org: string | undefined, repos: string | undefined) =>
   Effect.gen(function* () {
@@ -403,7 +428,9 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
     const settings = yield* BoardConfig
     const forgejo = yield* ForgejoClient
     if (!(yield* forgejo.isOrgMember(token, org, login))) {
-      return yield* new MoveForbidden({ message: `Only members of ${org} can arrange its board` })
+      return yield* new BoardWriteForbidden({
+        message: `Only members of ${org} can arrange its board`,
+      })
     }
     const [repo, issue, orgLabels] = yield* Effect.all(
       [
@@ -417,7 +444,7 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
       return yield* new BoardRequestInvalid({ message: "Pull requests are not on the board" })
     }
     if (repo.archived) {
-      return yield* new MoveForbidden({
+      return yield* new BoardWriteForbidden({
         message: `${repo.full_name} is archived, so its issues cannot be moved`,
       })
     }
@@ -453,4 +480,126 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
       card: { ...toBoardCard(layout, org, repo, moved), rank },
       orderSaved: Exit.isSuccess(saved),
     } satisfies MoveCardResult
+  })
+
+/**
+ * Creates an issue in the column as the user who owns `token`, then stores its rank at the top
+ * of the column it landed in. Forgejo drops the status label when the user cannot write the
+ * repository's issues, and the card then lands in Todo.
+ */
+export const createCard = (token: AccessToken, login: string, request: CreateCardRequest) =>
+  Effect.gen(function* () {
+    const org = yield* parseName("org", request.org)
+    const repoRef = { owner: org, name: yield* parseName("repository", request.repo) }
+    const settings = yield* BoardConfig
+    const forgejo = yield* ForgejoClient
+    if (!(yield* forgejo.isOrgMember(token, org, login))) {
+      return yield* new BoardWriteForbidden({
+        message: `Only members of ${org} can add cards to its board`,
+      })
+    }
+    const [repo, orgLabels] = yield* Effect.all(
+      [forgejo.repo(token, repoRef), forgejo.orgLabels(token, org)],
+      { concurrency: "unbounded" },
+    )
+    if (repo.archived) {
+      return yield* new BoardWriteForbidden({
+        message: `${repo.full_name} is archived, so it takes no new issues`,
+      })
+    }
+    const layout = boardLayout(settings, orgLabels)
+    if (request.column === DONE.key) {
+      return yield* new BoardRequestInvalid({ message: "A new card cannot start in Done" })
+    }
+    // Todo and Done always exist, so an unknown column is a status label removed since the
+    // user's board was loaded.
+    const column = layout.column(request.column)
+    if (column === undefined) return yield* new BoardChanged()
+
+    const ranks = yield* CardRanks
+    const stored = yield* ranks.forOrg(org)
+    const created = yield* forgejo.createIssue(token, repoRef, {
+      title: request.title,
+      labelIds: column._tag === "Status" ? [column.label.id] : [],
+    })
+    const card = toBoardCard(layout, org, repo, created)
+    const rank = topRank(stored, card.column)
+    const saved = yield* Effect.exit(
+      ranks.place(org, { key: card.key, column: card.column, rank }, login),
+    )
+    if (Exit.isFailure(saved)) console.error(`Storing the rank of ${card.key} failed`, saved.cause)
+    return {
+      card: { ...card, rank },
+      orderSaved: Exit.isSuccess(saved),
+    } satisfies CreateCardResult
+  })
+
+const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+
+/**
+ * Adds or removes the user who owns `token` as an assignee of the issue and keeps the other
+ * assignees. Forgejo has no endpoint that adds one assignee, so this reads the assignees and
+ * writes the whole list. A change made by someone else in between is lost. Forgejo decides
+ * whether the user may assign; it ignores the write without an error when not, which answers
+ * ForgejoForbidden here.
+ */
+export const assignSelf = (token: AccessToken, login: string, request: AssignSelfRequest) =>
+  Effect.gen(function* () {
+    const org = yield* parseName("org", request.org)
+    const repoRef = { owner: org, name: yield* parseName("repository", request.repo) }
+    const settings = yield* BoardConfig
+    const forgejo = yield* ForgejoClient
+    const [repo, issue, orgLabels] = yield* Effect.all(
+      [
+        forgejo.repo(token, repoRef),
+        forgejo.issue(token, repoRef, request.number),
+        forgejo.orgLabels(token, org),
+      ],
+      { concurrency: "unbounded" },
+    )
+    if (issue.pull_request != null) {
+      return yield* new BoardRequestInvalid({ message: "Pull requests are not on the board" })
+    }
+    if (repo.archived) {
+      return yield* new BoardWriteForbidden({
+        message: `${repo.full_name} is archived, so its issues cannot be assigned`,
+      })
+    }
+    const isAssigned = (candidate: typeof issue) =>
+      (candidate.assignees ?? []).some((assignee) => sameLogin(assignee.login, login))
+    const updated =
+      isAssigned(issue) === request.assigned
+        ? issue
+        : yield* forgejo.setIssueAssignees(
+            token,
+            repoRef,
+            request.number,
+            request.assigned
+              ? [...(issue.assignees ?? []).map((assignee) => assignee.login), login]
+              : (issue.assignees ?? [])
+                  .map((assignee) => assignee.login)
+                  .filter((assignee) => !sameLogin(assignee, login)),
+          )
+    if (isAssigned(updated) !== request.assigned) return yield* new ForgejoForbidden()
+
+    const card = toBoardCard(boardLayout(settings, orgLabels), org, repo, updated)
+    const stored = yield* (yield* CardRanks).forOrg(org)
+    return { card: { ...card, rank: rankOf(stored, card) } } satisfies AssignSelfResult
+  })
+
+/**
+ * The issue's description rendered by Forgejo, as the user who owns `token` can read it. The
+ * HTML comes from Forgejo's sanitizing renderer; Tabulo passes it on without reading it.
+ */
+export const cardDetail = (
+  token: AccessToken,
+  query: { readonly repo: RepoRef; readonly number: number },
+) =>
+  Effect.gen(function* () {
+    const forgejo = yield* ForgejoClient
+    const body = yield* forgejo.issueBody(token, query.repo, query.number)
+    return {
+      key: cardKey(query.repo.owner, query.repo.name, query.number),
+      bodyHtml: body === "" ? "" : yield* forgejo.renderMarkdown(token, query.repo, body),
+    } satisfies CardDetail
   })

@@ -49,6 +49,7 @@ const boardOrg = () =>
           title: "Retry failed webhooks",
           labels: [inProgress, bug],
           assignees: [{ id: 7, login: "ada", full_name: "Ada Lovelace", avatar_url: "" }],
+          comments: 4,
           updated_at: "2026-11-06T10:00:00Z",
         }),
         boardIssue("api", 3, {
@@ -77,6 +78,7 @@ const boardOrg = () =>
         boardIssue("web", 9, {
           title: "Dark mode toggle",
           labels: [review],
+          user: { id: 9, login: "grace" },
           assignees: [
             {
               id: 9,
@@ -136,6 +138,9 @@ describe("GET /api/board", () => {
         labels: [],
         assignees: [],
         milestone: null,
+        author: { login: "ada", avatarUrl: "https://forgejo.example/avatars/ada" },
+        comments: 0,
+        createdAt: "2026-10-01T08:00:00Z",
         updatedAt: "2026-11-01T08:00:00Z",
         closedAt: null,
         column: "todo",
@@ -152,6 +157,9 @@ describe("GET /api/board", () => {
         labels: [{ id: 20, name: "Kind/Bug", color: "#d73a4a" }],
         assignees: [{ login: "ada", avatarUrl: "" }],
         milestone: null,
+        author: { login: "ada", avatarUrl: "https://forgejo.example/avatars/ada" },
+        comments: 4,
+        createdAt: "2026-10-01T08:00:00Z",
         updatedAt: "2026-11-06T10:00:00Z",
         closedAt: null,
         column: "Status/In Progress",
@@ -179,6 +187,9 @@ describe("GET /api/board", () => {
         labels: [],
         assignees: [{ login: "grace", avatarUrl: "https://forgejo.example/avatars/grace" }],
         milestone: "1.0",
+        author: { login: "grace", avatarUrl: "https://forgejo.example/avatars/grace" },
+        comments: 0,
+        createdAt: "2026-10-01T08:00:00Z",
         updatedAt: "2026-11-01T08:00:00Z",
         closedAt: null,
         column: "Status/Review",
@@ -410,7 +421,17 @@ const boardSession = async (
     (await (
       await call(`/api/board?org=acme&repos=${repos}`, { headers: { cookie: as } })
     ).json()) as BoardBody
-  return { forgejo, clock, call, cookie, move, board }
+  const post = (path: string, body: unknown, as = cookie) =>
+    call(path, {
+      method: "POST",
+      headers: {
+        cookie: as,
+        origin: "https://tabulo.example",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    })
+  return { forgejo, clock, call, cookie, move, board, post }
 }
 
 const labelNames = (issue: { labels: ReadonlyArray<{ name: string }> } | undefined) =>
@@ -894,5 +915,360 @@ describe("card order", () => {
     expect(response.status).toBe(409)
     expect(writes(forgejo)).toEqual([])
     expect(await rankRows()).toEqual(before)
+  })
+})
+
+type CardResult = {
+  card: Card & { assignees: Array<{ login: string; avatarUrl: string }> }
+  orderSaved?: boolean
+}
+
+describe("POST /api/board/issues", () => {
+  it("creates an issue in a column as the user and ranks it first in that column", async () => {
+    const { forgejo, board, post } = await boardSession({ orgs: [orderOrg()] })
+    await board()
+
+    const inTodo = await post("/api/board/issues", {
+      org: "acme",
+      repo: "api",
+      title: "Write the changelog",
+      column: "todo",
+    })
+    const inProgressColumn = await post("/api/board/issues", {
+      org: "acme",
+      repo: "web",
+      title: "Cache the avatars",
+      column: "Status/In Progress",
+    })
+
+    expect([inTodo.status, inProgressColumn.status]).toEqual([200, 200])
+    expect(writes(forgejo)).toEqual([
+      {
+        method: "POST",
+        path: "/api/v1/repos/acme/api/issues",
+        body: { title: "Write the changelog" },
+      },
+      {
+        method: "POST",
+        path: "/api/v1/repos/acme/web/issues",
+        body: { title: "Cache the avatars", labels: [11] },
+      },
+    ])
+    expect(await inTodo.json()).toEqual({
+      card: {
+        key: "acme/api#3",
+        repo: "api",
+        number: 3,
+        title: "Write the changelog",
+        url: "https://forgejo.example/acme/api/issues/3",
+        state: "open",
+        labels: [],
+        assignees: [],
+        milestone: null,
+        author: { login: "ada", avatarUrl: "https://forgejo.example/avatars/ada" },
+        comments: 0,
+        createdAt: "2026-11-07T09:00:00Z",
+        updatedAt: "2026-11-07T09:00:00Z",
+        closedAt: null,
+        column: "todo",
+        rank: expect.any(String),
+        readOnlyReason: null,
+      },
+      orderSaved: true,
+    })
+    expect(await inProgressColumn.json()).toMatchObject({
+      card: { key: "acme/web#4", column: "Status/In Progress", labels: [] },
+      orderSaved: true,
+    })
+    expect(labelNames(forgejo.issue("acme", "web", 4))).toEqual(["Status/In Progress"])
+    const view = await board()
+    expect(columnOrder(view, "todo")).toEqual([
+      "acme/api#3",
+      "acme/web#1",
+      "acme/api#1",
+      "acme/web#2",
+      "acme/api#2",
+    ])
+    expect(columnOrder(view, "Status/In Progress")).toEqual(["acme/web#4", "acme/web#3"])
+  })
+
+  it("puts the card in Todo when Forgejo drops the status label of a user who cannot write issues", async () => {
+    const { forgejo, call, post } = await boardSession()
+    const graceCookie = await signIn(call, forgejo, "grace")
+
+    const response = await post(
+      "/api/board/issues",
+      { org: "acme", repo: "api", title: "Found a typo", column: "Status/Review" },
+      graceCookie,
+    )
+
+    expect(response.status).toBe(200)
+    expect(labelNames(forgejo.issue("acme", "api", 7))).toEqual([])
+    expect(await response.json()).toMatchObject({
+      card: { key: "acme/api#7", column: "todo", author: { login: "grace" } },
+      orderSaved: true,
+    })
+    expect(await rankRows()).toMatchObject([
+      { issue_key: "acme/api#7", column_key: "todo", updated_by: "grace" },
+    ])
+  })
+
+  it.each([
+    ["Done", { column: "done" }, 400],
+    ["an empty title", { title: "" }, 400],
+    ["a title with surrounding spaces", { title: " Padded " }, 400],
+    ["a title over 255 characters", { title: "x".repeat(256) }, 400],
+    ["an invalid repository name", { repo: ".." }, 400],
+    ["a status column the board no longer has", { column: "Status/Shipped" }, 409],
+  ])("answers %s with HTTP %i and creates nothing", async (_, fields, status) => {
+    const { forgejo, post } = await boardSession()
+
+    const response = await post("/api/board/issues", {
+      org: "acme",
+      repo: "api",
+      title: "New issue",
+      column: "todo",
+      ...fields,
+    })
+
+    expect(response.status).toBe(status)
+    if (status === 409) {
+      expect(await response.json()).toMatchObject({ code: "board_changed" })
+    }
+    expect(writes(forgejo)).toEqual([])
+    expect(await rankRows()).toEqual([])
+  })
+
+  it("refuses someone outside the organization, an archived repository, and a cross-origin request", async () => {
+    const org = boardOrg()
+    org.repos.push(boardRepo("old", { archived: true }))
+    const { forgejo, call, cookie, post } = await boardSession({ orgs: [org] })
+    const outsiderCookie = await signIn(call, forgejo, "linus")
+    const body = { org: "acme", repo: "api", title: "New issue", column: "todo" }
+
+    const outsider = await post("/api/board/issues", body, outsiderCookie)
+    const archived = await post("/api/board/issues", { ...body, repo: "old" })
+    const crossOrigin = await call("/api/board/issues", {
+      method: "POST",
+      headers: { cookie, origin: "https://evil.example", "content-type": "application/json" },
+      body: JSON.stringify(body),
+    })
+
+    expect([outsider.status, archived.status, crossOrigin.status]).toEqual([403, 403, 403])
+    expect(writes(forgejo)).toEqual([])
+    expect(await rankRows()).toEqual([])
+  })
+
+  it("keeps the new issue and says so when its rank cannot be saved", async () => {
+    const { forgejo, post } = await boardSession({}, { DB: failingRankWrites(env.DB) })
+
+    const response = await post("/api/board/issues", {
+      org: "acme",
+      repo: "api",
+      title: "New issue",
+      column: "Status/Backlog",
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      card: { key: "acme/api#7", column: "Status/Backlog", rank: expect.any(String) },
+      orderSaved: false,
+    })
+    expect(forgejo.issue("acme", "api", 7)?.title).toBe("New issue")
+    expect(await rankRows()).toEqual([])
+  })
+})
+
+describe("POST /api/board/assign", () => {
+  const assignOrg = () => {
+    const org = boardOrg()
+    for (const repo of org.repos) repo.writers = ["ada", "grace"]
+    const api = org.repos[0]
+    if (api === undefined) throw new Error("fixture has no api repository")
+    const ada = {
+      id: 7,
+      login: "ada",
+      full_name: "Ada Lovelace",
+      avatar_url: "https://forgejo.example/avatars/ada",
+    }
+    api.issues.push(boardIssue("api", 7, { labels: [backlog], assignees: [ada, grace] }))
+    return org
+  }
+  const assigneeLogins = (body: CardResult) => body.card.assignees
+
+  it("adds the user and keeps the other assignees", async () => {
+    const { forgejo, board, post } = await boardSession({ orgs: [assignOrg()] })
+    const before = await board()
+
+    const response = await post("/api/board/assign", {
+      org: "acme",
+      repo: "web",
+      number: 9,
+      assigned: true,
+    })
+
+    expect(response.status).toBe(200)
+    expect(writes(forgejo)).toEqual([
+      {
+        method: "PATCH",
+        path: "/api/v1/repos/acme/web/issues/9",
+        body: { assignees: ["grace", "ada"] },
+      },
+    ])
+    const body = (await response.json()) as CardResult
+    expect(assigneeLogins(body)).toEqual([
+      { login: "grace", avatarUrl: "https://forgejo.example/avatars/grace" },
+      { login: "ada", avatarUrl: "https://forgejo.example/avatars/ada" },
+    ])
+    expect(body.card).toMatchObject({
+      key: "acme/web#9",
+      column: "Status/Review",
+      rank: before.cards.find((card) => card.key === "acme/web#9")?.rank,
+    })
+  })
+
+  it("removes the user and keeps the other assignees", async () => {
+    const { forgejo, post } = await boardSession({ orgs: [assignOrg()] })
+
+    const response = await post("/api/board/assign", {
+      org: "acme",
+      repo: "api",
+      number: 7,
+      assigned: false,
+    })
+
+    expect(response.status).toBe(200)
+    expect(writes(forgejo)).toEqual([
+      {
+        method: "PATCH",
+        path: "/api/v1/repos/acme/api/issues/7",
+        body: { assignees: ["grace"] },
+      },
+    ])
+    const body = (await response.json()) as CardResult
+    expect(assigneeLogins(body).map((assignee) => assignee.login)).toEqual(["grace"])
+    expect(body.card).toMatchObject({ column: "Status/Backlog", rank: expect.any(String) })
+  })
+
+  it.each([
+    ["assigning a user who is assigned", 7, true, ["ada", "grace"]],
+    ["unassigning a user who is not assigned", 1, false, []],
+  ])("writes nothing when %s", async (_, number, assigned, logins) => {
+    const { forgejo, post } = await boardSession({ orgs: [assignOrg()] })
+
+    const response = await post("/api/board/assign", { org: "acme", repo: "api", number, assigned })
+
+    expect(response.status).toBe(200)
+    expect(writes(forgejo)).toEqual([])
+    const body = (await response.json()) as CardResult
+    expect(assigneeLogins(body).map((assignee) => assignee.login)).toEqual(logins)
+  })
+
+  it("answers 403 when Forgejo ignores the assignees from a poster who cannot write issues", async () => {
+    const org = boardOrg()
+    org.repos[1]?.issues.push(boardIssue("web", 10, { assignees: [grace] }))
+    const { forgejo, post } = await boardSession({ orgs: [org] })
+
+    const response = await post("/api/board/assign", {
+      org: "acme",
+      repo: "web",
+      number: 10,
+      assigned: true,
+    })
+
+    expect(response.status).toBe(403)
+    expect(writes(forgejo).map((write) => write.method)).toEqual(["PATCH"])
+    expect(forgejo.issue("acme", "web", 10)?.assignees?.map((a) => a.login)).toEqual(["grace"])
+  })
+
+  it("refuses an archived repository, a pull request, and an invalid number without writing", async () => {
+    const org = assignOrg()
+    org.repos.push(boardRepo("old", { archived: true, issues: [boardIssue("old", 1)] }))
+    const { forgejo, post } = await boardSession({ orgs: [org] })
+
+    const archived = await post("/api/board/assign", {
+      org: "acme",
+      repo: "old",
+      number: 1,
+      assigned: true,
+    })
+    const pull = await post("/api/board/assign", {
+      org: "acme",
+      repo: "api",
+      number: 5,
+      assigned: true,
+    })
+    const zero = await post("/api/board/assign", {
+      org: "acme",
+      repo: "api",
+      number: 0,
+      assigned: true,
+    })
+
+    expect([archived.status, pull.status, zero.status]).toEqual([403, 400, 400])
+    expect(writes(forgejo)).toEqual([])
+  })
+})
+
+describe("GET /api/board/issue", () => {
+  const detailOrg = () => {
+    const org = boardOrg()
+    const api = org.repos[0]
+    if (api === undefined) throw new Error("fixture has no api repository")
+    api.issues.push(
+      boardIssue("api", 7, { body: "Steps to <reproduce>:\nopen the page\n\nIt breaks." }),
+    )
+    return org
+  }
+
+  it("answers with the description rendered by Forgejo, to anyone who can read the issue", async () => {
+    const { forgejo, call, cookie } = await boardSession({ orgs: [detailOrg()] })
+    const outsiderCookie = await signIn(call, forgejo, "linus")
+
+    const member = await call("/api/board/issue?org=acme&repo=api&number=7", {
+      headers: { cookie },
+    })
+    const outsider = await call("/api/board/issue?org=ACME&repo=API&number=7", {
+      headers: { cookie: outsiderCookie },
+    })
+
+    const detail = {
+      key: "acme/api#7",
+      bodyHtml: "<p>Steps to &lt;reproduce&gt;:<br>\nopen the page</p>\n<p>It breaks.</p>",
+    }
+    expect([member.status, outsider.status]).toEqual([200, 200])
+    expect(await member.json()).toEqual(detail)
+    expect(await outsider.json()).toEqual(detail)
+    const renders = forgejo.requests.filter((r) => r.path === "/api/v1/markdown")
+    expect(renders[0]?.json).toEqual({
+      Mode: "comment",
+      Context: "https://forgejo.example/acme/api",
+      Text: "Steps to <reproduce>:\nopen the page\n\nIt breaks.",
+    })
+  })
+
+  it("answers an empty description without asking Forgejo to render it", async () => {
+    const { forgejo, call, cookie } = await boardSession()
+
+    const response = await call("/api/board/issue?org=acme&repo=api&number=1", {
+      headers: { cookie },
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ key: "acme/api#1", bodyHtml: "" })
+    expect(forgejo.requests.filter((r) => r.path === "/api/v1/markdown")).toEqual([])
+  })
+
+  it.each([
+    ["no number", "/api/board/issue?org=acme&repo=api", 400],
+    ["number zero", "/api/board/issue?org=acme&repo=api&number=0", 400],
+    ["a path in the repository", "/api/board/issue?org=acme&repo=..&number=1", 400],
+    ["an issue Forgejo does not have", "/api/board/issue?org=acme&repo=api&number=99", 404],
+  ])("answers %s with HTTP %i", async (_, path, status) => {
+    const { call, cookie } = await boardSession()
+
+    const response = await call(path, { headers: { cookie } })
+
+    expect(response.status).toBe(status)
   })
 })
