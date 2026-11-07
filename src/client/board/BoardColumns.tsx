@@ -31,6 +31,7 @@ type BoardColumnsProps = {
 }
 
 const Column = ({
+  index,
   column,
   cards,
   columns,
@@ -38,6 +39,7 @@ const Column = ({
   viewerCanArrange,
   onMoveTo,
 }: {
+  index: number
   column: BoardColumn
   cards: ReadonlyArray<BoardCard>
   columns: ReadonlyArray<BoardColumn>
@@ -49,7 +51,8 @@ const Column = ({
     id: `${COLUMN_PREFIX}${column.key}`,
     data: { column: column.key },
   })
-  const headingId = `column-${column.key}`
+  // Column keys are label names with spaces and slashes, which aria-labelledby cannot reference.
+  const headingId = `board-column-${index}`
   return (
     <section
       aria-labelledby={headingId}
@@ -84,7 +87,7 @@ const Column = ({
               key={card.key}
               card={card}
               columns={columns}
-              canArrange={viewerCanArrange && card.readOnlyReason === null}
+              viewerCanArrange={viewerCanArrange}
               onMoveTo={(target) => onMoveTo(card, target)}
             />
           ))}
@@ -176,9 +179,10 @@ export const BoardColumns = ({ board, visible, onMove, onDragChange }: BoardColu
       onDragCancel={finish}
     >
       <div className="flex items-start gap-3 overflow-x-auto px-4 pb-6 sm:px-6">
-        {board.columns.map((column) => (
+        {board.columns.map((column, index) => (
           <Column
             key={column.key}
+            index={index}
             column={column}
             cards={columnCards(board.cards, column.key).filter(visible)}
             columns={board.columns}
@@ -194,9 +198,7 @@ export const BoardColumns = ({ board, visible, onMove, onDragChange }: BoardColu
           />
         ))}
       </div>
-      <DragOverlay>
-        {active === undefined ? null : <OverlayCard card={active} columns={board.columns} />}
-      </DragOverlay>
+      <DragOverlay>{active === undefined ? null : <OverlayCard card={active} />}</DragOverlay>
     </DndContext>
   )
 }
