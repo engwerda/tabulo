@@ -147,7 +147,7 @@ export const BoardPage = ({ org }: { org: string }) => {
   const filtered = isFiltered(filters)
 
   return (
-    <main className="py-4">
+    <main className="pb-4">
       <ScopeBar org={org} view="board" repoSelection={repoSelection}>
         {board.data !== undefined && (
           <BoardFiltersBar cards={board.data.cards} filters={filters} setParams={setParams} />

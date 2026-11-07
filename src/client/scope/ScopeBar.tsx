@@ -24,7 +24,7 @@ export const ScopeBar = ({ org, view, repoSelection, children }: ScopeBarProps) 
   const displayName = details?.fullName || org
 
   return (
-    <div className="flex flex-col gap-3 px-4 pb-3 sm:px-6">
+    <div className="flex flex-col gap-3 px-4 pt-6 pb-3 sm:px-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <Avatar

@@ -4,7 +4,7 @@ import { useRepoSelection } from "../scope/use-repo-selection.ts"
 export const EpicsPage = ({ org }: { org: string }) => {
   const repoSelection = useRepoSelection(org)
   return (
-    <main className="py-4">
+    <main className="pb-4">
       <ScopeBar org={org} view="epics" repoSelection={repoSelection} />
       <section className="mx-4 rounded-xl border border-dashed border-zinc-300 px-6 py-12 text-center sm:mx-6 dark:border-zinc-700">
         <h2 className="text-sm font-semibold">Epics are coming soon</h2>
