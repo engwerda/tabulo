@@ -5,7 +5,7 @@ import type { Insights } from "../src/shared/api.ts"
 
 const insights: Insights = {
   org: "acme",
-  repos: ["api", "web"],
+  repos: ["api", "web", "old"],
   days: 30,
   tz: "Europe/Amsterdam",
   generatedAt: "2026-11-07T09:00:00.000Z",

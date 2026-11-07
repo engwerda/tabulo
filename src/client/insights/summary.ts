@@ -51,7 +51,7 @@ export const insightsSummary = (insights: Insights): string => {
   const lines = [
     `# ${insights.org} insights`,
     "",
-    `${insights.repos.length === 1 ? "1 repository" : `${insights.repos.length} repositories`}, last ${range} (${start} to ${end}, ${insights.tz}).`,
+    `${insights.repoStats.length === 1 ? "1 repository" : `${insights.repoStats.length} repositories`}, last ${range} (${start} to ${end}, ${insights.tz}).`,
     "",
     "## Headline numbers",
     "",
