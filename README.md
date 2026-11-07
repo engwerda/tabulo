@@ -101,6 +101,9 @@ Tabulo is reachable from the internet, add a
 | `FORGEJO_CLIENT_ID` | var | OAuth2 application client ID. |
 | `FORGEJO_CLIENT_SECRET` | secret | OAuth2 application client secret. |
 | `SESSION_ENCRYPTION_KEY` | secret | 32 random bytes, base64. Encrypts the Forgejo tokens stored in D1. |
+| `BOARD_STATUS_SCOPE` | var | Prefix of the status labels, ending in `/`. Default `Status/`. The board's columns are the organization's exclusive labels whose name starts with it. |
+| `BOARD_COLUMNS` | var | Optional column order, comma-separated: full status label names such as `Status/In Progress`, and the reserved words `Todo` and `Done`. Status labels not listed come before Done in name order. Default: Todo, every status label by name, Done. |
+| `BOARD_DONE_DAYS` | var | Issues closed within this many days appear in Done. A whole number from 1 to 365. Default `14`. |
 
 Production needs `https` in `APP_URL`. The session cookie uses the `__Host-` prefix, which
 browsers accept only over HTTPS, with `http://localhost` as the one exception. Tabulo cannot be
