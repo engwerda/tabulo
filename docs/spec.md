@@ -146,9 +146,9 @@ characters. The server:
    issue. From Done it changes the labels first, then reopens the issue. It never replaces the
    whole label set, so labels changed in Forgejo meanwhile survive. Forgejo 15 and later find
    the label to remove by name, then by the id of a repository label, so Tabulo removes an
-   organization label by name; a repository label with the same name shadows it, and Forgejo
-   then removes nothing without an error. Tabulo reads the issue back after each removal and
-   treats a label still there as a refusal. A Forgejo refusal of the first write answers with
+   organization label by name; a repository label with the same name shadows it, so Tabulo
+   refuses such a move to Todo with 403 before writing anything. It also reads the issue back
+   after each removal and treats a label still there as a refusal. A Forgejo refusal of the first write answers with
    its status and changes nothing; a failure after an earlier write answers 502 saying Forgejo
    applied part of the move. A move that leaves the issue in another column stores no rank.
 4. Stores one rank, the moved card's, directly after `afterKey` in the column's order across
