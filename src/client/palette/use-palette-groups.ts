@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { useEffect, useMemo, useState } from "react"
 import type { DashboardItem } from "../../shared/api.ts"
 import { fetchDashboard, fetchInstance, fetchOrgRepos, fetchOrgs, fetchSearch } from "../api.ts"
@@ -120,15 +120,16 @@ export const usePaletteGroups = (query: string, active: boolean) => {
 
   const text = query.trim()
   const debounced = useDebounced(text)
-  const searching = debounced.length >= MIN_SEARCH_LENGTH
+  const searching = text.length >= MIN_SEARCH_LENGTH
   const search = useQuery({
     queryKey: ["search", debounced],
     queryFn: ({ signal }) => fetchSearch(debounced, signal),
-    enabled: active && searching,
+    enabled: active && debounced.length >= MIN_SEARCH_LENGTH,
     staleTime: 30_000,
     retry: false,
-    placeholderData: keepPreviousData,
   })
+  // Results of an earlier query must not stay selectable while the current one loads.
+  const searchItems = searching && debounced === text ? search.data?.items : undefined
 
   const orgList = orgs.data
   const forgejoUrl = instance.data?.forgejoUrl
@@ -276,15 +277,14 @@ export const usePaletteGroups = (query: string, active: boolean) => {
       },
     ]
 
-    const issues: ReadonlyArray<PaletteItem> = (searching ? (search.data?.items ?? []) : []).map(
-      (item) =>
-        issueItem(item, `issue:${item.url}`, {
-          badge:
-            item.state === "open"
-              ? { text: "Open", tone: "open" }
-              : { text: "Closed", tone: "closed" },
-          remember: false,
-        }),
+    const issues: ReadonlyArray<PaletteItem> = (searchItems ?? []).map((item) =>
+      issueItem(item, `issue:${item.url}`, {
+        badge:
+          item.state === "open"
+            ? { text: "Open", tone: "open" }
+            : { text: "Closed", tone: "closed" },
+        remember: false,
+      }),
     )
 
     return [
@@ -315,24 +315,14 @@ export const usePaletteGroups = (query: string, active: boolean) => {
         filter: false,
       },
     ]
-  }, [
-    lastScope,
-    orgList,
-    org,
-    repos.data,
-    forgejoUrl,
-    dashboardData,
-    searching,
-    search.data,
-    currentTheme,
-  ])
+  }, [lastScope, orgList, org, repos.data, forgejoUrl, dashboardData, searchItems, currentTheme])
 
   const status: SearchStatus = !searching
     ? "idle"
-    : search.isError
-      ? "error"
-      : debounced !== text || search.isFetching
-        ? "loading"
+    : debounced !== text || search.isFetching
+      ? "loading"
+      : search.isError
+        ? "error"
         : "done"
   return {
     groups,

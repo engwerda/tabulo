@@ -172,13 +172,10 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
   const recent = useMemo(readRecent, [])
   const { groups, searchStatus, searchError, minSearchLength } = usePaletteGroups(query, true)
 
-  const sections = useMemo(() => {
-    const ranked = rankSections(query, groups, recent)
-    // The issue search group stays out of the way until the query is long enough to search.
-    return ranked.filter(
-      (section) => section.id !== "issues" || searchStatus !== "idle" || section.rows.length > 0,
-    )
-  }, [query, groups, recent, searchStatus])
+  const sections = useMemo(
+    () => rankSections(query, groups, recent).filter((section) => section.rows.length > 0),
+    [query, groups, recent],
+  )
   const rows = useMemo(() => sections.flatMap((section) => section.rows), [sections])
   const activeIndex = Math.max(
     0,
@@ -259,8 +256,16 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
     }
   }
 
-  const issuesSection = sections.find((section) => section.id === "issues")
-  const nothingFound = rows.length === 0 && searchStatus !== "loading" && query.trim() !== ""
+  const issueCount = sections.find((section) => section.id === "issues")?.rows.length ?? 0
+  const searchNote =
+    issueCount > 0
+      ? null
+      : searchStatus === "loading"
+        ? "Searching every repository you can access…"
+        : searchStatus === "error"
+          ? `Search failed: ${searchError ?? "try again"}`
+          : null
+  const nothingFound = rows.length === 0 && searchNote === null && query.trim() !== ""
   let optionIndex = -1
 
   return createPortal(
@@ -310,65 +315,57 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
           <Kbd>Esc</Kbd>
         </div>
 
-        <div
-          id={listId}
-          role="listbox"
-          aria-label="Results"
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
-        >
-          {sections.map((section) => {
-            const headingId = `${listId}-${section.id}`
-            return (
-              // biome-ignore lint/a11y/useSemanticElements: a listbox groups options with role=group
-              <div
-                key={section.id}
-                role="group"
-                aria-labelledby={headingId}
-                className="mb-1 last:mb-0"
-              >
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
+          <div id={listId} role="listbox" aria-label="Results">
+            {sections.map((section) => {
+              const headingId = `${listId}-${section.id}`
+              return (
+                // biome-ignore lint/a11y/useSemanticElements: a listbox groups options with role=group
                 <div
-                  id={headingId}
-                  role="presentation"
-                  className="px-2.5 pt-2 pb-1 text-[0.6875rem] font-semibold tracking-wider text-zinc-400 uppercase dark:text-zinc-500"
+                  key={section.id}
+                  role="group"
+                  aria-labelledby={headingId}
+                  className="mb-1 last:mb-0"
                 >
-                  {section.heading}
-                </div>
-                {section.rows.map((row) => {
-                  optionIndex += 1
-                  const index = optionIndex
-                  return (
-                    <Option
-                      key={row.item.id}
-                      id={optionId(index)}
-                      item={row.item}
-                      titleIndices={row.titleIndices}
-                      subtitleIndices={row.subtitleIndices}
-                      active={index === activeIndex}
-                      onHover={() => setActiveId(row.item.id)}
-                      onChoose={() => choose(row.item)}
-                    />
-                  )
-                })}
-                {section.id === "issues" && issuesSection?.rows.length === 0 && (
-                  <p
-                    className={`flex items-center gap-2 px-2.5 py-2 text-sm ${
-                      searchStatus === "error"
-                        ? "text-red-700 dark:text-red-400"
-                        : "text-zinc-500 dark:text-zinc-400"
-                    }`}
+                  <div
+                    id={headingId}
+                    role="presentation"
+                    className="px-2.5 pt-2 pb-1 text-[0.6875rem] font-semibold tracking-wider text-zinc-400 uppercase dark:text-zinc-500"
                   >
-                    {searchStatus === "loading" && <Spinner />}
-                    {searchStatus === "loading"
-                      ? "Searching every repository you can access…"
-                      : searchStatus === "error"
-                        ? `Search failed: ${searchError ?? "try again"}`
-                        : "No issues or pull requests match."}
-                  </p>
-                )}
-              </div>
-            )
-          })}
-          {nothingFound && (
+                    {section.heading}
+                  </div>
+                  {section.rows.map((row) => {
+                    optionIndex += 1
+                    const index = optionIndex
+                    return (
+                      <Option
+                        key={row.item.id}
+                        id={optionId(index)}
+                        item={row.item}
+                        titleIndices={row.titleIndices}
+                        subtitleIndices={row.subtitleIndices}
+                        active={index === activeIndex}
+                        onHover={() => setActiveId(row.item.id)}
+                        onChoose={() => choose(row.item)}
+                      />
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </div>
+          {searchNote !== null ? (
+            <p
+              className={`flex items-center gap-2 px-2.5 py-2 text-sm ${
+                searchStatus === "error"
+                  ? "text-red-700 dark:text-red-400"
+                  : "text-zinc-500 dark:text-zinc-400"
+              }`}
+            >
+              {searchStatus === "loading" && <Spinner />}
+              {searchNote}
+            </p>
+          ) : nothingFound ? (
             <div className="grid place-items-center gap-2 px-6 py-10 text-center">
               <SearchIcon className="size-6 text-zinc-300 dark:text-zinc-600" />
               <p className="text-sm text-zinc-600 dark:text-zinc-300">
@@ -380,6 +377,13 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
                 </p>
               )}
             </div>
+          ) : (
+            searchStatus === "done" &&
+            issueCount === 0 && (
+              <p className="px-2.5 py-2 text-sm text-zinc-500 dark:text-zinc-400">
+                No issues or pull requests match.
+              </p>
+            )
           )}
         </div>
 
