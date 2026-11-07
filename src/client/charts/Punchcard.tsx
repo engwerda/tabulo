@@ -1,4 +1,4 @@
-import { Tooltip } from "./Tooltip.tsx"
+import { Readout, Tooltip } from "./Tooltip.tsx"
 import { useActiveIndex } from "./use-active-index.ts"
 import { useWidth } from "./use-width.ts"
 
@@ -40,6 +40,13 @@ export const Punchcard = ({
   )
   const activeDay = active === null ? 0 : Math.floor(active / 24)
   const activeHour = active === null ? 0 : active % 24
+  const tip =
+    active === null
+      ? null
+      : {
+          title: `${DAYS[activeDay]} ${hourLabel(activeHour)}–${hourLabel((activeHour + 1) % 24)}`,
+          rows: [{ label: unit, value: String(grid[activeDay]?.[activeHour] ?? 0) }],
+        }
 
   return (
     <div ref={ref} className="relative" style={{ height }}>
@@ -47,7 +54,6 @@ export const Punchcard = ({
         <svg
           width={width}
           height={height}
-          role="img"
           aria-label={ariaLabel}
           className="block touch-pan-y overflow-visible focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-500"
           {...handlers}
@@ -87,15 +93,16 @@ export const Punchcard = ({
           </g>
         </svg>
       )}
-      {active !== null && (
+      {tip !== null && (
         <Tooltip
           x={cx(activeHour)}
           y={cy(activeDay) - radius(grid[activeDay]?.[activeHour] ?? 0)}
           containerWidth={width}
-          title={`${DAYS[activeDay]} ${hourLabel(activeHour)}–${hourLabel((activeHour + 1) % 24)}`}
-          rows={[{ label: unit, value: String(grid[activeDay]?.[activeHour] ?? 0) }]}
+          title={tip.title}
+          rows={tip.rows}
         />
       )}
+      <Readout title={tip?.title} rows={tip?.rows} />
     </div>
   )
 }

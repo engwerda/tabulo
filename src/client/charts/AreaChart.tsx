@@ -1,5 +1,5 @@
 import { formatCount, linearScale, niceTicks } from "./scale.ts"
-import { Tooltip } from "./Tooltip.tsx"
+import { Readout, Tooltip } from "./Tooltip.tsx"
 import { useActiveIndex } from "./use-active-index.ts"
 import { useSize } from "./use-width.ts"
 
@@ -67,7 +67,6 @@ export const AreaChart = ({
         <svg
           width={width}
           height={height}
-          role="img"
           aria-label={ariaLabel}
           className="absolute inset-0 block touch-pan-y overflow-visible focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-500"
           {...handlers}
@@ -168,6 +167,10 @@ export const AreaChart = ({
           rows={[{ label: seriesLabel, value: format(values[active] ?? 0) }]}
         />
       )}
+      <Readout
+        title={active === null ? undefined : tooltipTitle(active)}
+        rows={active === null ? [] : [{ label: seriesLabel, value: format(values[active] ?? 0) }]}
+      />
     </div>
   )
 }

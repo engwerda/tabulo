@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import { formatCount, linearScale, niceTicks } from "./scale.ts"
-import { Tooltip, type TooltipRow } from "./Tooltip.tsx"
+import { Readout, Tooltip, type TooltipRow } from "./Tooltip.tsx"
 import { useActiveIndex } from "./use-active-index.ts"
 import { useSize } from "./use-width.ts"
 
@@ -39,8 +39,13 @@ export const barPath = (x: number, width: number, base: number, end: number, rad
   ].join("")
 }
 
+// Up to this many categories, such as histogram buckets, every label shows: each one names a
+// different range, so none can be left for the reader to infer.
+const ALWAYS_LABELED = 8
+
 /** Which category labels fit along the axis, counted back from the latest. */
 const shownLabels = (count: number, plotWidth: number) => {
+  if (count <= ALWAYS_LABELED) return () => true
   const every = Math.max(1, Math.ceil(count / Math.max(1, Math.floor(plotWidth / MIN_LABEL_GAP))))
   return (index: number) => (count - 1 - index) % every === 0
 }
@@ -113,7 +118,6 @@ const ColumnFrame = ({
         <svg
           width={width}
           height={height}
-          role="img"
           aria-label={ariaLabel}
           className="absolute inset-0 block touch-pan-y overflow-visible focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-500"
           {...handlers}
@@ -174,6 +178,7 @@ const ColumnFrame = ({
           rows={tip.rows}
         />
       )}
+      <Readout title={tip?.title} rows={tip?.rows} />
     </div>
   )
 }

@@ -2,14 +2,16 @@ import { type KeyboardEvent, type PointerEvent, useState } from "react"
 
 /**
  * The data point a reader points at or has moved to with the arrow keys. The plot is one tab
- * stop; Left and Right step through the points, Home and End jump to the ends.
+ * stop; Left and Right step through the points, Home and End jump to the ends. The index is
+ * null once it falls outside `count`, as when the data shrinks under a hovering pointer.
  */
 export const useActiveIndex = (
   count: number,
   indexAt: (x: number, y: number) => number | null,
   { step = 1, rowStep = 0 }: { step?: number; rowStep?: number } = {},
 ) => {
-  const [active, setActive] = useState<number | null>(null)
+  const [chosen, setActive] = useState<number | null>(null)
+  const active = chosen !== null && chosen < count ? chosen : null
   const clamp = (index: number) => Math.min(count - 1, Math.max(0, index))
   /** The index a key moves to from `current`, or null for keys that do not move. */
   const moveFor = (key: string, current: number) => {
@@ -34,6 +36,8 @@ export const useActiveIndex = (
     active,
     setActive,
     handlers: {
+      role: "group",
+      "aria-roledescription": "chart",
       tabIndex: count === 0 ? -1 : 0,
       onPointerMove: (event: PointerEvent<Element>) => {
         const box = event.currentTarget.getBoundingClientRect()

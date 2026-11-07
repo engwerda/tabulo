@@ -1,6 +1,6 @@
-import { useLayoutEffect, useRef } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { formatLongDay } from "./scale.ts"
-import { Tooltip } from "./Tooltip.tsx"
+import { Readout, Tooltip } from "./Tooltip.tsx"
 import { useActiveIndex } from "./use-active-index.ts"
 import { useWidth } from "./use-width.ts"
 
@@ -47,6 +47,7 @@ export const CalendarHeatmap = ({
 }) => {
   const [ref, width] = useWidth<HTMLDivElement>()
   const scroller = useRef<HTMLDivElement>(null)
+  const [scrollLeft, setScrollLeft] = useState(0)
   const offset = days[0] === undefined ? 0 : weekdayOf(days[0].date)
   const weeks = Math.ceil((days.length + offset) / 7)
   const cell = Math.min(MAX_CELL, Math.max(MIN_CELL, Math.floor((width - LEFT) / weeks) - GAP))
@@ -89,16 +90,36 @@ export const CalendarHeatmap = ({
   })
   const activeDay = active === null ? undefined : days[active]
   const activePosition = active === null ? null : position(active)
-  const scrollLeft = scroller.current?.scrollLeft ?? 0
+  const activeX = activePosition?.x
+
+  // Keeps a cell reached with the arrow keys inside the scrolled view.
+  useEffect(() => {
+    const element = scroller.current
+    if (element === null || activeX === undefined) return
+    if (activeX < element.scrollLeft) element.scrollLeft = activeX
+    else if (activeX + cell > element.scrollLeft + element.clientWidth) {
+      element.scrollLeft = activeX + cell - element.clientWidth
+    }
+  }, [activeX, cell])
+  const tip =
+    activeDay === undefined
+      ? null
+      : {
+          title: formatLongDay(activeDay.date),
+          rows: [{ label: unit, value: String(activeDay.count) }],
+        }
 
   return (
     <div ref={ref} className="relative">
-      <div ref={scroller} className="overflow-x-auto overflow-y-hidden pb-1">
+      <div
+        ref={scroller}
+        onScroll={(event) => setScrollLeft(event.currentTarget.scrollLeft)}
+        className="overflow-x-auto overflow-y-hidden pb-1"
+      >
         {width > 0 && (
           <svg
             width={svgWidth}
             height={height}
-            role="img"
             aria-label={ariaLabel}
             className="block touch-pan-x focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
             {...handlers}
@@ -144,15 +165,16 @@ export const CalendarHeatmap = ({
           </svg>
         )}
       </div>
-      {activeDay !== undefined && activePosition !== null && (
+      {tip !== null && activePosition !== null && (
         <Tooltip
           x={activePosition.x - scrollLeft + cell / 2}
           y={activePosition.y}
           containerWidth={width}
-          title={formatLongDay(activeDay.date)}
-          rows={[{ label: unit, value: String(activeDay.count) }]}
+          title={tip.title}
+          rows={tip.rows}
         />
       )}
+      <Readout title={tip?.title} rows={tip?.rows} />
       <div className="mt-2 flex items-center justify-end gap-1 text-[10px] text-zinc-500 dark:text-zinc-400">
         Less
         {LEVEL_MIX.map((_, step) => (
