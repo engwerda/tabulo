@@ -18,7 +18,7 @@ import {
 import { useState } from "react"
 import type { Board, BoardCard, BoardColumn } from "../../shared/api.ts"
 import { OverlayCard, SortableCard } from "./BoardCardView.tsx"
-import { type CardMove, columnCards } from "./board-view.ts"
+import { type CardMove, columnCards, dropNeighbours } from "./board-view.ts"
 
 const COLUMN_PREFIX = "column:"
 
@@ -103,6 +103,10 @@ export const BoardColumns = ({ board, visible, onMove, onDragChange }: BoardColu
   const [overColumn, setOverColumn] = useState<string | null>(null)
 
   const cardsByKey = new Map(board.cards.map((card) => [card.key, card] as const))
+  const shownKeys = (column: string) =>
+    columnCards(board.cards, column)
+      .filter(visible)
+      .map((card) => card.key)
   const columnTitle = (key: string | null | undefined) =>
     board.columns.find((column) => column.key === key)?.title ?? "no column"
   const targetColumn = (overId: string | number | undefined) => {
@@ -141,21 +145,20 @@ export const BoardColumns = ({ board, visible, onMove, onDragChange }: BoardColu
     const card = cardsByKey.get(String(active.id))
     const toColumn = targetColumn(over?.id)
     if (card === undefined || over === null || toColumn === undefined) return
-    const destination = columnCards(board.cards, toColumn).map((other) => other.key)
+    const shown = shownKeys(toColumn)
+    const others = shown.filter((key) => key !== card.key)
     const overId = String(over.id)
     if (overId.startsWith(COLUMN_PREFIX)) {
-      const others = destination.filter((key) => key !== card.key)
-      onMove({ key: card.key, toColumn, index: others.length })
+      onMove({ key: card.key, toColumn, ...dropNeighbours(shown, card.key, others.length) })
       return
     }
     if (overId === card.key) return
-    const from = destination.indexOf(card.key)
-    const to = destination.indexOf(overId)
-    const others = destination.filter((key) => key !== card.key)
+    const from = shown.indexOf(card.key)
+    const to = shown.indexOf(overId)
     // Within a column a card dragged down lands after the card it is over, as the sortable
     // preview shows; coming from another column it lands before it.
     const index = others.indexOf(overId) + (from !== -1 && from < to ? 1 : 0)
-    onMove({ key: card.key, toColumn, index })
+    onMove({ key: card.key, toColumn, ...dropNeighbours(shown, card.key, index) })
   }
 
   const active = activeKey === null ? undefined : cardsByKey.get(activeKey)
@@ -181,7 +184,13 @@ export const BoardColumns = ({ board, visible, onMove, onDragChange }: BoardColu
             columns={board.columns}
             highlighted={activeKey !== null && overColumn === column.key}
             viewerCanArrange={board.viewerCanArrange}
-            onMoveTo={(card, toColumn) => onMove({ key: card.key, toColumn, index: 0 })}
+            onMoveTo={(card, toColumn) =>
+              onMove({
+                key: card.key,
+                toColumn,
+                ...dropNeighbours(shownKeys(toColumn), card.key, 0),
+              })
+            }
           />
         ))}
       </div>

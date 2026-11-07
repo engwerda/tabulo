@@ -1,9 +1,9 @@
 import { Schema } from "effect"
 import {
   Board,
-  BoardCard,
   Dashboard,
   type MoveCardRequest,
+  MoveCardResult,
   Org,
   OrgRepo,
   User,
@@ -16,14 +16,24 @@ export class Unauthenticated extends Error {
   }
 }
 
-export class RequestFailed extends Error {}
+export class RequestFailed extends Error {
+  readonly status: number
+  /** Set when the server names the failure, such as `board_changed`. */
+  readonly code: string | undefined
+
+  constructor(message: string, status: number, code: string | undefined) {
+    super(message)
+    this.status = status
+    this.code = code
+  }
+}
 
 const decodeUser = Schema.decodeUnknownPromise(User)
 const decodeDashboard = Schema.decodeUnknownPromise(Dashboard)
 const decodeOrgs = Schema.decodeUnknownPromise(Schema.Array(Org))
 const decodeOrgRepos = Schema.decodeUnknownPromise(Schema.Array(OrgRepo))
 const decodeBoard = Schema.decodeUnknownPromise(Board)
-const decodeBoardCard = Schema.decodeUnknownPromise(BoardCard)
+const decodeMoveCardResult = Schema.decodeUnknownPromise(MoveCardResult)
 
 const requestJson = async (path: string, init?: RequestInit): Promise<unknown> => {
   const response = await fetch(path, {
@@ -32,9 +42,11 @@ const requestJson = async (path: string, init?: RequestInit): Promise<unknown> =
   })
   if (response.status === 401) throw new Unauthenticated()
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { error?: unknown }
+    const body = (await response.json().catch(() => ({}))) as { error?: unknown; code?: unknown }
     throw new RequestFailed(
       typeof body.error === "string" ? body.error : `Tabulo returned HTTP ${response.status}`,
+      response.status,
+      typeof body.code === "string" ? body.code : undefined,
     )
   }
   return response.json()
@@ -64,8 +76,8 @@ export const fetchBoard = async (org: string, repos: ReadonlyArray<string>): Pro
     await requestJson(`/api/board?${new URLSearchParams({ org, repos: repos.join(",") })}`),
   )
 
-export const moveCard = async (move: MoveCardRequest): Promise<BoardCard> =>
-  decodeBoardCard(
+export const moveCard = async (move: MoveCardRequest): Promise<MoveCardResult> =>
+  decodeMoveCardResult(
     await requestJson("/api/board/move", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -75,5 +87,11 @@ export const moveCard = async (move: MoveCardRequest): Promise<BoardCard> =>
 
 export const signOut = async (): Promise<void> => {
   const response = await fetch("/auth/logout", { method: "POST" })
-  if (!response.ok) throw new RequestFailed(`Sign-out failed with HTTP ${response.status}`)
+  if (!response.ok) {
+    throw new RequestFailed(
+      `Sign-out failed with HTTP ${response.status}`,
+      response.status,
+      undefined,
+    )
+  }
 }

@@ -17,6 +17,7 @@ import { CardRanks, makeCardRanks } from "./card-ranks.ts"
 import { loadConfig } from "./config.ts"
 import { loadDashboardSections } from "./dashboard.ts"
 import {
+  type BoardChanged,
   BoardRequestInvalid,
   type ConfigInvalid,
   type ForgejoError,
@@ -44,6 +45,7 @@ export type Dependencies = {
 }
 
 type AppError =
+  | BoardChanged
   | BoardRequestInvalid
   | ConfigInvalid
   | ForgejoError
@@ -96,6 +98,8 @@ const errorResponse = (c: AppContext, error: AppError): Response => {
       return c.json({ error: error.message }, 403)
     case "BoardRequestInvalid":
       return c.json({ error: error.message }, 400)
+    case "BoardChanged":
+      return c.json({ error: "The board changed since it was loaded", code: "board_changed" }, 409)
     case "ForgejoRequestFailed":
       return c.json({ error: `Forgejo returned HTTP ${error.status}` }, 502)
     case "ForgejoUnreachable":
@@ -105,7 +109,8 @@ const errorResponse = (c: AppContext, error: AppError): Response => {
     case "ForgejoMovePartlyApplied":
       return c.json(
         {
-          error: `Forgejo applied part of the move, then failed (${error.reason}). Reload the board to see the issue as it is now.`,
+          error: `Forgejo applied part of the move, then failed (${error.reason})`,
+          code: "move_partly_applied",
         },
         502,
       )
@@ -274,7 +279,9 @@ export const createApp = (dependencies: Dependencies) => {
         ),
         Effect.flatMap((request) =>
           withAccessToken(getCookie(c, SESSION_COOKIE), (token, session) =>
-            moveCard(token, session.user.login, request).pipe(Effect.map((card) => c.json(card))),
+            moveCard(token, session.user.login, request).pipe(
+              Effect.map((result) => c.json(result)),
+            ),
           ),
         ),
       ),
