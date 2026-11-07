@@ -6,7 +6,7 @@ import { fetchOrgRepos, fetchOrgs } from "../api.ts"
 import { ORGS } from "./OrgPicker.tsx"
 import { RepoPicker } from "./RepoPicker.tsx"
 import type { RepoSelection } from "./use-repo-selection.ts"
-import { ORG_VIEWS, type OrgViewId, orgView, orgViewHref } from "./views.ts"
+import { type OrgViewId, orgView, orgViewHref } from "./views.ts"
 
 type ScopeBarProps = {
   readonly org: string
@@ -16,7 +16,7 @@ type ScopeBarProps = {
   readonly children?: ReactNode
 }
 
-/** The heading of an org-level view: the organization, its views, and the chosen repositories. */
+/** The heading of an org-level view: the organization and the chosen repositories. */
 export const ScopeBar = ({ org, view, repoSelection, children }: ScopeBarProps) => {
   const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
   const repos = useQuery({ queryKey: ["org-repos", org], queryFn: () => fetchOrgRepos(org) })
@@ -45,28 +45,6 @@ export const ScopeBar = ({ org, view, repoSelection, children }: ScopeBarProps) 
             </Link>
           </div>
         </div>
-        <nav aria-label={`Views of ${displayName}`}>
-          <ul className="flex rounded-lg bg-zinc-200/60 p-0.5 dark:bg-zinc-800/60">
-            {ORG_VIEWS.map(({ id, label }) => {
-              const active = id === view
-              return (
-                <li key={id}>
-                  <Link
-                    href={orgViewHref(id, org, repoSelection.selected)}
-                    aria-current={active ? "page" : undefined}
-                    className={`block rounded-md px-3 py-1 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 ${
-                      active
-                        ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100"
-                        : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-                    }`}
-                  >
-                    {label}
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
-        </nav>
       </div>
       <div className="flex flex-wrap items-center gap-3">
         {repos.data !== undefined && (
