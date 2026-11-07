@@ -10,6 +10,7 @@ type RepoPickerProps = {
 
 export const RepoPicker = ({ repos, selected, onChange, defaultOpen }: RepoPickerProps) => {
   const [search, setSearch] = useState("")
+  const [open, setOpen] = useState(defaultOpen)
   const chosen = new Set(selected)
   const visible = repos.filter((repo) => repo.name.toLowerCase().includes(search.toLowerCase()))
   const toggle = (name: string) =>
@@ -19,7 +20,11 @@ export const RepoPicker = ({ repos, selected, onChange, defaultOpen }: RepoPicke
         .filter((candidate) => (candidate === name ? !chosen.has(name) : chosen.has(candidate))),
     )
   return (
-    <details className="group relative" open={defaultOpen}>
+    <details
+      className="group relative"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
       <summary className="cursor-pointer list-none rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800">
         Repositories{" "}
         <span className="text-zinc-500 tabular-nums dark:text-zinc-400">
