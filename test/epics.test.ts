@@ -71,7 +71,18 @@ const epicOrg = () =>
 const fixtures = (): Partial<FakeForgejoFixtures> => ({
   orgs: [
     epicOrg(),
-    { ...acme([boardRepo("sdk", { issues: [boardIssue("sdk", 5)] })]), name: "partners" },
+    {
+      ...acme([
+        boardRepo("sdk", {
+          issues: [
+            boardIssue("sdk", 5, {
+              repository: { id: 100, name: "sdk", owner: "partners", full_name: "partners/sdk" },
+            }),
+          ],
+        }),
+      ]),
+      name: "partners",
+    },
   ],
   intercept: (_, path) =>
     path.includes("/forbidden/") ? new Response(null, { status: 403 }) : undefined,
@@ -165,6 +176,38 @@ describe("GET /api/epics", () => {
     expect(response.status).toBe(200)
     expect(forgejo.requests.filter(({ path }) => path.endsWith("/web/issues/4"))).toHaveLength(0)
     expect(forgejo.requests.filter(({ path }) => path.endsWith("/sdk/issues/5"))).toHaveLength(1)
+  })
+
+  it("names child repositories as Forgejo spells them", async () => {
+    const repository = (name: string) => ({
+      id: 100,
+      name,
+      owner: "acme",
+      full_name: `acme/${name}`,
+    })
+    const forgejo = createFakeForgejo({
+      orgs: [
+        acme([
+          boardRepo("api", {
+            issues: [
+              boardIssue("api", 1, { labels: [epicLabel], body: "- [ ] web#4\n- [ ] docs#5" }),
+            ],
+          }),
+          boardRepo("Web", { issues: [boardIssue("Web", 4, { repository: repository("Web") })] }),
+          boardRepo("Docs", {
+            issues: [boardIssue("Docs", 5, { repository: repository("Docs") })],
+          }),
+        ]),
+      ],
+    })
+    const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
+    const cookie = await signIn(call, forgejo)
+    const response = await call("/api/epics?org=acme&repos=api,Docs", { headers: { cookie } })
+    const data = Schema.decodeUnknownSync(Epics)(await response.json())
+    expect(data.epics[0]?.children).toEqual([
+      expect.objectContaining({ key: "acme/web#4", repo: "acme/Web" }),
+      expect.objectContaining({ key: "acme/docs#5", repo: "acme/Docs" }),
+    ])
   })
 
   it("honors a custom epic label and Done window", async () => {

@@ -70,6 +70,7 @@ export const ForgejoRepoIssue = Schema.Struct({
   updated_at: Schema.String,
   closed_at: Schema.NullOr(Schema.String),
   pull_request: Schema.optionalKey(Schema.NullOr(Schema.Struct({}))),
+  repository: Schema.Struct({ full_name: Schema.String }),
 })
 export type ForgejoRepoIssue = typeof ForgejoRepoIssue.Type
 

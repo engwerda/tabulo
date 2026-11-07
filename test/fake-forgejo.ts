@@ -228,9 +228,11 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
   const notFound = () => json({ message: "not found" }, { status: 404 })
   const forbidden = () => json({ message: "permission denied" }, { status: 403 })
 
-  const findOrg = (name: string) => orgs.find((org) => org.name === name)
+  // Forgejo matches owner and repository names case-insensitively.
+  const findOrg = (name: string) =>
+    orgs.find((org) => org.name.toLowerCase() === name.toLowerCase())
   const findRepo = (owner: string, name: string) =>
-    findOrg(owner)?.repos.find((repo) => repo.name === name)
+    findOrg(owner)?.repos.find((repo) => repo.name.toLowerCase() === name.toLowerCase())
 
   const repoJson = (owner: string, repo: FakeRepo, login: string) => ({
     id: 100,

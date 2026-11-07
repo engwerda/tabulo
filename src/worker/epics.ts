@@ -196,7 +196,7 @@ export const loadEpics = Effect.fn("loadEpics")(function* (
   const toChild = (ref: EpicReference, issue: ForgejoRepoIssue): EpicChild => ({
     _tag: "Issue",
     key: ref.ref,
-    repo: `${ref.owner}/${ref.name}`,
+    repo: issue.repository.full_name,
     number: issue.number,
     title: issue.title,
     url: issue.html_url,
