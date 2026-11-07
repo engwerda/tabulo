@@ -156,7 +156,8 @@ repositories at a time. A repository that fails to load is listed in `failedRepo
 others still show.
 
 - **Backlog.** An issue is open at a time when it was created before it and not closed by it.
-  The weekly backlog counts the issues open at the end of each week, or now for the current
+  An issue whose state is closed closed at its `closed_at`, or at its last update when Forgejo
+  sends no `closed_at`. The weekly backlog counts the issues open at the end of each week, or now for the current
   week.
 - **Merge and close times.** Hours from creation to merge or close, for pull requests merged
   and issues closed in the window. The page shows the median and, for merges, the 75th and
@@ -164,10 +165,12 @@ others still show.
 - **CI.** Workflow runs from `/actions/runs`, whose `started` and `stopped` give durations.
   The jobs that `/actions/tasks` lists are not used, because Forgejo's log cleanup rewrites
   their `updated_at` days after the job ran. The pass rate is passed runs among runs that
-  passed or failed. A 404 or 403 from Forgejo means the repository has no CI data.
+  passed or failed. A cancelled or skipped run has finished without failing. A start or stop
+  time before 2000 means Forgejo never set it. A 404 or 403 from Forgejo means the repository
+  has no CI data.
 - **Contributors.** A merged pull request counts for its author, a closed issue for each of
   its assignees. Forgejo does not say who closed an issue.
-- **Needs attention.** CI whose latest finished run on the default branch failed, open
+- **Needs attention.** Workflows whose latest finished run on the default branch failed, open
   milestones past their due date with open issues, non-draft pull requests without an update
   for 7 days, and assigned issues without an update for 21 days. In that order, then oldest
   first, at most 15.

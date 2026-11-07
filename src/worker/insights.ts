@@ -74,7 +74,9 @@ type Run = {
   readonly url: string
   readonly created: number
   readonly outcome: RunOutcome
-  /** Finished runs only. */
+  /** Passed, failed, cancelled, or skipped; not waiting, blocked, or running. */
+  readonly finished: boolean
+  /** Runs that passed or failed only. */
   readonly durationMinutes: number | null
 }
 
@@ -131,7 +133,7 @@ const toItem =
     labels: issue.labels,
     created: Date.parse(issue.created_at),
     updated: Date.parse(issue.updated_at),
-    closed: issue.closed_at === null ? null : Date.parse(issue.closed_at),
+    closed: issue.state === "closed" ? Date.parse(issue.closed_at ?? issue.updated_at) : null,
     merged:
       issue.pull_request?.merged === true && issue.pull_request.merged_at !== null
         ? Date.parse(issue.pull_request.merged_at)
@@ -142,14 +144,23 @@ const toItem =
 const workflowName = (workflowId: string) => workflowId.replace(/\.ya?ml$/, "")
 
 const RUN_OUTCOMES: Partial<Record<string, RunOutcome>> = { success: "success", failure: "failure" }
+const FINISHED_STATUSES = new Set(["success", "failure", "cancelled", "skipped"])
+// Forgejo sends null, Go's zero time, or the Unix epoch for a time it never set.
+const UNSET_BEFORE = Date.UTC(2000, 0, 1)
+
+/** Epoch milliseconds, or NaN when the time was never set. */
+const runTime = (value: string | null) => {
+  const time = value === null ? Number.NaN : Date.parse(value)
+  return time < UNSET_BEFORE ? Number.NaN : time
+}
 
 /** Parses a run's times. Only runs that passed or failed have a duration. */
 export const toRun =
   (repo: string) =>
   (run: ForgejoActionRun): Run => {
     const outcome = RUN_OUTCOMES[run.status] ?? "other"
-    const started = run.started === null ? Number.NaN : Date.parse(run.started)
-    const stopped = run.stopped === null ? Number.NaN : Date.parse(run.stopped)
+    const started = runTime(run.started)
+    const stopped = runTime(run.stopped)
     return {
       repo,
       workflow: workflowName(run.workflow_id),
@@ -157,6 +168,7 @@ export const toRun =
       url: run.html_url,
       created: Date.parse(run.created),
       outcome,
+      finished: FINISHED_STATUSES.has(run.status),
       durationMinutes:
         outcome !== "other" && stopped >= started ? round1((stopped - started) / 60_000) : null,
     }
@@ -301,7 +313,7 @@ export const repoHealth = (facts: RepoFacts): RepoInsight["health"] => {
 /** The workflows whose latest finished run on the default branch failed. */
 const failingWorkflows = (repo: ForgejoInsightRepo, runs: ReadonlyArray<Run>, now: number) => {
   const byWorkflow = groupBy(
-    runs.filter((run) => run.branch === repo.default_branch && run.outcome !== "other"),
+    runs.filter((run) => run.branch === repo.default_branch && run.finished),
     (run) => run.workflow,
   )
   return [...byWorkflow.entries()].flatMap(([workflow, list]): Array<AttentionItem> => {
@@ -341,10 +353,12 @@ export const buildInsights = (input: InsightsInput): Insights => {
     for (const item of [...activity.closed, ...activity.open].map(toItem(activity.repo.name))) {
       items.set(item.number, item)
     }
+    const runs = activity.runs?.map(toRun(activity.repo.name)) ?? null
     return {
       activity,
       items: [...items.values()],
-      runs: activity.runs?.map(toRun(activity.repo.name)) ?? null,
+      runs,
+      failing: failingWorkflows(activity.repo, runs ?? [], now),
     }
   })
   const items = repos.flatMap((repo) => repo.items)
@@ -502,8 +516,8 @@ export const buildInsights = (input: InsightsInput): Insights => {
     ageDays(item.updated) >= STALE_PULL_DAYS
 
   const attention: Array<AttentionItem> = repos.flatMap(
-    ({ activity, items: repoItems, runs: repoRuns }) => [
-      ...failingWorkflows(activity.repo, repoRuns ?? [], now),
+    ({ activity, items: repoItems, failing }) => [
+      ...failing,
       ...activity.milestones.filter(isOverdue).map(
         (milestone): AttentionItem => ({
           kind: "overdue_milestone",
@@ -545,7 +559,8 @@ export const buildInsights = (input: InsightsInput): Insights => {
     ],
   )
 
-  const repoStats = repos.map(({ activity, items: repoItems, runs: repoRuns }): RepoInsight => {
+  const repoStats = repos.map((repo): RepoInsight => {
+    const { activity, items: repoItems, runs: repoRuns } = repo
     const repoIssues = repoItems.filter((item) => item.kind === "issue")
     const repoPulls = repoItems.filter((item) => item.kind === "pull")
     const lastActivity = Math.max(
@@ -557,7 +572,7 @@ export const buildInsights = (input: InsightsInput): Insights => {
     const facts: RepoFacts = {
       archived: activity.repo.archived,
       ciSuccessRate: repoWindowRuns === null ? null : successRate(repoWindowRuns),
-      failingDefaultBranch: failingWorkflows(activity.repo, repoRuns ?? [], now).length > 0,
+      failingDefaultBranch: repo.failing.length > 0,
       medianMergeHours: median(mergeHours(window, repoPulls)),
       stalePulls: count(repoItems, isStalePull),
       openIssues: openNow(repoIssues),

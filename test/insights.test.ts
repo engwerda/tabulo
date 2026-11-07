@@ -272,6 +272,78 @@ describe("buildInsights", () => {
     expect(attention[1]?.url).toBe("https://forgejo.example/acme/api/milestone/8")
   })
 
+  it("reads failing CI from the latest finished run of each workflow on the default branch", () => {
+    const failing = (runs: ReadonlyArray<ForgejoActionRun>) => {
+      const result = insights([activity({ runs })])
+      return {
+        attention: result.attention.flatMap((item) =>
+          item.kind === "failing_ci" ? [[item.title, item.detail]] : [],
+        ),
+        failsOnDefaultBranch: result.repoStats[0]?.health.reasons.includes(
+          "CI fails on the default branch",
+        ),
+      }
+    }
+
+    // A newer cancelled or skipped run means the workflow is not failing.
+    for (const status of ["cancelled", "skipped"]) {
+      expect(
+        failing([
+          run(status, "2026-11-06T10:00:00Z", 1),
+          run("failure", "2026-11-04T10:00:00Z", 5),
+        ]),
+      ).toEqual({ attention: [], failsOnDefaultBranch: false })
+    }
+    // A run still in progress has not finished, so the failure before it is the latest.
+    expect(
+      failing([
+        run("running", "2026-11-06T12:00:00Z", 0, { stopped: null }),
+        run("failure", "2026-11-06T10:00:00Z", 5),
+        run("success", "2026-11-01T10:00:00Z", 5),
+      ]),
+    ).toEqual({
+      attention: [["ci on main", "The latest run failed"]],
+      failsOnDefaultBranch: true,
+    })
+  })
+
+  it("has no duration for a run whose start or stop is unset", () => {
+    const result = insights([
+      activity({
+        runs: [
+          run("success", "2026-11-06T10:00:00Z", 10),
+          run("success", "2026-11-05T10:00:00Z", 30),
+          // Forgejo can send Go's zero time, or the Unix epoch, for a time it never set.
+          run("success", "2026-11-04T10:00:00Z", 0, { started: "0001-01-01T00:00:00Z" }),
+          run("failure", "2026-11-03T10:00:00Z", 0, { started: "1970-01-01T00:00:00Z" }),
+          run("cancelled", "2026-11-02T10:00:00Z", 0, { started: null }),
+        ],
+      }),
+    ])
+
+    expect(result.ci?.medianDurationMinutes).toBe(20)
+    expect(result.ci?.slowestWorkflows[0]?.medianDurationMinutes).toBe(20)
+  })
+
+  it("counts an issue as closed by its state when Forgejo sends no close time", () => {
+    const result = insights([
+      activity({
+        closed: [
+          issue(1, {
+            state: "closed",
+            closed_at: null,
+            created_at: "2026-11-01T08:00:00Z",
+            updated_at: "2026-11-03T08:00:00Z",
+          }),
+        ],
+      }),
+    ])
+
+    expect(result.tiles.openIssues.value).toBe(0)
+    expect(result.tiles.issuesClosed.value).toBe(1)
+    expect(result.tiles.medianIssueCloseHours.value).toBe(48)
+  })
+
   it("credits merged pulls to authors and closed issues to assignees", () => {
     const loaded = [
       activity({
