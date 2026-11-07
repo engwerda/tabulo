@@ -635,6 +635,42 @@ describe("POST /api/board/move", () => {
     )
   })
 
+  it("refuses a move of a closed issue to Todo before reopening it when Forgejo keeps the status label", async () => {
+    const org = boardOrg()
+    const api = org.repos[0]
+    if (api === undefined) throw new Error("fixture has no api repository")
+    api.labels = [repoLabel("api", 30, "Status/Review", "00aabb", true)]
+    const { forgejo, move } = await boardSession({ orgs: [org] })
+
+    const response = await move({ repo: "api", number: 3, toColumn: "todo" })
+
+    expect(response.status).toBe(403)
+    expect(forgejo.issue("acme", "api", 3)?.state).toBe("closed")
+    expect(writes(forgejo).filter((write) => write.method === "PATCH")).toEqual([])
+    expect(await rankRows()).toEqual([])
+  })
+
+  it("removes a repository's non-exclusive label with a column's name when the card moves to another column", async () => {
+    const legacy = repoLabel("api", 40, "Status/In Progress", "00aabb", false)
+    const org = boardOrg()
+    const api = org.repos[0]
+    if (api === undefined) throw new Error("fixture has no api repository")
+    api.labels = [legacy]
+    api.issues.push(boardIssue("api", 7, { labels: [legacy, bug] }))
+    const { forgejo, move } = await boardSession({ orgs: [org] })
+
+    const response = await move({ repo: "api", number: 7, toColumn: "Status/Review" })
+
+    expect(response.status).toBe(200)
+    expect(labelNames(forgejo.issue("acme", "api", 7))?.sort()).toEqual([
+      "Kind/Bug",
+      "Status/Review",
+    ])
+    expect(((await response.json()) as { card: { column: string } }).card.column).toBe(
+      "Status/Review",
+    )
+  })
+
   it("lets a member without push access move a card when Forgejo allows the issue write", async () => {
     const org = boardOrg()
     const web = org.repos[1]

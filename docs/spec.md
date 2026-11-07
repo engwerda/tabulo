@@ -140,14 +140,17 @@ characters. The server:
    `beforeKey` sorts before `afterKey`, it answers 409 and changes nothing. Acting on the stale
    view could undo someone else's change.
 3. If the column changes, writes to Forgejo as the user. To a status column it adds that label,
-   and Forgejo removes the issue's other labels in the same exclusive scope. To Todo it removes
-   each status column label. To Done it closes the issue. From Done it changes the labels
-   first, then reopens the issue. It never replaces the whole label set, so labels changed in
-   Forgejo meanwhile survive. Forgejo 15 and later find the label to remove by name, then by
-   the id of a repository label, so Tabulo removes an organization label by name; a
-   repository label with the same name shadows it. A Forgejo refusal of the first write answers with its status and
-   changes nothing; a failure after an earlier write answers 502 saying Forgejo applied part
-   of the move.
+   and Forgejo removes the issue's other labels in the same exclusive scope; Tabulo then
+   removes any other label named like a column that is left, such as a repository's
+   non-exclusive one. To Todo it removes each status column label. To Done it closes the
+   issue. From Done it changes the labels first, then reopens the issue. It never replaces the
+   whole label set, so labels changed in Forgejo meanwhile survive. Forgejo 15 and later find
+   the label to remove by name, then by the id of a repository label, so Tabulo removes an
+   organization label by name; a repository label with the same name shadows it, and Forgejo
+   then removes nothing without an error. Tabulo reads the issue back after each removal and
+   treats a label still there as a refusal. A Forgejo refusal of the first write answers with
+   its status and changes nothing; a failure after an earlier write answers 502 saying Forgejo
+   applied part of the move. A move that leaves the issue in another column stores no rank.
 4. Stores one rank, the moved card's, directly after `afterKey` in the column's order across
    the organization: between that rank and the next larger stored rank. Cards the user cannot
    see keep their places. If D1 fails here, it answers 200 with `orderSaved: false`.
