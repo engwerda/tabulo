@@ -51,6 +51,23 @@ You need Node.js 22.18 or later and an account on a Forgejo instance.
    npm run dev
    ```
 
+### Try Tabulo without a Forgejo instance
+
+`npm run dev:forgejo` starts a fake Forgejo on <http://localhost:3456> with a demo organization,
+repositories, labels, and issues. It is the in-memory Forgejo the tests use, and it signs you in
+as `ada` without asking. Point the development server at it, which replaces your `.dev.vars`,
+and create the local tables:
+
+```sh
+node scripts/dev-forgejo.ts --print-vars > .dev.vars
+npm run db:migrate:local
+```
+
+Then run `npm run dev:forgejo` and `npm run dev`, each in its own terminal, and open
+<http://localhost:5173>.
+
+The fake keeps its data in memory, so restarting it resets the demo and signs you out.
+
 ## Deploy to Cloudflare
 
 Tabulo needs a Cloudflare account with Workers and D1. The steps use `wrangler`, which is
@@ -130,16 +147,26 @@ The board's columns come from the organization's exclusive labels in the status 
 Open **Board** in the header, choose an organization, and choose its repositories. The address
 is `/board/<org>?repos=<repo>,<repo>`, so a board can be bookmarked or shared, filters included.
 
-Drag a card by its handle with the mouse, or focus the handle and use Space and the arrow keys,
-or pick a column in the card's column menu. Tabulo then changes the issue in Forgejo as you: it
-adds the column's status label, removes it when the card goes to Todo, or closes or reopens the
-issue. Other labels stay as they are. Forgejo decides whether you may change the issue, so a
-triage member who can write issues but not code can move cards too.
+Drag a card with the mouse, or press and hold it on a touch screen. The column under it opens a
+gap where the card will land. With the keyboard, focus a card's handle and use Space and the
+arrow keys, or pick a column in the card's menu. Tabulo then changes the issue in Forgejo as
+you: it adds the column's status label, removes it when the card goes to Todo, or closes or
+reopens the issue. Other labels stay as they are. Forgejo decides whether you may change the
+issue, so a triage member who can write issues but not code can move cards too. After a move,
+**Undo** in the notification puts the card back.
 
-When you add a card to a Todo or status column, Tabulo creates the issue in Forgejo as you,
-with the column's status label, and puts the card first in the column. Open a card to read its
-description as Forgejo renders it, and assign or unassign yourself. Tabulo writes the whole
-assignee list, so an assignee change someone makes at the same moment can be lost.
+When you add a card with the **+** in a column header or **New issue**, Tabulo creates the
+issue in Forgejo as you, with the column's status label, and puts the card first in the column.
+Click a card to open its details beside the board: the description as Forgejo renders it, its
+labels, milestone, and assignees, and **Assign me**. The address names the open card, so you
+can share it. Tabulo writes the whole assignee list, so an assignee change someone makes at the
+same moment can be lost.
+
+The filters narrow the board by text or `#number`, assignee, label, and milestone. **Assigned
+to me** puts `assignee=@me` in the address, so a shared link shows each person their own cards.
+`@none` stands for no assignee or no milestone. Collapse a column with the button in its header;
+Tabulo remembers it in your browser. Press `?` on the board for the keyboard shortcuts, such as
+`/` to search, `N` for a new issue, and `J` and `K` to browse cards in the details panel.
 
 The order of cards within a column is shared by everyone who opens the organization's board,
 whichever repositories they chose. Only members of the organization can move, reorder, and add

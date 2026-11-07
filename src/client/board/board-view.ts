@@ -14,7 +14,7 @@ export type BoardFilters = {
   readonly text: string
 }
 
-/** Filter values that are not names: Forgejo logins and milestone titles cannot start with @. */
+/** Filter values that are not names. Logins cannot contain @; a milestone titled @none loses. */
 export const ME = "@me"
 export const NONE = "@none"
 
