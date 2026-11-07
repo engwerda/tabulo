@@ -1,0 +1,173 @@
+import { env } from "cloudflare:workers"
+import { beforeEach, describe, expect, it } from "vitest"
+import { createFakeForgejo } from "./fake-forgejo.ts"
+import { assignedIssue, createdIssue, reviewRequestPull, unreadNotification } from "./fixtures.ts"
+import { signIn, tabulo } from "./harness.ts"
+
+beforeEach(async () => {
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM sessions"),
+    env.DB.prepare("DELETE FROM oauth_states"),
+  ])
+})
+
+describe("GET /api/dashboard", () => {
+  it("returns 401 without a session", async () => {
+    const response = await tabulo(createFakeForgejo().fetch)("/api/dashboard")
+    expect(response.status).toBe(401)
+  })
+
+  it("maps Forgejo issues and notifications, and isolates a failing section", async () => {
+    const forgejo = createFakeForgejo({
+      issues: {
+        review_requested: [reviewRequestPull],
+        assigned: [assignedIssue],
+        created: [createdIssue],
+      },
+      totals: { assigned: 12 },
+      notifications: [unreadNotification],
+      failingSearches: ["mentioned"],
+    })
+    const call = tabulo(forgejo.fetch)
+    const cookie = await signIn(call, forgejo)
+
+    const response = await call("/api/dashboard", { headers: { cookie } })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      user: {
+        login: "ada",
+        name: "Ada Lovelace",
+        avatarUrl: "https://forgejo.example/avatars/ada",
+      },
+      reviewRequests: {
+        _tag: "Loaded",
+        total: 1,
+        items: [
+          {
+            kind: "pull",
+            repo: "acme/api",
+            number: 42,
+            title: "Add rate limiting to the public API",
+            url: "https://forgejo.example/acme/api/pulls/42",
+            state: "open",
+            labels: [
+              { name: "Status/In Review", color: "#fbca04" },
+              { name: "Kind/Feature", color: "#0e8a16" },
+            ],
+            author: "grace",
+            updatedAt: "2026-11-06T16:30:00Z",
+            comments: 3,
+          },
+        ],
+      },
+      assigned: {
+        _tag: "Loaded",
+        total: 12,
+        items: [
+          {
+            kind: "issue",
+            repo: "acme/web",
+            number: 7,
+            title: "Dark mode flickers on load",
+            url: "https://forgejo.example/acme/web/issues/7",
+            state: "open",
+            labels: [],
+            author: "ada",
+            updatedAt: "2026-11-05T11:15:00Z",
+            comments: 0,
+          },
+        ],
+      },
+      mentioned: { _tag: "Failed", message: "Forgejo returned HTTP 500" },
+      created: {
+        _tag: "Loaded",
+        total: 1,
+        items: [
+          {
+            kind: "issue",
+            repo: "acme/web",
+            number: 8,
+            title: "Document the release process",
+            url: "https://forgejo.example/acme/web/issues/8",
+            state: "open",
+            labels: [],
+            author: "ada",
+            updatedAt: "2026-11-04T10:00:00Z",
+            comments: 0,
+          },
+        ],
+      },
+      notifications: {
+        _tag: "Loaded",
+        total: 1,
+        items: [
+          {
+            id: 55,
+            title: "Add rate limiting to the public API",
+            subjectType: "Pull",
+            repo: "acme/api",
+            url: "https://forgejo.example/acme/api/pulls/42",
+            updatedAt: "2026-11-06T17:00:00Z",
+          },
+        ],
+      },
+    })
+
+    const searches = forgejo.requests.filter((r) => r.path === "/api/v1/repos/issues/search")
+    expect(searches.map((r) => Object.fromEntries(r.query))).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ review_requested: "true", type: "pulls", state: "open" }),
+        expect.objectContaining({ assigned: "true", state: "open" }),
+        expect.objectContaining({ mentioned: "true", state: "open" }),
+        expect.objectContaining({ created: "true", state: "open" }),
+      ]),
+    )
+    expect(new Set(searches.map((r) => r.authorization))).toEqual(new Set(["Bearer access-1"]))
+  })
+})
+
+describe("access token refresh", () => {
+  it("refreshes an expiring access token and calls Forgejo with the new one", async () => {
+    const forgejo = createFakeForgejo({ expiresIn: 30 })
+    const call = tabulo(forgejo.fetch)
+    const cookie = await signIn(call, forgejo)
+
+    const response = await call("/api/dashboard", { headers: { cookie } })
+
+    expect(response.status).toBe(200)
+    const refresh = forgejo.requests.find((r) => r.form.get("grant_type") === "refresh_token")
+    expect(refresh?.form.get("refresh_token")).toBe("refresh-1")
+    const apiCalls = forgejo.requests.filter((r) => r.path.startsWith("/api/v1/repos"))
+    expect(apiCalls).toHaveLength(4)
+    expect(new Set(apiCalls.map((r) => r.authorization))).toEqual(new Set(["Bearer access-2"]))
+  })
+
+  it("refreshes once when Forgejo rejects an unexpired access token", async () => {
+    const forgejo = createFakeForgejo()
+    const call = tabulo(forgejo.fetch)
+    const cookie = await signIn(call, forgejo)
+    forgejo.revokeAccessTokens()
+
+    const response = await call("/api/dashboard", { headers: { cookie } })
+
+    expect(response.status).toBe(200)
+    const lastSearch = forgejo.requests.findLast((r) => r.path === "/api/v1/repos/issues/search")
+    expect(lastSearch?.authorization).toBe("Bearer access-2")
+  })
+
+  it("deletes the session and returns 401 when the refresh is rejected", async () => {
+    const forgejo = createFakeForgejo({ expiresIn: 30, rejectRefresh: true })
+    const call = tabulo(forgejo.fetch)
+    const cookie = await signIn(call, forgejo)
+
+    const response = await call("/api/dashboard", { headers: { cookie } })
+
+    expect(response.status).toBe(401)
+    const remaining = await env.DB.prepare("SELECT count(*) AS n FROM sessions").first<{
+      n: number
+    }>()
+    expect(remaining?.n).toBe(0)
+    expect((await call("/api/me", { headers: { cookie } })).status).toBe(401)
+  })
+})

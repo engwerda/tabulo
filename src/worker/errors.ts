@@ -50,3 +50,14 @@ export type ForgejoError =
 
 /** Errors that leave Forgejo usable but one read failed; a dashboard section shows them. */
 export type ForgejoReadError = Exclude<ForgejoError, ForgejoUnauthorized>
+
+export const describeForgejoError = (error: ForgejoReadError) => {
+  switch (error._tag) {
+    case "ForgejoRequestFailed":
+      return `Forgejo returned HTTP ${error.status}`
+    case "ForgejoUnreachable":
+      return "Forgejo is unreachable"
+    case "ForgejoDecodeFailed":
+      return "Forgejo sent an unexpected response"
+  }
+}

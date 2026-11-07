@@ -1,9 +1,11 @@
 import { Cause, Effect, Exit } from "effect"
 import { type Context, Hono } from "hono"
 import { deleteCookie, getCookie, setCookie } from "hono/cookie"
+import type { Dashboard } from "../shared/api.ts"
 import { beginLogin, completeLogin } from "./auth/oauth.ts"
-import { currentSession } from "./auth/session.ts"
+import { currentSession, withAccessToken } from "./auth/session.ts"
 import { loadConfig } from "./config.ts"
+import { loadDashboardSections } from "./dashboard.ts"
 import type {
   ConfigInvalid,
   ForgejoError,
@@ -161,6 +163,17 @@ export const createApp = (dependencies: Dependencies) => {
     run(
       c,
       Effect.map(currentSession(getCookie(c, SESSION_COOKIE)), (session) => c.json(session.user)),
+    ),
+  )
+
+  app.get("/api/dashboard", (c) =>
+    run(
+      c,
+      withAccessToken(getCookie(c, SESSION_COOKIE), (token, session) =>
+        loadDashboardSections(token).pipe(
+          Effect.map((sections) => c.json({ user: session.user, ...sections } satisfies Dashboard)),
+        ),
+      ),
     ),
   )
 
