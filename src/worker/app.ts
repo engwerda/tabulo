@@ -20,6 +20,7 @@ import {
   BoardRequestInvalid,
   type ConfigInvalid,
   type ForgejoError,
+  type ForgejoMovePartlyApplied,
   type OAuthCallbackInvalid,
   type OAuthGrantRejected,
   type OAuthStateInvalid,
@@ -46,6 +47,7 @@ type AppError =
   | BoardRequestInvalid
   | ConfigInvalid
   | ForgejoError
+  | ForgejoMovePartlyApplied
   | OAuthCallbackInvalid
   | OAuthGrantRejected
   | OAuthStateInvalid
@@ -100,6 +102,13 @@ const errorResponse = (c: AppContext, error: AppError): Response => {
       return c.json({ error: "Forgejo is unreachable" }, 502)
     case "ForgejoDecodeFailed":
       return c.json({ error: "Forgejo sent an unexpected response" }, 502)
+    case "ForgejoMovePartlyApplied":
+      return c.json(
+        {
+          error: `Forgejo applied part of the move, then failed (${error.reason}). Reload the board to see the issue as it is now.`,
+        },
+        502,
+      )
     case "ConfigInvalid":
       console.error(`Tabulo is misconfigured: ${error.message}`)
       return c.json({ error: "Tabulo is misconfigured" }, 500)

@@ -58,6 +58,12 @@ export class RepoWriteForbidden extends Schema.TaggedError<RepoWriteForbidden>()
   { repo: Schema.String },
 ) {}
 
+/** A move needed several Forgejo writes, and one failed after an earlier one succeeded. */
+export class ForgejoMovePartlyApplied extends Schema.TaggedError<ForgejoMovePartlyApplied>()(
+  "ForgejoMovePartlyApplied",
+  { reason: Schema.String },
+) {}
+
 export class ConfigInvalid extends Schema.TaggedError<ConfigInvalid>()("ConfigInvalid", {
   message: Schema.String,
 }) {}
@@ -81,8 +87,10 @@ export const FORGEJO_READ_ERRORS = [
   "ForgejoDecodeFailed",
 ] as const satisfies ReadonlyArray<ForgejoReadError["_tag"]>
 
-export const describeForgejoError = (error: ForgejoReadError) => {
+export const describeForgejoError = (error: ForgejoError) => {
   switch (error._tag) {
+    case "ForgejoUnauthorized":
+      return "Forgejo returned HTTP 401"
     case "ForgejoForbidden":
       return "Forgejo returned HTTP 403"
     case "ForgejoNotFound":
