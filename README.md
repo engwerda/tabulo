@@ -124,6 +124,10 @@ The token needs read access to issues, repositories, notifications, and the user
 - Access and refresh tokens are encrypted with AES-GCM before they are written to D1, and never
   reach the browser.
 - Requests that change state must send an `Origin` header equal to `APP_URL`.
+- The app is served with a Content Security Policy that allows only Tabulo's own scripts,
+  styles, and requests, and images from Tabulo and `FORGEJO_URL`. It also forbids framing.
+  `npm run build` writes the policy to `dist/client/_headers` from `FORGEJO_URL` in
+  `wrangler.jsonc`, so rebuild after you change it. API responses are never cached.
 
 ## License
 
