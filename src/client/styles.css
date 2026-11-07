@@ -2,6 +2,50 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * Chart colors, validated with the dataviz palette checks against zinc-50 and white (light) and
+ * zinc-950 and zinc-900 (dark). Series follow the slot order; the first three also stay apart
+ * when every pair can touch, as in a scatter plot.
+ */
+:root {
+  --chart-1: #615fff;
+  --chart-2: #009689;
+  --chart-3: #bb4d00;
+  --chart-4: #0084d1;
+  --chart-5: #ff2056;
+  --chart-6: #8e51ff;
+  --chart-grid: #e4e4e7;
+  --chart-axis: #71717b;
+  --chart-positive: #008236;
+  --chart-negative: #e7000b;
+}
+
+.dark {
+  --chart-1: #7c86ff;
+  --chart-2: #009689;
+  --chart-3: #e17100;
+  --chart-4: #0084d1;
+  --chart-5: #ff2056;
+  --chart-6: #8e51ff;
+  --chart-grid: #27272a;
+  --chart-axis: #9f9fa9;
+  --chart-positive: #00a63e;
+  --chart-negative: #ff6467;
+}
+
+@theme inline {
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-axis: var(--chart-axis);
+  --color-chart-positive: var(--chart-positive);
+  --color-chart-negative: var(--chart-negative);
+}
+
 @layer base {
   body {
     @apply bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
