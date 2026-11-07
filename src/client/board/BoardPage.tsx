@@ -1,5 +1,5 @@
 import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { type ReactNode, useEffect, useState } from "react"
+import { type ReactNode, useEffect, useRef, useState } from "react"
 import { Link, useSearchParams } from "wouter"
 import type { Board, MoveCardRequest } from "../../shared/api.ts"
 import { fetchBoard, fetchOrgRepos, moveCard, RequestFailed } from "../api.ts"
@@ -31,6 +31,12 @@ const readRememberedRepos = (org: string) => {
 const rememberRepos = (org: string, repos: string) => {
   try {
     window.localStorage.setItem(rememberedReposKey(org), repos)
+  } catch {}
+}
+
+const forgetRepos = (org: string) => {
+  try {
+    window.localStorage.removeItem(rememberedReposKey(org))
   } catch {}
 }
 
@@ -80,12 +86,17 @@ export const BoardPage = ({ org }: { org: string }) => {
 
   const selection = selected.join(",")
   const hasSelection = selection !== ""
+  // The remembered selection fills an empty address once per organization; after that an empty
+  // selection is the user's choice.
+  const restoredFor = useRef<string | null>(null)
   useEffect(() => {
+    const firstVisit = restoredFor.current !== org
+    restoredFor.current = org
     if (hasSelection) {
       rememberRepos(org, selection)
       return
     }
-    const remembered = readRememberedRepos(org)
+    const remembered = firstVisit ? readRememberedRepos(org) : null
     if (remembered) {
       setParams(
         (current) => {
@@ -177,6 +188,7 @@ export const BoardPage = ({ org }: { org: string }) => {
   }
 
   const chooseRepos = (repoNames: ReadonlyArray<string>) => {
+    if (repoNames.length === 0) forgetRepos(org)
     setParams(
       (current) => {
         const next = new URLSearchParams(current)
