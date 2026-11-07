@@ -141,10 +141,7 @@ export const createApp = (dependencies: Dependencies) => {
           ),
           Effect.provideService(SessionStore, makeSessionStore(c.env.DB, config.tokenKey)),
           Effect.provideService(BoardConfig, config.board),
-          Effect.provideService(EpicsConfig, {
-            label: config.epicLabel,
-            forgejoUrl: config.forgejo.baseUrl,
-          }),
+          Effect.provideService(EpicsConfig, { label: config.epicLabel }),
           Effect.provideService(CardRanks, makeCardRanks(c.env.DB)),
         )
       }).pipe(Effect.provideService(Clock.Clock, dependencies.clock ?? Clock.Clock.defaultValue())),
@@ -255,8 +252,8 @@ export const createApp = (dependencies: Dependencies) => {
     run(
       c,
       currentSession(getCookie(c, SESSION_COOKIE)).pipe(
-        Effect.flatMap(() => loadConfig(c.env)),
-        Effect.map((config) => c.json({ forgejoUrl: config.forgejo.baseUrl } satisfies Instance)),
+        Effect.flatMap(() => ForgejoClient),
+        Effect.map((forgejo) => c.json({ forgejoUrl: forgejo.baseUrl } satisfies Instance)),
       ),
     ),
   )

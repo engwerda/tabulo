@@ -56,6 +56,8 @@ export type IssueListing =
 export class ForgejoClient extends Context.Service<
   ForgejoClient,
   {
+    /** The instance's base URL, without a trailing slash. */
+    readonly baseUrl: string
     readonly authorizeUrl: (state: string, codeChallenge: string) => string
     readonly exchangeCode: (
       code: string,
@@ -261,6 +263,21 @@ export const makeForgejoClient = (
       return items.slice(0, max) as ReadonlyArray<A>
     })
 
+  const listRepoIssues = <A>(
+    token: AccessToken,
+    repo: RepoRef,
+    listing: IssueListing,
+    item: Schema.Decoder<A>,
+  ) =>
+    all(
+      token,
+      `${repoPath(repo)}/issues`,
+      listing.state === "open"
+        ? { type: "issues", state: "open" }
+        : { type: "issues", state: "closed", since: listing.updatedSince },
+      item,
+    )
+
   const tokenRequest = (grant: Record<string, string>) =>
     Effect.gen(function* () {
       const response = yield* send(
@@ -305,6 +322,7 @@ export const makeForgejoClient = (
     })
 
   return {
+    baseUrl: config.baseUrl,
     authorizeUrl: (state, codeChallenge) =>
       `${config.baseUrl}/login/oauth/authorize?${new URLSearchParams({
         client_id: config.clientId,
@@ -360,24 +378,9 @@ export const makeForgejoClient = (
       all(token, `/orgs/${encodeURIComponent(org)}/labels`, {}, ForgejoLabel),
     repo: (token, repo) =>
       api(token, repoPath(repo), {}, ForgejoRepo).pipe(Effect.map(({ body }) => body)),
-    repoIssues: (token, repo, listing) =>
-      all(
-        token,
-        `${repoPath(repo)}/issues`,
-        listing.state === "open"
-          ? { type: "issues", state: "open" }
-          : { type: "issues", state: "closed", since: listing.updatedSince },
-        ForgejoRepoIssue,
-      ),
+    repoIssues: (token, repo, listing) => listRepoIssues(token, repo, listing, ForgejoRepoIssue),
     repoEpicIssues: (token, repo, listing) =>
-      all(
-        token,
-        `${repoPath(repo)}/issues`,
-        listing.state === "open"
-          ? { type: "issues", state: "open" }
-          : { type: "issues", state: "closed", since: listing.updatedSince },
-        ForgejoEpicIssue,
-      ),
+      listRepoIssues(token, repo, listing, ForgejoEpicIssue),
     issue: (token, repo, number) =>
       api(token, `${repoPath(repo)}/issues/${number}`, {}, ForgejoRepoIssue).pipe(
         Effect.map(({ body }) => body),

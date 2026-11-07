@@ -104,10 +104,9 @@ export const parseEpicChildren = (
   return [...children.values()]
 }
 
-export class EpicsConfig extends Context.Service<
-  EpicsConfig,
-  { readonly label: string; readonly forgejoUrl: string }
->()("tabulo/EpicsConfig") {}
+export class EpicsConfig extends Context.Service<EpicsConfig, { readonly label: string }>()(
+  "tabulo/EpicsConfig",
+) {}
 
 const MAX_CHILD_LOOKUPS = 200
 const CHILD_CONCURRENCY = 4
@@ -182,7 +181,7 @@ export const loadEpics = Effect.fn("loadEpics")(function* (
           refs: parseEpicChildren(
             issue.body ?? "",
             { owner: query.org, name: repo.name },
-            config.forgejoUrl,
+            forgejo.baseUrl,
           ),
         })
     }
