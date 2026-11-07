@@ -19,6 +19,8 @@ export type FakeForgejoFixtures = {
   readonly expiresIn: number
   /** Answers every refresh grant with this response instead of the normal outcome. */
   readonly refreshFailure: { readonly status: number; readonly body: string } | undefined
+  /** Awaited before a refresh response is sent, so a test can order concurrent refreshes. */
+  readonly beforeRefreshResponse: (outcome: "issued" | "rejected") => Promise<void>
 }
 
 const json = (body: unknown, init?: ResponseInit) =>
@@ -53,6 +55,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     failingSearches: [],
     expiresIn: 3600,
     refreshFailure: undefined,
+    beforeRefreshResponse: () => Promise.resolve(),
     ...overrides,
   }
   const requests: Array<RecordedRequest> = []
@@ -102,11 +105,14 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
       }
       const refresh = form.get("refresh_token") ?? ""
       if (!validRefreshTokens.has(refresh)) {
-        return json({ error: "invalid_grant" }, { status: 400 })
+        const rejection = json({ error: "invalid_grant" }, { status: 400 })
+        return fixtures.beforeRefreshResponse("rejected").then(() => rejection)
       }
+      // Rotation, as with Forgejo's INVALIDATE_REFRESH_TOKENS: each refresh token works once.
       validRefreshTokens.delete(refresh)
       validAccessTokens.delete(refresh.replace("refresh-", "access-"))
-      return issueTokens()
+      const issued = issueTokens()
+      return fixtures.beforeRefreshResponse("issued").then(() => issued)
     }
     return json({ error: "unsupported_grant_type" }, { status: 400 })
   }

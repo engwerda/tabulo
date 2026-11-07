@@ -1,4 +1,4 @@
-import { Clock, Effect, Redacted } from "effect"
+import { Clock, Effect, Schedule } from "effect"
 import { ForgejoUnauthorized, SessionNotFound } from "../errors.ts"
 import { type AccessToken, ForgejoClient } from "../forgejo/client.ts"
 import { type Session, SessionStore } from "../session-store.ts"
@@ -6,39 +6,49 @@ import { type Session, SessionStore } from "../session-store.ts"
 /** Refresh this long before Forgejo would reject the access token. */
 const REFRESH_MARGIN_MS = 60_000
 
+/**
+ * How long a refresh rejected with `invalid_grant` waits for a concurrent request, possibly in
+ * another isolate, to store the tokens it got for the same refresh token. Forgejo rotates
+ * refresh tokens, so the loser of that race is rejected before the winner has written.
+ */
+const CONCURRENT_REFRESH_WAIT = { schedule: Schedule.spaced("200 millis"), times: 10 }
+
 export const currentSession = (cookieValue: string | undefined) =>
   cookieValue === undefined
     ? Effect.fail(new SessionNotFound())
     : SessionStore.use((store) => store.find(cookieValue))
 
-const refresh = (cookieValue: string, session: Session) =>
+const awaitConcurrentRefresh = (session: Session) =>
+  SessionStore.use((store) =>
+    store.reload(session).pipe(
+      Effect.filterOrFail(
+        (latest) => latest.tokenVersion !== session.tokenVersion,
+        () => new ForgejoUnauthorized(),
+      ),
+      Effect.retry({
+        ...CONCURRENT_REFRESH_WAIT,
+        while: (error) => error._tag === "ForgejoUnauthorized",
+      }),
+      // Nobody stored newer tokens, so the refresh token itself is dead.
+      Effect.tapErrorTag("ForgejoUnauthorized", () => store.removeIfCurrent(session)),
+    ),
+  )
+
+const refresh = (session: Session) =>
   Effect.gen(function* () {
     const forgejo = yield* ForgejoClient
     const store = yield* SessionStore
     return yield* forgejo.refresh(session.tokens.refreshToken).pipe(
-      Effect.tap((tokens) => store.replaceTokens(session.idHash, tokens)),
-      Effect.map((tokens): Session => ({ ...session, tokens })),
-      Effect.catchTag("OAuthGrantRejected", () =>
-        // A concurrent request may have rotated the refresh token first; Forgejo then
-        // rejects ours although the session holds a newer, valid one.
-        store.find(cookieValue).pipe(
-          Effect.flatMap((latest) =>
-            Redacted.value(latest.tokens.refreshToken) ===
-            Redacted.value(session.tokens.refreshToken)
-              ? Effect.fail(new ForgejoUnauthorized())
-              : Effect.succeed(latest),
-          ),
-          Effect.catchTag("SessionNotFound", () => Effect.fail(new ForgejoUnauthorized())),
-        ),
-      ),
+      Effect.flatMap((tokens) => store.replaceTokens(session, tokens)),
+      Effect.catchTag("OAuthGrantRejected", () => awaitConcurrentRefresh(session)),
     )
   })
 
 /**
  * Runs `use` with a valid access token for the session in `cookieValue`. The token is
  * refreshed when it is about to expire, and once more if Forgejo rejects it. When Forgejo
- * still rejects the user, the session is deleted and the effect fails with
- * `ForgejoUnauthorized`.
+ * rejects the refresh token, or the refreshed access token, the session is deleted and the
+ * effect fails with `ForgejoUnauthorized`.
  */
 export const withAccessToken = <A, E, R>(
   cookieValue: string | undefined,
@@ -49,16 +59,15 @@ export const withAccessToken = <A, E, R>(
     const store = yield* SessionStore
     const session = yield* store.find(cookieValue)
     const now = yield* Clock.currentTimeMillis
-    const expiring = session.tokens.accessExpiresAt - REFRESH_MARGIN_MS <= now
     const run = (current: Session) => use(current.tokens.accessToken, current)
-    const attempt = expiring
-      ? refresh(cookieValue, session).pipe(Effect.flatMap(run))
-      : run(session).pipe(
-          Effect.catchTag("ForgejoUnauthorized", () =>
-            refresh(cookieValue, session).pipe(Effect.flatMap(run)),
-          ),
-        )
-    return yield* attempt.pipe(
-      Effect.tapErrorTag("ForgejoUnauthorized", () => store.remove(session.idHash)),
+    const refreshThenRun = refresh(session).pipe(
+      Effect.flatMap((current) =>
+        run(current).pipe(
+          Effect.tapErrorTag("ForgejoUnauthorized", () => store.removeIfCurrent(current)),
+        ),
+      ),
     )
+    return yield* session.tokens.accessExpiresAt - REFRESH_MARGIN_MS <= now
+      ? refreshThenRun
+      : run(session).pipe(Effect.catchTag("ForgejoUnauthorized", () => refreshThenRun))
   })

@@ -13,6 +13,8 @@ export type Session = {
   readonly forgejoUserId: number
   readonly user: User
   readonly tokens: TokenGrant
+  /** Moves on every token write; a refresh stores its tokens only if it has not moved. */
+  readonly tokenVersion: number
 }
 
 export class SessionStore extends Context.Service<
@@ -21,8 +23,18 @@ export class SessionStore extends Context.Service<
     /** Returns the cookie value. Only its SHA-256 hash is stored. */
     readonly create: (user: ForgejoUser, tokens: TokenGrant) => Effect.Effect<string>
     readonly find: (cookieValue: string) => Effect.Effect<Session, SessionNotFound>
-    readonly replaceTokens: (idHash: string, tokens: TokenGrant) => Effect.Effect<void>
+    readonly reload: (session: Session) => Effect.Effect<Session, SessionNotFound>
+    /**
+     * Stores `tokens` if the session still holds the tokens `session` was read with. Otherwise
+     * a concurrent request stored newer tokens first, and those are returned instead.
+     */
+    readonly replaceTokens: (
+      session: Session,
+      tokens: TokenGrant,
+    ) => Effect.Effect<Session, SessionNotFound>
     readonly remove: (idHash: string) => Effect.Effect<void>
+    /** Deletes the session unless a concurrent request has stored newer tokens. */
+    readonly removeIfCurrent: (session: Session) => Effect.Effect<void>
     readonly saveOAuthState: (state: string, codeVerifier: string) => Effect.Effect<void>
     /** Consumes the state: a second call with the same value fails. */
     readonly takeOAuthState: (state: string) => Effect.Effect<string, OAuthStateInvalid>
@@ -39,6 +51,7 @@ type SessionRow = {
   refresh_token_enc: string
   access_expires_at: number
   expires_at: number
+  token_version: number
 }
 
 // D1 failures are infrastructure faults, not domain outcomes, so they surface as defects.
@@ -67,6 +80,28 @@ export const makeSessionStore = (db: D1Database, key: CryptoKey): SessionStore["
     query(() => db.prepare("DELETE FROM sessions WHERE id_hash = ?").bind(idHash).run()).pipe(
       Effect.asVoid,
     )
+
+  const findByHash = (idHash: string) =>
+    Effect.gen(function* () {
+      const row = yield* query(() =>
+        db.prepare("SELECT * FROM sessions WHERE id_hash = ?").bind(idHash).first<SessionRow>(),
+      )
+      if (row === null) return yield* new SessionNotFound()
+      if (row.expires_at <= (yield* Clock.currentTimeMillis)) {
+        yield* remove(idHash)
+        return yield* new SessionNotFound()
+      }
+      const tokens = yield* openTokens(row).pipe(
+        Effect.catch(() => remove(idHash).pipe(Effect.andThen(new SessionNotFound()))),
+      )
+      return {
+        idHash,
+        forgejoUserId: row.forgejo_user_id,
+        user: { login: row.login, name: row.name, avatarUrl: row.avatar_url },
+        tokens,
+        tokenVersion: row.token_version,
+      } satisfies Session
+    })
 
   return {
     create: (user, tokens) =>
@@ -101,43 +136,42 @@ export const makeSessionStore = (db: D1Database, key: CryptoKey): SessionStore["
         return cookieValue
       }),
 
-    find: (cookieValue) =>
-      Effect.gen(function* () {
-        const idHash = yield* sha256Hex(cookieValue)
-        const row = yield* query(() =>
-          db.prepare("SELECT * FROM sessions WHERE id_hash = ?").bind(idHash).first<SessionRow>(),
-        )
-        if (row === null) return yield* new SessionNotFound()
-        if (row.expires_at <= (yield* Clock.currentTimeMillis)) {
-          yield* remove(idHash)
-          return yield* new SessionNotFound()
-        }
-        const tokens = yield* openTokens(row).pipe(
-          Effect.catch(() => remove(idHash).pipe(Effect.andThen(new SessionNotFound()))),
-        )
-        return {
-          idHash,
-          forgejoUserId: row.forgejo_user_id,
-          user: { login: row.login, name: row.name, avatarUrl: row.avatar_url },
-          tokens,
-        }
-      }),
+    find: (cookieValue) => sha256Hex(cookieValue).pipe(Effect.flatMap(findByHash)),
 
-    replaceTokens: (idHash, tokens) =>
+    reload: (session) => findByHash(session.idHash),
+
+    replaceTokens: (session, tokens) =>
       Effect.gen(function* () {
-        const [accessEnc, refreshEnc] = yield* sealTokens(idHash, tokens)
-        yield* query(() =>
+        const [accessEnc, refreshEnc] = yield* sealTokens(session.idHash, tokens)
+        const result = yield* query(() =>
           db
             .prepare(
-              `UPDATE sessions SET access_token_enc = ?, refresh_token_enc = ?, access_expires_at = ?
-               WHERE id_hash = ?`,
+              `UPDATE sessions SET access_token_enc = ?, refresh_token_enc = ?, access_expires_at = ?,
+                 token_version = token_version + 1
+               WHERE id_hash = ? AND token_version = ?`,
             )
-            .bind(accessEnc, refreshEnc, tokens.accessExpiresAt, idHash)
+            .bind(
+              accessEnc,
+              refreshEnc,
+              tokens.accessExpiresAt,
+              session.idHash,
+              session.tokenVersion,
+            )
             .run(),
         )
+        if (result.meta.changes === 0) return yield* findByHash(session.idHash)
+        return { ...session, tokens, tokenVersion: session.tokenVersion + 1 }
       }),
 
     remove,
+
+    removeIfCurrent: (session) =>
+      query(() =>
+        db
+          .prepare("DELETE FROM sessions WHERE id_hash = ? AND token_version = ?")
+          .bind(session.idHash, session.tokenVersion)
+          .run(),
+      ).pipe(Effect.asVoid),
 
     saveOAuthState: (state, codeVerifier) =>
       Effect.gen(function* () {

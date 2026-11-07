@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit } from "effect"
+import { Cause, Clock, Effect, Exit } from "effect"
 import { type Context, Hono } from "hono"
 import { deleteCookie, getCookie, setCookie } from "hono/cookie"
 import type { Dashboard } from "../shared/api.ts"
@@ -26,6 +26,8 @@ import { sha256Hex } from "./token-crypto.ts"
 export type Dependencies = {
   /** Outbound HTTP to Forgejo. Tests pass a fake Forgejo here. */
   readonly fetch: HttpFetch
+  /** Tests pass a clock they control. */
+  readonly clock?: Clock.Clock
 }
 
 type AppError =
@@ -97,7 +99,7 @@ export const createApp = (dependencies: Dependencies) => {
           ),
           Effect.provideService(SessionStore, makeSessionStore(c.env.DB, config.tokenKey)),
         )
-      }),
+      }).pipe(Effect.provideService(Clock.Clock, dependencies.clock ?? Clock.Clock.defaultValue())),
     )
     if (Exit.isSuccess(exit)) return exit.value
     const failure = exit.cause.reasons.find(Cause.isFailReason)

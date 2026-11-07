@@ -1,8 +1,14 @@
 import { env } from "cloudflare:workers"
 import { beforeEach, describe, expect, it } from "vitest"
+import { createFakeClock } from "./fake-clock.ts"
 import { createFakeForgejo } from "./fake-forgejo.ts"
 import { assignedIssue, createdIssue, reviewRequestPull, unreadNotification } from "./fixtures.ts"
-import { signIn, tabulo } from "./harness.ts"
+import { APP_URL, signIn, tabulo } from "./harness.ts"
+
+const refreshGrants = (forgejo: ReturnType<typeof createFakeForgejo>) =>
+  forgejo.requests
+    .filter((r) => r.form.get("grant_type") === "refresh_token")
+    .map((r) => r.form.get("refresh_token"))
 
 const sessionCount = async () =>
   (await env.DB.prepare("SELECT count(*) AS n FROM sessions").first<{ n: number }>())?.n
@@ -164,7 +170,7 @@ describe("access token refresh", () => {
       expiresIn: 30,
       refreshFailure: { status: 400, body: JSON.stringify({ error: "invalid_grant" }) },
     })
-    const call = tabulo(forgejo.fetch)
+    const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
     const cookie = await signIn(call, forgejo)
 
     const response = await call("/api/dashboard", { headers: { cookie } })
@@ -193,4 +199,70 @@ describe("access token refresh", () => {
       expect((await call("/api/me", { headers: { cookie } })).status).toBe(200)
     },
   )
+})
+
+describe("concurrent access token refresh", () => {
+  it("keeps the session when another request rotated the refresh token first", async () => {
+    let releaseIssued = () => {}
+    const issuedHeld = new Promise<void>((resolve) => {
+      releaseIssued = resolve
+    })
+    const forgejo = createFakeForgejo({
+      expiresIn: 30,
+      beforeRefreshResponse: (outcome) => (outcome === "issued" ? issuedHeld : Promise.resolve()),
+    })
+    const clock = createFakeClock({ parkSleeps: true })
+    const call = tabulo(forgejo.fetch, { clock: clock.clock })
+    const cookie = await signIn(call, forgejo)
+
+    const requests = [
+      call("/api/dashboard", { headers: { cookie } }),
+      call("/api/dashboard", { headers: { cookie } }),
+    ]
+    // The request whose refresh was rejected has looked at the session and is waiting (or has
+    // given up). Only now does the winner receive its tokens and store them.
+    await Promise.race([clock.slept, ...requests])
+    releaseIssued()
+    await Promise.race(requests)
+    clock.wake()
+    const responses = await Promise.all(requests)
+
+    expect(responses.map((r) => r.status)).toEqual([200, 200])
+    expect(refreshGrants(forgejo)).toEqual(["refresh-1", "refresh-1"])
+    expect(await sessionCount()).toBe(1)
+    expect((await call("/api/dashboard", { headers: { cookie } })).status).toBe(200)
+    expect(refreshGrants(forgejo)).toEqual(["refresh-1", "refresh-1", "refresh-2"])
+  })
+
+  it("does not continue a session that was signed out while its refresh was in flight", async () => {
+    let refreshArrived = () => {}
+    const arrived = new Promise<void>((resolve) => {
+      refreshArrived = resolve
+    })
+    let releaseRefresh = () => {}
+    const held = new Promise<void>((resolve) => {
+      releaseRefresh = resolve
+    })
+    const forgejo = createFakeForgejo({
+      expiresIn: 30,
+      beforeRefreshResponse: () => {
+        refreshArrived()
+        return held
+      },
+    })
+    const call = tabulo(forgejo.fetch)
+    const cookie = await signIn(call, forgejo)
+
+    const pending = call("/api/dashboard", { headers: { cookie } })
+    await arrived
+    const logout = await call("/auth/logout", {
+      method: "POST",
+      headers: { cookie, origin: APP_URL },
+    })
+    expect(logout.status).toBe(204)
+    releaseRefresh()
+
+    expect((await pending).status).toBe(401)
+    expect(await sessionCount()).toBe(0)
+  })
 })
