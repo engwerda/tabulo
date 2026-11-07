@@ -18,3 +18,12 @@ describe("GET /api/me", () => {
     expect(setCookies(response).get(SESSION_COOKIE)?.attributes).toContain("Max-Age=0")
   })
 })
+
+describe("API response headers", () => {
+  it("forbids caching and MIME sniffing on API responses", async () => {
+    const response = await tabulo(unreachableForgejo)("/api/me")
+
+    expect(response.headers.get("cache-control")).toBe("no-store")
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff")
+  })
+})

@@ -110,6 +110,12 @@ export const createApp = (dependencies: Dependencies) => {
 
   const app = new Hono<{ Bindings: Env }>()
 
+  app.use("/api/*", async (c, next) => {
+    await next()
+    c.header("Cache-Control", "no-store")
+    c.header("X-Content-Type-Options", "nosniff")
+  })
+
   app.use(async (c, next) => {
     if (c.req.method === "GET" || c.req.method === "HEAD") return next()
     const appOrigin = URL.canParse(c.env.APP_URL) ? new URL(c.env.APP_URL).origin : undefined
