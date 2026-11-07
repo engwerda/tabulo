@@ -48,8 +48,12 @@ export type FakeIssue = {
 export type FakeRepo = {
   name: string
   private: boolean
-  /** Logins with push access. Everyone else may only read. */
+  archived: boolean
+  /** Logins with push access, which includes writing issues. */
   writers: ReadonlyArray<string>
+  /** Logins who may write issues without push access, as a triage team can. */
+  triagers: ReadonlyArray<string>
+  /** Repository-level labels, beside the organization's. */
   labels: ReadonlyArray<FakeLabel>
   issues: Array<FakeIssue>
   /** Issue listings answer HTTP 500. */
@@ -88,6 +92,19 @@ export type FakeForgejoFixtures = {
   readonly refreshFailure: { readonly status: number; readonly body: string } | undefined
   /** Awaited before a refresh response is sent, so a test can order concurrent refreshes. */
   readonly beforeRefreshResponse: (outcome: "issued" | "rejected") => Promise<void>
+  /**
+   * Runs before each authenticated API request. A response answers the request instead of
+   * the fake, so a test can fail one step or change data between Tabulo's read and write.
+   */
+  readonly intercept: (method: string, path: string) => Response | undefined
+}
+
+/** Forgejo's Label.ExclusiveScope: the name up to its last `/`, for exclusive labels only. */
+const exclusiveScope = (label: FakeLabel) => {
+  const slash = label.name.lastIndexOf("/")
+  return label.exclusive && slash > 0 && slash < label.name.length - 1
+    ? label.name.slice(0, slash)
+    : ""
 }
 
 const json = (body: unknown, init?: ResponseInit) =>
@@ -123,6 +140,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     expiresIn: 3600,
     refreshFailure: undefined,
     beforeRefreshResponse: () => Promise.resolve(),
+    intercept: () => undefined,
     otherUsers: [],
     orgs: [],
     tokenScope: "write",
@@ -219,9 +237,17 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     full_name: `${owner}/${repo.name}`,
     owner: { id: 1, login: owner },
     private: repo.private,
-    archived: false,
+    archived: repo.archived,
+    // Forgejo derives push from the code unit; issue-unit write is not exposed here.
     permissions: { admin: false, push: repo.writers.includes(login), pull: true },
   })
+
+  // CanWriteIssuesOrPulls: the issue unit's write access, which triage members have too.
+  const canWriteIssues = (repo: FakeRepo, login: string) =>
+    fixtures.tokenScope === "write" &&
+    (repo.writers.includes(login) || repo.triagers.includes(login))
+
+  const archivedRefusal = () => json({ message: "repo is archived" }, { status: 423 })
 
   const listIssues = (repo: FakeRepo, query: URLSearchParams) => {
     if (repo.failIssueListing) return json({ message: "internal error" }, { status: 500 })
@@ -239,10 +265,9 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
   }
 
   const editIssue = (repo: FakeRepo, issue: FakeIssue, login: string, body: unknown) => {
-    const canWrite = repo.writers.includes(login)
-    if (fixtures.tokenScope === "read" || (!canWrite && issue.user.login !== login)) {
-      return forbidden()
-    }
+    if (repo.archived) return archivedRefusal()
+    const isPoster = fixtures.tokenScope === "write" && issue.user.login === login
+    if (!canWriteIssues(repo, login) && !isPoster) return forbidden()
     const { state } = body as { state?: "open" | "closed" }
     if (state !== undefined && state !== issue.state) {
       issue.state = state
@@ -252,18 +277,46 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     return json(issue, { status: 201 })
   }
 
-  // PUT replaces the whole label set. Unknown ids are ignored, as in Forgejo.
-  const replaceLabels = (
+  /**
+   * Forgejo's issue label endpoints. POST adds labels and PUT replaces the set; every label
+   * either adds removes the issue's other labels in its exclusive scope, repository-level and
+   * organization-level alike (RemoveDuplicateExclusiveIssueLabels). DELETE removes one label.
+   * Unknown ids in a POST or PUT are ignored, as in Forgejo.
+   */
+  const issueLabels = (
+    method: string,
     org: FakeOrg,
     repo: FakeRepo,
     issue: FakeIssue,
     login: string,
+    labelId: string | undefined,
     body: unknown,
   ) => {
-    if (fixtures.tokenScope === "read" || !repo.writers.includes(login)) return forbidden()
-    const ids = (body as { labels: ReadonlyArray<number> }).labels
+    if (method === "GET") return json(issue.labels)
+    if (repo.archived) return archivedRefusal()
+    if (!canWriteIssues(repo, login)) return forbidden()
     const available = [...org.labels, ...repo.labels]
-    issue.labels = available.filter((label) => ids.includes(label.id))
+    if (method === "DELETE" && labelId !== undefined) {
+      if (!available.some((label) => label.id === Number(labelId))) {
+        return json({ message: "label does not exist" }, { status: 422 })
+      }
+      issue.labels = issue.labels.filter((label) => label.id !== Number(labelId))
+      issue.updated_at = fixtures.now
+      return new Response(null, { status: 204 })
+    }
+    if (labelId !== undefined || (method !== "POST" && method !== "PUT")) {
+      return json({ message: "method not allowed" }, { status: 405 })
+    }
+    const ids = (body as { labels: ReadonlyArray<number> }).labels
+    if (method === "PUT") issue.labels = []
+    for (const label of available.filter((candidate) => ids.includes(candidate.id))) {
+      if (issue.labels.some((present) => present.id === label.id)) continue
+      const scope = exclusiveScope(label)
+      issue.labels = [
+        ...issue.labels.filter((present) => scope === "" || exclusiveScope(present) !== scope),
+        label,
+      ]
+    }
     issue.updated_at = fixtures.now
     return json(issue.labels)
   }
@@ -310,6 +363,17 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
         headers: { "x-total-count": String(fixtures.totals[filter] ?? items.length) },
       })
     }
+    // Forgejo redirects a non-member to the public_members check, which answers 404 unless
+    // the membership is public; Tabulo only ever asks about the signed-in user.
+    const memberPath = /^\/api\/v1\/orgs\/([^/]+)\/members\/([^/]+)$/.exec(path)
+    if (memberPath !== null) {
+      const [, orgName = "", member = ""] = memberPath
+      const org = findOrg(orgName)
+      if (org === undefined) return notFound()
+      return org.members.includes(member) && org.members.includes(login)
+        ? new Response(null, { status: 204 })
+        : notFound()
+    }
     const orgPath = /^\/api\/v1\/orgs\/([^/]+)\/(repos|labels)$/.exec(path)
     if (orgPath !== null) {
       const [, orgName = "", what] = orgPath
@@ -323,9 +387,11 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
           )
     }
     const repoPath =
-      /^\/api\/v1\/repos\/([^/]+)\/([^/]+)(?:\/issues(?:\/(\d+)(\/labels)?)?)?$/.exec(path)
+      /^\/api\/v1\/repos\/([^/]+)\/([^/]+)(?:\/issues(?:\/(\d+)(\/labels(?:\/(\d+))?)?)?)?$/.exec(
+        path,
+      )
     if (repoPath !== null) {
-      const [, owner = "", name = "", number, labels] = repoPath
+      const [, owner = "", name = "", number, labels, labelId] = repoPath
       const org = findOrg(owner)
       const repo = findRepo(owner, name)
       if (org === undefined || repo === undefined) return notFound()
@@ -334,7 +400,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
       const issue = repo.issues.find((candidate) => candidate.number === Number(number))
       if (issue === undefined) return notFound()
       if (labels !== undefined) {
-        return method === "PUT" ? replaceLabels(org, repo, issue, login, body) : json(issue.labels)
+        return issueLabels(method, org, repo, issue, login, labelId, body)
       }
       return method === "PATCH" ? editIssue(repo, issue, login, body) : json(issue)
     }
@@ -344,7 +410,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
   const fetch = async (request: Request): Promise<Response> => {
     const url = new URL(request.url)
     if (url.origin !== FORGEJO_URL) throw new Error(`unexpected outbound request to ${url.origin}`)
-    const body = request.method === "GET" ? "" : await request.text()
+    const body = request.method === "GET" || request.method === "DELETE" ? "" : await request.text()
     const isJson = request.headers.get("content-type")?.includes("application/json") === true
     const parsed: unknown = isJson ? JSON.parse(body) : undefined
     const form = isJson
@@ -367,6 +433,8 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     const token = authorization?.replace(/^Bearer /, "") ?? ""
     const login = validAccessTokens.get(token)
     if (login === undefined) return json({ message: "unauthorized" }, { status: 401 })
+    const intercepted = fixtures.intercept(request.method, url.pathname)
+    if (intercepted !== undefined) return intercepted
     return api(request.method, url.pathname, url.searchParams, login, parsed)
   }
 

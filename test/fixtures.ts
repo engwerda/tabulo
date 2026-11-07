@@ -132,7 +132,9 @@ export const boardIssue = (
 export const boardRepo = (name: string, fields: Partial<FakeRepo> = {}): FakeRepo => ({
   name,
   private: true,
+  archived: false,
   writers: ["ada"],
+  triagers: [],
   labels: [],
   issues: [],
   failIssueListing: false,
