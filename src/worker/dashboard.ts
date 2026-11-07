@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import type { Dashboard, DashboardItem, NotificationItem, Section } from "../shared/api.ts"
 import { describeForgejoError, type ForgejoError, type ForgejoUnauthorized } from "./errors.ts"
-import { type AccessToken, ForgejoClient, type Page } from "./forgejo/client.ts"
+import { type AccessToken, ForgejoClient, type IssueSearch, type Page } from "./forgejo/client.ts"
 import type { ForgejoIssue, ForgejoNotification } from "./forgejo/schemas.ts"
 
 const SECTION_LIMIT = 30
@@ -62,7 +62,7 @@ export const loadDashboardSections = (
 ): Effect.Effect<Omit<Dashboard, "user">, ForgejoUnauthorized, ForgejoClient> =>
   Effect.gen(function* () {
     const forgejo = yield* ForgejoClient
-    const search = (name: Parameters<typeof forgejo.searchIssues>[1]) =>
+    const search = (name: IssueSearch) =>
       section(name, forgejo.searchIssues(token, name, SECTION_LIMIT), toDashboardItem)
     return yield* Effect.all(
       {
