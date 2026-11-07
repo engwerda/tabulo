@@ -25,12 +25,16 @@ const firstWord = (text: string) => /^\S*/.exec(text.trimStart())?.[0] ?? ""
 
 /** The text and destination of the inline link `text` starts with, as CommonMark reads it. */
 const leadingLink = (text: string) => {
-  const link = new Parser().parse(text).firstChild?.firstChild
+  const block = new Parser().parse(text).firstChild
+  const link = block?.type === "paragraph" ? block.firstChild : null
   if (link?.type !== "link") return undefined
+  // A code span keeps its place as a backtick, so a word in it is never the reference.
   let label = ""
   const walker = link.walker()
   for (let step = walker.next(); step !== null; step = walker.next()) {
-    if (step.entering && step.node !== link) label += step.node.literal ?? ""
+    if (!step.entering) continue
+    if (step.node.type === "text") label += step.node.literal ?? ""
+    if (step.node.type === "code") label += "`"
   }
   return { label, destination: link.destination ?? "" }
 }

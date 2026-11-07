@@ -121,6 +121,14 @@ describe("epic task-list references", () => {
   it("ignores text that CommonMark does not read as a link", () => {
     expect(parse("- [ ] [Fix](https://forgejo.example/acme/api/issues/12 nonsense)")).toEqual([])
     expect(parse("- [ ] [Fix](<https://forgejo.example/acme/api/issues/12)")).toEqual([])
+    expect(parse("- [ ] # [Fix](https://forgejo.example/acme/api/issues/12)")).toEqual([])
+  })
+
+  it("does not read a code span in a link's text as its reference", () => {
+    expect(parse("- [ ] [`#12`](https://forgejo.example/acme/api/issues/13)")).toEqual([
+      "acme/api#13",
+    ])
+    expect(parse("- [ ] [`#12`](https://elsewhere.example/x)")).toEqual([])
   })
 
   it("hides everything after an unclosed HTML comment", () => {
