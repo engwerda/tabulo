@@ -1,8 +1,11 @@
 import type { ReactNode } from "react"
 import type { Section } from "../shared/api.ts"
+import { buttonClass } from "./ui/primitives.tsx"
 
 type SectionCardProps<A> = {
+  readonly id: string
   readonly title: string
+  readonly icon: ReactNode
   readonly empty: string
   readonly section: Section<A>
   readonly itemKey: (item: A) => string | number
@@ -12,7 +15,9 @@ type SectionCardProps<A> = {
 }
 
 export const SectionCard = <A,>({
+  id,
   title,
+  icon,
   empty,
   section,
   itemKey,
@@ -20,18 +25,20 @@ export const SectionCard = <A,>({
   onRetry,
   retrying,
 }: SectionCardProps<A>) => {
-  const headingId = `section-${title.toLowerCase().replaceAll(" ", "-")}`
+  const headingId = `${id}-heading`
   return (
     <section
+      id={id}
       aria-labelledby={headingId}
-      className="flex min-w-0 flex-col rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+      className="flex min-w-0 scroll-mt-20 flex-col overflow-hidden rounded-2xl border border-zinc-200/80 bg-white shadow-card dark:border-zinc-800 dark:bg-zinc-900"
     >
-      <header className="flex items-center justify-between gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+      <header className="flex items-center gap-2.5 border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+        <span className="text-zinc-400">{icon}</span>
         <h2 id={headingId} className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
           {title}
         </h2>
         {section._tag === "Loaded" && (
-          <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium tabular-nums text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+          <span className="ml-auto rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
             {section.total}
           </span>
         )}
@@ -43,22 +50,22 @@ export const SectionCard = <A,>({
             type="button"
             onClick={onRetry}
             disabled={retrying}
-            className="rounded-md border border-zinc-300 px-3 py-1.5 font-medium text-zinc-800 hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            className={buttonClass.secondary}
           >
             {retrying ? "Retrying…" : "Retry"}
           </button>
         </div>
       ) : section.items.length === 0 ? (
-        <p className="px-4 py-5 text-sm text-zinc-500 dark:text-zinc-400">{empty}</p>
+        <p className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">{empty}</p>
       ) : (
         <>
-          <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+          <ul className="divide-y divide-zinc-100 dark:divide-zinc-800/80">
             {section.items.map((item) => (
               <li key={itemKey(item)}>{renderItem(item)}</li>
             ))}
           </ul>
           {section.total > section.items.length && (
-            <p className="border-t border-zinc-100 px-4 py-2 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+            <p className="border-t border-zinc-100 px-4 py-2.5 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
               Showing {section.items.length} of {section.total}
             </p>
           )}

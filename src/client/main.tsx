@@ -1,9 +1,12 @@
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
-import { App, SESSION_USER } from "./App.tsx"
+import { App } from "./App.tsx"
 import { Unauthenticated } from "./api.ts"
 import "./styles.css"
+import { SESSION_USER } from "./session.ts"
+import "./theme.ts"
+import { ToastProvider } from "./ui/toast.tsx"
 
 // Any request that finds the session gone sends the app back to the sign-in screen.
 const signOutOnUnauthenticated = (error: Error) => {
@@ -26,7 +29,9 @@ if (root === null) throw new Error("index.html is missing #root")
 createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <ToastProvider>
+        <App />
+      </ToastProvider>
     </QueryClientProvider>
   </StrictMode>,
 )

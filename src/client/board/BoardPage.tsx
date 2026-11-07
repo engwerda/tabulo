@@ -1,86 +1,194 @@
 import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { type ReactNode, useEffect, useRef, useState } from "react"
-import { Link, useSearchParams } from "wouter"
-import type { Board, MoveCardRequest } from "../../shared/api.ts"
-import { fetchBoard, fetchOrgRepos, moveCard, RequestFailed } from "../api.ts"
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
+import { useSearchParams } from "wouter"
+import type { Board, BoardCard, MoveCardRequest } from "../../shared/api.ts"
+import {
+  assignSelf,
+  createCard,
+  fetchBoard,
+  fetchOrgRepos,
+  moveCard,
+  RequestFailed,
+} from "../api.ts"
+import { relativeTime } from "../format.ts"
+import { useViewer } from "../session.ts"
+import {
+  AlertIcon,
+  ColumnsIcon,
+  InfoIcon,
+  KeyboardIcon,
+  PlusIcon,
+  RefreshIcon,
+  XIcon,
+} from "../ui/icons.tsx"
+import { buttonClass, isTypingTarget } from "../ui/primitives.tsx"
+import { useToast } from "../ui/toast.tsx"
+import type { CardActions } from "./BoardCardView.tsx"
 import { BoardColumns } from "./BoardColumns.tsx"
 import { BoardFiltersBar } from "./BoardFiltersBar.tsx"
 import {
   applyMove,
   type CardMove,
+  columnCards,
+  FILTER_PARAMS,
   isFiltered,
+  ME,
   matchesFilters,
   readFilters,
   replaceCard,
 } from "./board-view.ts"
+import { CardComposer } from "./CardComposer.tsx"
+import { CardPanel } from "./CardPanel.tsx"
+import { OrgSwitcher } from "./OrgPicker.tsx"
 import { RepoPicker } from "./RepoPicker.tsx"
+import { ShortcutsDialog } from "./ShortcutsDialog.tsx"
 
 const REFRESH_MS = 60_000
+const CARD_PARAM = "card"
 
-const rememberedReposKey = (org: string) => `tabulo.board.repos.${org.toLowerCase()}`
+// Remembering choices is a convenience: storage can be missing or refuse writes.
+const storage = {
+  read: (key: string) => {
+    try {
+      return window.localStorage.getItem(key)
+    } catch {
+      return null
+    }
+  },
+  write: (key: string, value: string | null) => {
+    try {
+      if (value === null) window.localStorage.removeItem(key)
+      else window.localStorage.setItem(key, value)
+    } catch {}
+  },
+}
 
-// Remembering the selection is a convenience: storage can be missing or refuse writes.
-const readRememberedRepos = (org: string) => {
+const reposKey = (org: string) => `tabulo.board.repos.${org.toLowerCase()}`
+const collapsedKey = (org: string) => `tabulo.board.collapsed.${org.toLowerCase()}`
+
+const readCollapsed = (org: string): ReadonlySet<string> => {
   try {
-    return window.localStorage.getItem(rememberedReposKey(org))
+    const parsed: unknown = JSON.parse(storage.read(collapsedKey(org)) ?? "[]")
+    return new Set(Array.isArray(parsed) ? parsed.filter((key) => typeof key === "string") : [])
   } catch {
-    return null
+    return new Set()
   }
 }
 
-const rememberRepos = (org: string, repos: string) => {
-  try {
-    window.localStorage.setItem(rememberedReposKey(org), repos)
-  } catch {}
+/** `repo#number`, the card parameter's value. */
+const cardRef = (card: BoardCard) => `${card.repo}#${card.number}`
+
+/** Re-renders every half minute so "updated 2 minutes ago" stays true. */
+const useNow = () => {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(timer)
+  }, [])
+  return now
 }
 
-const forgetRepos = (org: string) => {
-  try {
-    window.localStorage.removeItem(rememberedReposKey(org))
-  } catch {}
-}
-
-const Banner = ({
+const Notice = ({
   tone,
   children,
   onDismiss,
 }: {
-  tone: "error" | "warning"
+  tone: "warning" | "info" | "error"
   children: ReactNode
   onDismiss?: () => void
 }) => (
   <div
-    role={tone === "error" ? "alert" : "status"}
-    className={`mx-4 mb-3 flex items-start justify-between gap-3 rounded-lg border px-4 py-3 text-sm sm:mx-6 ${
+    role={tone === "info" ? "status" : "alert"}
+    className={`mx-4 mb-3 flex items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-sm sm:mx-6 ${
       tone === "error"
-        ? "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
-        : "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100"
+        ? "border-red-200 bg-red-50 text-red-900 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200"
+        : tone === "warning"
+          ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100"
+          : "border-zinc-200 bg-white text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
     }`}
   >
-    <div>{children}</div>
+    {tone === "info" ? (
+      <InfoIcon className="mt-0.5 size-4 text-zinc-400" />
+    ) : (
+      <AlertIcon className="mt-0.5 size-4 opacity-70" />
+    )}
+    <div className="min-w-0 flex-1">{children}</div>
     {onDismiss !== undefined && (
       <button
         type="button"
         onClick={onDismiss}
-        className="shrink-0 rounded-md px-2 py-0.5 font-medium hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 dark:hover:bg-white/10"
+        aria-label="Dismiss"
+        className="-my-0.5 -mr-1 grid size-6 shrink-0 place-items-center rounded-md opacity-60 transition hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
       >
-        Dismiss
+        <XIcon className="size-3.5" />
       </button>
     )}
   </div>
 )
 
+const BoardSkeleton = () => (
+  <div className="flex h-full gap-3 overflow-hidden px-4 pb-4 sm:px-6" aria-hidden="true">
+    {[5, 3, 4, 2, 3].map((count, column) => (
+      <div
+        // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have no identity
+        key={column}
+        className="flex min-w-[16.5rem] flex-1 shrink-0 flex-col gap-2 rounded-2xl bg-zinc-100/80 p-2 dark:bg-zinc-900/50"
+      >
+        <div className="mx-1.5 my-2.5 h-4 w-24 animate-shimmer rounded bg-zinc-200 dark:bg-zinc-800" />
+        {Array.from({ length: count }, (_, card) => (
+          <div
+            // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have no identity
+            key={card}
+            className="h-24 animate-shimmer rounded-xl border border-zinc-200/70 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+            style={{ animationDelay: `${(column + card) * 80}ms` }}
+          />
+        ))}
+      </div>
+    ))}
+  </div>
+)
+
+const EmptyBoard = ({ onChoose }: { onChoose: () => void }) => (
+  <div className="grid flex-1 place-items-center px-6 pb-16">
+    <div className="max-w-sm text-center">
+      <div className="mx-auto flex h-20 w-28 items-end justify-center gap-1.5 rounded-2xl bg-gradient-to-b from-indigo-50 to-white p-3 ring-1 ring-indigo-100 dark:from-indigo-500/10 dark:to-transparent dark:ring-indigo-500/20">
+        {[70, 45, 58].map((height) => (
+          <span
+            key={height}
+            className="w-6 rounded-md bg-indigo-200/80 dark:bg-indigo-400/30"
+            style={{ height: `${height}%` }}
+          />
+        ))}
+      </div>
+      <h2 className="mt-6 text-lg font-semibold tracking-tight">Build your board</h2>
+      <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">
+        Choose the repositories whose issues the board shows. Tabulo remembers your choice, and the
+        address keeps it for sharing.
+      </p>
+      <button type="button" onClick={onChoose} className={`${buttonClass.primary} mt-6`}>
+        Choose repositories
+      </button>
+    </div>
+  </div>
+)
+
 export const BoardPage = ({ org }: { org: string }) => {
   const queryClient = useQueryClient()
+  const toast = useToast()
+  const viewer = useViewer()
+  const now = useNow()
   const [params, setParams] = useSearchParams()
   const selected = (params.get("repos") ?? "").split(",").filter((name) => name !== "")
   const filters = readFilters(params)
+  const selectedRef = params.get(CARD_PARAM)
   const [dragging, setDragging] = useState(false)
-  const [moveNotice, setMoveNotice] = useState<{
-    tone: "error" | "warning"
-    text: string
-  } | null>(null)
   const [dismissedFailures, setDismissedFailures] = useState<string | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(() => readCollapsed(org))
+  const [composing, setComposing] = useState<string | null>(null)
+  const [composerRepo, setComposerRepo] = useState<string | null>(null)
+  const searchInput = useRef<HTMLInputElement>(null)
 
   const repos = useQuery({ queryKey: ["org-repos", org], queryFn: () => fetchOrgRepos(org) })
 
@@ -93,10 +201,10 @@ export const BoardPage = ({ org }: { org: string }) => {
     const firstVisit = restoredFor.current !== org
     restoredFor.current = org
     if (hasSelection) {
-      rememberRepos(org, selection)
+      storage.write(reposKey(org), selection)
       return
     }
-    const remembered = firstVisit ? readRememberedRepos(org) : null
+    const remembered = firstVisit ? storage.read(reposKey(org)) : null
     if (remembered) {
       setParams(
         (current) => {
@@ -122,11 +230,30 @@ export const BoardPage = ({ org }: { org: string }) => {
     refetchOnWindowFocus: settled,
   })
 
+  const setCardParam = (value: string | null, replace: boolean) =>
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current)
+        if (value === null) next.delete(CARD_PARAM)
+        else next.set(CARD_PARAM, value)
+        return next
+      },
+      { replace },
+    )
+
+  const columnTitle = (key: string) =>
+    board.data?.columns.find((column) => column.key === key)?.title ?? key
+
   const move = useMutation({
     mutationKey: moveKey,
-    mutationFn: ({ request }: { move: CardMove; request: MoveCardRequest }) => moveCard(request),
+    mutationFn: ({
+      request,
+    }: {
+      move: CardMove
+      request: MoveCardRequest
+      undo: CardMove | null
+    }) => moveCard(request),
     onMutate: async ({ move }) => {
-      setMoveNotice(null)
       await queryClient.cancelQueries({ queryKey: boardKey })
       const previous = queryClient.getQueryData<Board>(boardKey)
       if (previous !== undefined) {
@@ -137,47 +264,69 @@ export const BoardPage = ({ org }: { org: string }) => {
       }
       return { previous }
     },
-    onSuccess: ({ card, orderSaved }) => {
+    onSuccess: ({ card, orderSaved }, { request, undo }) => {
       queryClient.setQueryData<Board>(boardKey, (current) =>
         current === undefined ? current : replaceCard(current, card.key, () => card),
       )
       if (!orderSaved) {
-        setMoveNotice({
+        toast({
           tone: "warning",
-          text: "The card moved in Forgejo, but Tabulo could not save its place in the column. Others may see it elsewhere in the column.",
+          title: "Moved, but its place in the column was not saved",
+          detail: "Others may see the card elsewhere in the column.",
         })
+        return
       }
+      if (request.fromColumn === request.toColumn) return
+      toast({
+        tone: "success",
+        title: `Moved #${card.number} to ${columnTitle(request.toColumn)}`,
+        detail: card.title,
+        ...(undo === null ? {} : { action: { label: "Undo", run: () => startMove(undo, null) } }),
+      })
     },
     onError: (error, _, context) => {
       // A partly applied move changed Forgejo, so the refetch below shows the truth; restoring
       // the board from before the move would show a state that no longer exists.
       if (error instanceof RequestFailed && error.code === "move_partly_applied") {
-        setMoveNotice({
+        toast({
           tone: "error",
-          text: `${error.message}. The board shows the issue as it is now.`,
+          title: "The move was only partly applied",
+          detail: `${error.message}. The board shows the issue as it is now.`,
         })
         return
       }
       if (context?.previous !== undefined) queryClient.setQueryData(boardKey, context.previous)
       if (error instanceof RequestFailed && error.code === "board_changed") {
-        setMoveNotice({
+        toast({
           tone: "warning",
-          text: "Someone changed the board while you were moving the card, so it did not move. The board has been reloaded; try again.",
+          title: "Someone changed the board meanwhile",
+          detail: "The card did not move. The board has been reloaded; try again.",
         })
         return
       }
-      setMoveNotice({ tone: "error", text: `The card was not moved: ${error.message}` })
+      toast({ tone: "error", title: "The card was not moved", detail: error.message })
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: boardKey }),
   })
 
-  const startMove = (cardMove: CardMove) => {
-    const card = board.data?.cards.find((candidate) => candidate.key === cardMove.key)
-    if (board.data === undefined || card === undefined) return
+  /** Moves a card and offers to put it back where it was, unless `undo` is null. */
+  const startMove = (cardMove: CardMove, undo?: CardMove | null) => {
+    const current = queryClient.getQueryData<Board>(boardKey)
+    const card = current?.cards.find((candidate) => candidate.key === cardMove.key)
+    if (current === undefined || card === undefined) return
+    const column = columnCards(current.cards, card.column)
+    const index = column.findIndex((candidate) => candidate.key === card.key)
+    const back: CardMove = {
+      key: card.key,
+      toColumn: card.column,
+      afterKey: column[index - 1]?.key ?? null,
+      beforeKey: column[index + 1]?.key ?? null,
+    }
     move.mutate({
       move: cardMove,
+      undo: undo === undefined ? back : undo,
       request: {
-        org: board.data.org,
+        org: current.org,
         repo: card.repo,
         number: card.number,
         fromColumn: card.column,
@@ -188,8 +337,64 @@ export const BoardPage = ({ org }: { org: string }) => {
     })
   }
 
+  const moveToTop = (card: BoardCard, toColumn: string) => {
+    const current = queryClient.getQueryData<Board>(boardKey)
+    if (current === undefined || toColumn === card.column) return
+    const first = columnCards(current.cards, toColumn).find(
+      (candidate) => candidate.key !== card.key && visible(candidate),
+    )
+    startMove({ key: card.key, toColumn, afterKey: null, beforeKey: first?.key ?? null })
+  }
+
+  const putCard = (card: BoardCard) =>
+    queryClient.setQueryData<Board>(boardKey, (current) =>
+      current === undefined
+        ? current
+        : current.cards.some((candidate) => candidate.key === card.key)
+          ? replaceCard(current, card.key, () => card)
+          : { ...current, cards: [...current.cards, card] },
+    )
+
+  const create = useMutation({
+    mutationFn: createCard,
+    onSuccess: ({ card, orderSaved }) => {
+      putCard(card)
+      toast({
+        tone: orderSaved ? "success" : "warning",
+        title: `Created #${card.number} in ${card.repo}`,
+        detail: orderSaved
+          ? card.title
+          : "Its place at the top of the column was not saved, so it may show lower down.",
+        action: { label: "Open", run: () => setCardParam(cardRef(card), false) },
+      })
+    },
+    onError: (error) =>
+      toast({ tone: "error", title: "The issue was not created", detail: error.message }),
+  })
+
+  const assign = useMutation({
+    mutationFn: (card: BoardCard) =>
+      assignSelf({
+        org,
+        repo: card.repo,
+        number: card.number,
+        assigned: !card.assignees.some((assignee) => assignee.login === viewer.login),
+      }),
+    onSuccess: ({ card }) => {
+      putCard(card)
+      const assigned = card.assignees.some((assignee) => assignee.login === viewer.login)
+      toast({
+        tone: "success",
+        title: assigned ? `Assigned #${card.number} to you` : `Unassigned you from #${card.number}`,
+        detail: card.title,
+      })
+    },
+    onError: (error) =>
+      toast({ tone: "error", title: "Assignees did not change", detail: error.message }),
+  })
+
   const chooseRepos = (repoNames: ReadonlyArray<string>) => {
-    if (repoNames.length === 0) forgetRepos(org)
+    if (repoNames.length === 0) storage.write(reposKey(org), null)
     setParams(
       (current) => {
         const next = new URLSearchParams(current)
@@ -201,58 +406,236 @@ export const BoardPage = ({ org }: { org: string }) => {
     )
   }
 
-  const failures = board.data?.failedRepos ?? []
+  const toggleCollapsed = (column: string) =>
+    setCollapsed((current) => {
+      const next = new Set(current)
+      if (next.has(column)) next.delete(column)
+      else next.add(column)
+      storage.write(collapsedKey(org), JSON.stringify([...next]))
+      return next
+    })
+
+  const copyLink = useCallback(
+    (card: BoardCard) => {
+      navigator.clipboard.writeText(card.url).then(
+        () => toast({ tone: "info", title: "Issue link copied", detail: card.url }),
+        () => toast({ tone: "error", title: "Could not copy the link", detail: card.url }),
+      )
+    },
+    [toast],
+  )
+
+  const visible = (card: BoardCard) => matchesFilters(card, filters, viewer.login)
+  const data = board.data
+  const archived = new Set(
+    (repos.data ?? []).filter((repo) => repo.archived).map((repo) => repo.name),
+  )
+  const failed = new Set((data?.failedRepos ?? []).map((failure) => failure.repo))
+  const creatableRepos = (data?.repos ?? []).filter(
+    (repo) => !archived.has(repo) && !failed.has(repo),
+  )
+  const canCreate = data?.viewerCanArrange === true && creatableRepos.length > 0
+  const firstCreatable = data?.columns.find((column) => column._tag !== "Done")
+
+  const selectedCard =
+    selectedRef === null || data === undefined
+      ? undefined
+      : data.cards.find((card) => cardRef(card).toLowerCase() === selectedRef.toLowerCase())
+  const selectedColumn =
+    selectedCard === undefined || data === undefined
+      ? []
+      : columnCards(data.cards, selectedCard.column).filter(visible)
+  const selectedIndex =
+    selectedCard === undefined
+      ? -1
+      : selectedColumn.findIndex((card) => card.key === selectedCard.key)
+  const step = (offset: -1 | 1) => {
+    const target = selectedColumn[selectedIndex + offset]
+    if (target !== undefined) setCardParam(cardRef(target), true)
+  }
+
+  const openComposer = (column: string) => {
+    setComposing(column)
+    if (collapsed.has(column)) toggleCollapsed(column)
+  }
+
+  const toggleMine = () =>
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current)
+        if (next.get(FILTER_PARAMS.assignee) === ME) next.delete(FILTER_PARAMS.assignee)
+        else next.set(FILTER_PARAMS.assignee, ME)
+        return next
+      },
+      { replace: true },
+    )
+
+  // Single-key shortcuts; see ShortcutsDialog for the list.
+  const shortcuts = useRef<(event: KeyboardEvent) => void>(() => {})
+  shortcuts.current = (event) => {
+    if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return
+    if (isTypingTarget(event.target) || shortcutsOpen || dragging) return
+    if (document.querySelector("dialog[open]") !== null) return
+    const key = event.key
+    if (key === "?") setShortcutsOpen(true)
+    else if (key === "/") searchInput.current?.focus()
+    else if (key === "r" || key === "R") void board.refetch()
+    else if (key === "m" || key === "M") toggleMine()
+    else if ((key === "n" || key === "N") && canCreate && firstCreatable !== undefined) {
+      openComposer(firstCreatable.key)
+    } else if (selectedCard !== undefined && (key === "j" || key === "J")) step(1)
+    else if (selectedCard !== undefined && (key === "k" || key === "K")) step(-1)
+    else if (selectedCard !== undefined && (key === "o" || key === "O")) {
+      window.open(selectedCard.url, "_blank", "noreferrer")
+    } else if (
+      selectedCard !== undefined &&
+      (key === "a" || key === "A") &&
+      selectedCard.state === "open" &&
+      selectedCard.readOnlyReason === null
+    ) {
+      assign.mutate(selectedCard)
+    } else return
+    event.preventDefault()
+  }
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => shortcuts.current(event)
+    document.addEventListener("keydown", listener)
+    return () => document.removeEventListener("keydown", listener)
+  }, [])
+
+  const actions: CardActions = {
+    open: (card) => setCardParam(cardRef(card), selectedRef !== null),
+    moveTo: moveToTop,
+    toggleAssigned: (card) => assign.mutate(card),
+    copyLink,
+    href: (card) => {
+      const next = new URLSearchParams(params)
+      next.set(CARD_PARAM, cardRef(card))
+      return `?${next}`
+    },
+  }
+
+  const failures = data?.failedRepos ?? []
   const failureId = failures.map((failure) => `${failure.repo}:${failure.message}`).join("|")
   const filtered = isFiltered(filters)
+  const shownCount = data === undefined ? 0 : data.cards.filter(visible).length
+  const onlyDefaultColumns = data?.columns.every((column) => column._tag !== "Status")
+  const composerTarget =
+    composerRepo !== null && creatableRepos.includes(composerRepo)
+      ? composerRepo
+      : creatableRepos[0]
 
   return (
-    <main className="py-4">
-      <div className="flex flex-wrap items-center gap-3 px-4 pb-3 sm:px-6">
-        <h1 className="text-lg font-semibold">
-          <span className="sr-only">Board for </span>
-          {org}
-        </h1>
-        <Link
-          href="/board"
-          className="text-sm text-zinc-500 underline-offset-2 hover:underline dark:text-zinc-400"
-        >
-          Change organization
-        </Link>
-        {repos.data !== undefined && (
-          <RepoPicker repos={repos.data} selected={selected} onChange={chooseRepos} />
-        )}
-        {board.data !== undefined && (
-          <BoardFiltersBar cards={board.data.cards} filters={filters} setParams={setParams} />
-        )}
+    <main className="flex h-[calc(100dvh-3.5rem-1px)] min-h-0 flex-col">
+      <h1 className="sr-only">Board for {org}</h1>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pt-4 pb-3 sm:px-6">
+        <div className="flex min-w-0 items-center gap-2">
+          <OrgSwitcher org={org} />
+          <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-700">
+            /
+          </span>
+          {repos.data !== undefined && (
+            <RepoPicker
+              repos={repos.data}
+              selected={selected}
+              onChange={chooseRepos}
+              open={pickerOpen}
+              onOpenChange={setPickerOpen}
+            />
+          )}
+        </div>
+        <div className="ml-auto flex items-center gap-1">
+          {data !== undefined && (
+            <span
+              className="mr-1 hidden text-xs text-zinc-500 md:inline dark:text-zinc-400"
+              title={new Date(board.dataUpdatedAt).toLocaleString()}
+            >
+              {board.isFetching
+                ? "Refreshing…"
+                : `Updated ${relativeTime(new Date(board.dataUpdatedAt).toISOString(), now)}`}
+            </span>
+          )}
+          {hasSelection && (
+            <button
+              type="button"
+              onClick={() => void board.refetch()}
+              disabled={board.isFetching}
+              aria-label="Refresh the board"
+              title="Refresh (R)"
+              className={buttonClass.icon}
+            >
+              <RefreshIcon className={`size-4 ${board.isFetching ? "animate-spin" : ""}`} />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setShortcutsOpen(true)}
+            aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts (?)"
+            className={`${buttonClass.icon} max-sm:hidden`}
+          >
+            <KeyboardIcon />
+          </button>
+          {canCreate && firstCreatable !== undefined && (
+            <button
+              type="button"
+              onClick={() => openComposer(firstCreatable.key)}
+              className={`${buttonClass.primary} ml-1`}
+              title="New issue (N)"
+            >
+              <PlusIcon className="size-4" />
+              <span className="max-sm:sr-only">New issue</span>
+            </button>
+          )}
+        </div>
         <p className="sr-only" aria-live="polite">
           {board.isFetching ? "Refreshing board" : ""}
         </p>
       </div>
 
-      {repos.isError && (
-        <Banner tone="error">
-          Could not load the repositories of {org}: {repos.error.message}
-        </Banner>
+      {data !== undefined && (
+        <BoardFiltersBar
+          cards={data.cards}
+          filters={filters}
+          setParams={setParams}
+          searchInput={searchInput}
+          shown={shownCount}
+          total={data.cards.length}
+        />
       )}
-      {moveNotice !== null && (
-        <Banner tone={moveNotice.tone} onDismiss={() => setMoveNotice(null)}>
-          {moveNotice.text}
-        </Banner>
+
+      {repos.isError && (
+        <Notice tone="error">
+          Could not load the repositories of {org}: {repos.error.message}
+        </Notice>
       )}
       {failures.length > 0 && dismissedFailures !== failureId && (
-        <Banner tone="warning" onDismiss={() => setDismissedFailures(failureId)}>
+        <Notice tone="warning" onDismiss={() => setDismissedFailures(failureId)}>
           Some repositories could not be loaded:{" "}
           {failures.map((failure) => `${failure.repo} (${failure.message})`).join(", ")}.
-        </Banner>
+        </Notice>
+      )}
+      {data !== undefined && !data.viewerCanArrange && (
+        <Notice tone="info">
+          You can view this board. Only members of {data.org} can move cards and add issues.
+        </Notice>
+      )}
+      {onlyDefaultColumns && (
+        <Notice tone="info">
+          <span className="flex items-center gap-1.5">
+            <ColumnsIcon className="size-4 text-zinc-400" />
+            Add exclusive labels such as{" "}
+            <code className="font-mono text-xs">Status/In Progress</code> to {org} in Forgejo to get
+            more columns between Todo and Done.
+          </span>
+        </Notice>
       )}
 
       {!hasSelection ? (
-        <p className="px-4 text-sm text-zinc-600 sm:px-6 dark:text-zinc-400">
-          Choose the repositories whose issues the board shows with the Repositories button above.
-        </p>
-      ) : board.data === undefined ? (
+        repos.data !== undefined && <EmptyBoard onChoose={() => setPickerOpen(true)} />
+      ) : data === undefined ? (
         board.isError ? (
-          <Banner tone="error">
+          <Notice tone="error">
             Could not load the board: {board.error.message}{" "}
             <button
               type="button"
@@ -261,34 +644,72 @@ export const BoardPage = ({ org }: { org: string }) => {
             >
               Retry
             </button>
-          </Banner>
+          </Notice>
         ) : (
-          <p className="px-4 text-sm text-zinc-500 sm:px-6">Loading the board…</p>
+          <div className="min-h-0 flex-1">
+            <BoardSkeleton />
+          </div>
         )
       ) : (
-        <>
-          {!board.data.viewerCanArrange && (
-            <p className="px-4 pb-2 text-xs text-zinc-500 sm:px-6 dark:text-zinc-400">
-              You can view this board. Only members of {board.data.org} can move and reorder its
-              cards.
-            </p>
-          )}
-          {filtered && (
-            <p className="px-4 pb-2 text-xs text-zinc-500 sm:px-6 dark:text-zinc-400">
-              Filters hide some cards. A moved card lands directly below the card shown above it.
-            </p>
-          )}
+        <div className="min-h-0 flex-1">
           <BoardColumns
-            board={board.data}
-            visible={(card) => matchesFilters(card, filters)}
-            onMove={startMove}
+            board={data}
+            visible={visible}
+            filtered={filtered}
+            viewer={viewer.login}
+            selectedKey={selectedCard?.key ?? null}
+            collapsed={collapsed}
+            onToggleCollapsed={toggleCollapsed}
+            composing={canCreate ? composing : null}
+            onCompose={openComposer}
+            canCreate={canCreate}
+            composer={
+              composing !== null &&
+              composerTarget !== undefined && (
+                <CardComposer
+                  columnTitle={columnTitle(composing)}
+                  repos={creatableRepos}
+                  repo={composerTarget}
+                  onRepoChange={setComposerRepo}
+                  onClose={() => setComposing(null)}
+                  onCreate={async (repo, title) => {
+                    await create.mutateAsync({ org: data.org, repo, title, column: composing })
+                  }}
+                />
+              )
+            }
+            actions={actions}
+            onMove={(cardMove) => startMove(cardMove)}
             onDragChange={(isDragging) => {
               setDragging(isDragging)
               if (isDragging) void queryClient.cancelQueries({ queryKey: boardKey })
             }}
           />
-        </>
+        </div>
       )}
+
+      {data !== undefined && selectedCard !== undefined && (
+        <CardPanel
+          org={data.org}
+          card={selectedCard}
+          columns={data.columns}
+          viewer={viewer.login}
+          movable={data.viewerCanArrange && selectedCard.readOnlyReason === null}
+          position={{ index: selectedIndex, count: selectedColumn.length }}
+          onStep={step}
+          onMoveTo={(column) => moveToTop(selectedCard, column)}
+          onToggleAssigned={() => assign.mutate(selectedCard)}
+          assigning={assign.isPending}
+          onCopyLink={() => copyLink(selectedCard)}
+          onClose={() => {
+            setCardParam(null, true)
+            document
+              .querySelector<HTMLElement>(`[data-card-key="${CSS.escape(selectedCard.key)}"] a`)
+              ?.focus()
+          }}
+        />
+      )}
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </main>
   )
 }

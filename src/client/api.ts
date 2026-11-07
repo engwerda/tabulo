@@ -1,6 +1,11 @@
 import { Schema } from "effect"
 import {
+  type AssignSelfRequest,
+  AssignSelfResult,
   Board,
+  CardDetail,
+  type CreateCardRequest,
+  CreateCardResult,
   Dashboard,
   type MoveCardRequest,
   MoveCardResult,
@@ -34,6 +39,9 @@ const decodeOrgs = Schema.decodeUnknownPromise(Schema.Array(Org))
 const decodeOrgRepos = Schema.decodeUnknownPromise(Schema.Array(OrgRepo))
 const decodeBoard = Schema.decodeUnknownPromise(Board)
 const decodeMoveCardResult = Schema.decodeUnknownPromise(MoveCardResult)
+const decodeCreateCardResult = Schema.decodeUnknownPromise(CreateCardResult)
+const decodeAssignSelfResult = Schema.decodeUnknownPromise(AssignSelfResult)
+const decodeCardDetail = Schema.decodeUnknownPromise(CardDetail)
 
 const requestJson = async (path: string, init?: RequestInit): Promise<unknown> => {
   const response = await fetch(path, {
@@ -76,13 +84,31 @@ export const fetchBoard = async (org: string, repos: ReadonlyArray<string>): Pro
     await requestJson(`/api/board?${new URLSearchParams({ org, repos: repos.join(",") })}`),
   )
 
+const postJson = (path: string, body: unknown) =>
+  requestJson(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  })
+
 export const moveCard = async (move: MoveCardRequest): Promise<MoveCardResult> =>
-  decodeMoveCardResult(
-    await requestJson("/api/board/move", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(move),
-    }),
+  decodeMoveCardResult(await postJson("/api/board/move", move))
+
+export const createCard = async (request: CreateCardRequest): Promise<CreateCardResult> =>
+  decodeCreateCardResult(await postJson("/api/board/issues", request))
+
+export const assignSelf = async (request: AssignSelfRequest): Promise<AssignSelfResult> =>
+  decodeAssignSelfResult(await postJson("/api/board/assign", request))
+
+export const fetchCardDetail = async (
+  org: string,
+  repo: string,
+  number: number,
+): Promise<CardDetail> =>
+  decodeCardDetail(
+    await requestJson(
+      `/api/board/issue?${new URLSearchParams({ org, repo, number: String(number) })}`,
+    ),
   )
 
 export const signOut = async (): Promise<void> => {
