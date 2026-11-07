@@ -56,7 +56,7 @@ Forgejo stays the single source of truth: Tabulo stores only what Forgejo cannot
 1. `GET /auth/login` stores a random `state` and a PKCE verifier, then redirects to Forgejo's
    authorize endpoint.
 2. `GET /auth/callback` checks `state`, exchanges the code for access and refresh tokens, reads
-   the Forgejo user, and creates a session.
+   the Forgejo user, and creates a session. It deletes the session the browser already had.
 3. The session cookie is random, `HttpOnly`, `Secure`, and `SameSite=Lax`. The database stores
    only its SHA-256 hash.
 4. Tokens are encrypted with AES-GCM before they reach the database. They never reach the browser.

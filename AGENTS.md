@@ -34,6 +34,8 @@ major version.
   fields Tabulo reads. Code past the decoder trusts the decoded types.
 - Outbound HTTP goes through the `fetch` passed to `createApp`. Tests pass the fake Forgejo
   from `test/fake-forgejo.ts`. Never mock Tabulo's own modules.
+- Time comes from Effect's `Clock`. Tests that depend on time or waiting pass the fake clock
+  from `test/fake-clock.ts` to `tabulo()`, never real sleeps or timeouts.
 - `SessionStore` owns token encryption. Nothing else reads or writes token columns.
 - `src/shared/api.ts` holds the API payload schemas. The client decodes responses with them.
 - Imports use explicit `.ts` extensions so `scripts/` runs under Node without a build step.
