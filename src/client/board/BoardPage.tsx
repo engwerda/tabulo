@@ -870,7 +870,13 @@ export const BoardPage = ({ org }: { org: string }) => {
         {orgMissing ? (
           <OrgNotFound org={org} />
         ) : !hasSelection ? (
-          repos.data !== undefined && <EmptyBoard onChoose={() => setPickerOpen(true)} />
+          repos.data === undefined ? (
+            <div className="min-h-0 flex-1">
+              <BoardSkeleton />
+            </div>
+          ) : (
+            <EmptyBoard onChoose={() => setPickerOpen(true)} />
+          )
         ) : data === undefined ? (
           board.isError ? (
             <Notice tone="error">

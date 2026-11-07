@@ -318,6 +318,11 @@ type SortableCardProps = {
   readonly actions: CardActions
   /** The board's query string without the search text, which the card's link keeps. */
   readonly hrefBase: string
+  /**
+   * Whether Tab stops at this card. Only a column's first card is a Tab stop, so Tab moves from
+   * column to column and the arrow keys move between the cards inside one.
+   */
+  readonly tabbable: boolean
 }
 
 type CardContentsProps = {
@@ -329,6 +334,7 @@ type CardContentsProps = {
   readonly actions: CardActions
   readonly href: string
   readonly dragging: boolean
+  readonly tabbable: boolean
   /** dnd-kit's keyboard activation, which the card's link carries. */
   readonly keyboard: {
     readonly ref: (element: HTMLElement | null) => void
@@ -353,6 +359,7 @@ const CardContents = memo(function CardContents({
   actions,
   href,
   dragging,
+  tabbable,
   keyboard,
 }: CardContentsProps) {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -394,6 +401,7 @@ const CardContents = memo(function CardContents({
           }}
           href={href}
           data-card-link=""
+          tabIndex={tabbable ? 0 : -1}
           onClick={openPanel}
           onKeyDown={onKeyDown}
           draggable={false}
@@ -458,6 +466,7 @@ export const SortableCard = memo(function SortableCard({
   selected,
   actions,
   hrefBase,
+  tabbable,
 }: SortableCardProps) {
   const movable = viewerCanArrange && card.readOnlyReason === null
   const sortable = useSortable({ id: card.key, disabled: !movable })
@@ -509,6 +518,7 @@ export const SortableCard = memo(function SortableCard({
         actions={actions}
         href={href}
         dragging={sortable.isDragging}
+        tabbable={tabbable}
         keyboard={keyboard}
       />
     </li>

@@ -148,8 +148,10 @@ Open **Board** in the header, choose an organization, and choose its repositorie
 is `/board/<org>?repos=<repo>,<repo>`, so a board can be bookmarked or shared, filters included.
 
 Drag a card with the mouse, or press and hold it on a touch screen. The column under it opens a
-gap where the card will land. With the keyboard, focus a card's handle and use Space and the
-arrow keys, or pick a column in the card's menu. Tabulo then changes the issue in Forgejo as
+gap where the card will land. With the keyboard, Tab moves from column to column and the arrow
+keys from card to card. Space picks a card up, the arrow keys move it, and Space drops it; Enter
+opens the card, and the period key opens its menu, which can also move it. Tabulo then changes
+the issue in Forgejo as
 you: it adds the column's status label, removes it when the card goes to Todo, or closes or
 reopens the issue. Other labels stay as they are. Forgejo decides whether you may change the
 issue, so a triage member who can write issues but not code can move cards too. After a move,
@@ -164,8 +166,9 @@ whether you may. A status label is not offered there; move the card instead. The
 the open card, so you can share it. Tabulo writes the whole assignee list, so an assignee
 change someone makes at the same moment can be lost.
 
-The filters narrow the board by text or `#number`, assignee, label, and milestone. **Assigned
-to me** puts `assignee=@me` in the address, so a shared link shows each person their own cards.
+The filters narrow the board by text or `#number`, assignee, label, and milestone. Assignee and
+label take several values, and a card shows when it matches any of them. **Assigned to me** puts
+`assignee=@me` in the address, so a shared link shows each person their own cards.
 `@none` stands for no assignee or no milestone. Collapse a column with the button in its header;
 Tabulo remembers it in your browser. Press `?` on the board for the keyboard shortcuts, such as
 `/` to search, `N` for a new issue, and `J` and `K` to browse cards in the details panel.

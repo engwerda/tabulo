@@ -95,7 +95,8 @@ the board.
   archived repositories cannot be moved, added, edited, or commented on.
 - **Address.** `/board/<org>` takes `repos` (comma-separated names), and the client-side
   filters `q` (title words, or `#number` for one issue number), `assignee` (a login, `@me` for
-  the viewer, or `@none`), `label` (a full label name), and `milestone` (a title or `@none`).
+  the viewer, or `@none`), `label` (a full label name or `@none`), and `milestone` (a title or
+  `@none`). `assignee` and `label` can repeat; a card matches any of their values.
   `card=<repo>#<number>` opens that card's details. Logins cannot contain `@`; a milestone
   titled `@none` cannot be chosen by name.
 

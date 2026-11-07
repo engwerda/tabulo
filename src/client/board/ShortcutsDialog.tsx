@@ -26,6 +26,7 @@ const GROUPS = [
   {
     title: "Cards",
     shortcuts: [
+      { keys: ["Tab"], action: "Go to the next column" },
       { keys: ["←", "↑", "↓", "→"], action: "Go to another card" },
       { keys: ["Home", "End"], action: "First or last card in the column" },
       { keys: ["Enter"], action: "Open the card's details" },
