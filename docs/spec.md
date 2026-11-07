@@ -158,9 +158,11 @@ repositories at a time. A repository that fails to load is listed in `failedRepo
 others still show.
 
 Workers allow 1,000 subrequests per request, so the listing pages of one request share a
-budget of 800. A repository takes an equal share of the pages left when it starts and gives
-back what it does not use. A listing that runs out of pages is named in `incomplete`, and the
-page and the copied summary say which numbers are too low.
+budget of 800. The budget covers the whole request. When Forgejo rejects the token and Tabulo
+refreshes it and reads again, the second attempt reads only the pages the first left. A
+repository takes an equal share of the pages left when it starts and gives back what it does
+not use. A listing that runs out of pages is named in `incomplete`, and the page and the
+copied summary say which numbers are too low.
 
 - **Backlog.** An issue is open at a time when it was created before it and not closed by it.
   An issue whose state is closed closed at its `closed_at`, or at its last update when Forgejo
@@ -239,9 +241,10 @@ organization and repository selection. It shows open epics and epics closed with
   repositories enter `failedRepos`; an authentication failure still ends the request. This
   endpoint writes no Forgejo data or card ranks.
 - **Page budget.** The organization labels, repository listings, and child lookups of one
-  request share the 800-page budget that Insights uses, in that order. A repository takes an
+  request share the 800-page budget that Insights uses, in that order. As on Insights, a retry
+  after a token refresh reads only the pages the first attempt left. A repository takes an
   equal share of the pages left when it starts and gives back what it does not use. Each child
-  lookup takes one page. A listing that runs out of pages is named in `incomplete.listings`,
+  lookup takes one page when it starts. A listing that runs out of pages is named in `incomplete.listings`,
   and epics in its unread part are missing. `incomplete.children` counts the child references
   that were not looked up.
 - **Display.** Each epic exposes its issue details and board column, progress segments and

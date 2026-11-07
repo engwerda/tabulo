@@ -29,7 +29,13 @@ import {
   type OAuthStateInvalid,
   type SessionNotFound,
 } from "./errors.ts"
-import { ForgejoClient, type HttpFetch, makeForgejoClient } from "./forgejo/client.ts"
+import {
+  ForgejoClient,
+  type HttpFetch,
+  makeForgejoClient,
+  PAGE_BUDGET,
+  type PageBudget,
+} from "./forgejo/client.ts"
 import { loadActivity, loadInsights, parseInsightsQuery, parseTimeZone } from "./load-insights.ts"
 import { parseSearchQuery, searchItems } from "./search.ts"
 import {
@@ -293,11 +299,12 @@ export const createApp = (dependencies: Dependencies) => {
   app.get("/api/epics", (c) =>
     run(
       c,
-      Effect.flatMap(parseBoardQuery(c.req.query("org"), c.req.query("repos")), (query) =>
-        withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
-          loadEpics(token, query).pipe(Effect.map((epics) => c.json(epics))),
-        ),
-      ),
+      Effect.flatMap(parseBoardQuery(c.req.query("org"), c.req.query("repos")), (query) => {
+        const pool: PageBudget = { remaining: PAGE_BUDGET }
+        return withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
+          loadEpics(token, query, pool).pipe(Effect.map((epics) => c.json(epics))),
+        )
+      }),
     ),
   )
 
@@ -334,10 +341,12 @@ export const createApp = (dependencies: Dependencies) => {
           days: c.req.query("days"),
           tz: c.req.query("tz"),
         }),
-        (query) =>
-          withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
-            loadInsights(token, query).pipe(Effect.map((insights) => c.json(insights))),
-          ),
+        (query) => {
+          const pool: PageBudget = { remaining: PAGE_BUDGET }
+          return withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
+            loadInsights(token, query, pool).pipe(Effect.map((insights) => c.json(insights))),
+          )
+        },
       ),
     ),
   )

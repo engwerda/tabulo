@@ -6,7 +6,6 @@ import { describeForgejoError, FORGEJO_READ_ERRORS } from "./errors.ts"
 import {
   type AccessToken,
   ForgejoClient,
-  PAGE_BUDGET,
   type PageBudget,
   type RepoRef,
   sharePages,
@@ -114,15 +113,18 @@ type RepoEpics =
     }
   | { readonly _tag: "Failed"; readonly repo: string; readonly message: string }
 
+/**
+ * Loads the epics of `query`. Labels, listings, and child lookups take their pages from `pool`,
+ * in that order.
+ */
 export const loadEpics = Effect.fn("loadEpics")(function* (
   token: AccessToken,
   query: { org: string; repos: ReadonlyArray<string> },
+  pool: PageBudget,
 ) {
   const settings = yield* BoardConfig
   const config = yield* EpicsConfig
   const forgejo = yield* ForgejoClient
-  // Labels, listings, and child lookups take their pages from one pool, in that order.
-  const pool: PageBudget = { remaining: PAGE_BUDGET }
   const layout = boardLayout(settings, yield* forgejo.orgLabels(token, query.org, pool))
   const windowStart = (yield* Clock.currentTimeMillis) - settings.doneDays * 86_400_000
   const updatedSince = new Date(windowStart).toISOString()
@@ -212,12 +214,14 @@ export const loadEpics = Effect.fn("loadEpics")(function* (
     })),
   })
   const lookups = [...missing.values()].slice(0, Math.min(MAX_CHILD_LOOKUPS, pool.remaining))
-  pool.remaining -= lookups.length
   const resolved = new Map(
     yield* Effect.forEach(
       lookups,
       (ref) =>
-        forgejo.issue(token, ref, ref.number).pipe(
+        Effect.suspend(() => {
+          pool.remaining -= 1
+          return forgejo.issue(token, ref, ref.number)
+        }).pipe(
           Effect.map((issue) => [ref.ref, toChild(ref, issue)] as const),
           Effect.catchTag(["ForgejoForbidden", "ForgejoNotFound"], () =>
             Effect.succeed([

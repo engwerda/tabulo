@@ -52,7 +52,8 @@ export type Page<A> = { readonly items: ReadonlyArray<A>; readonly total: number
 
 /**
  * Forgejo pages that one request may still read. The readers that share it run concurrently,
- * and each takes a page from it before reading the page.
+ * and each takes a page from it before reading the page. A route creates it outside
+ * `withAccessToken`, so a retry after a token refresh reads from the same pool.
  */
 export type PageBudget = { remaining: number }
 

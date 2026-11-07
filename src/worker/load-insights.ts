@@ -14,7 +14,7 @@ import {
   FORGEJO_READ_ERRORS,
   type ForgejoUnauthorized,
 } from "./errors.ts"
-import { type AccessToken, ForgejoClient, PAGE_BUDGET, sharePages } from "./forgejo/client.ts"
+import { type AccessToken, ForgejoClient, type PageBudget, sharePages } from "./forgejo/client.ts"
 import { buildInsights, insightPeriods, type RepoActivity } from "./insights.ts"
 import { isTimeZone } from "./time-zone.ts"
 
@@ -73,7 +73,7 @@ type RepoResult =
  * that fails to load is reported in `failedRepos`, and a listing cut short by the page budget in
  * `incomplete`; only an auth failure escapes.
  */
-export const loadInsights = (token: AccessToken, query: InsightsQuery) =>
+export const loadInsights = (token: AccessToken, query: InsightsQuery, pool: PageBudget) =>
   Effect.gen(function* () {
     const forgejo = yield* ForgejoClient
     const now = yield* Clock.currentTimeMillis
@@ -81,7 +81,7 @@ export const loadInsights = (token: AccessToken, query: InsightsQuery) =>
     const since = insightPeriods(now, query.days, query.tz).previous.start
     const updatedSince = new Date(since).toISOString()
 
-    const share = sharePages({ remaining: PAGE_BUDGET }, query.repos.length)
+    const share = sharePages(pool, query.repos.length)
 
     const readRepo = (name: string): Effect.Effect<RepoResult, ForgejoUnauthorized> => {
       const ref = { owner: query.org, name }

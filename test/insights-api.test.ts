@@ -232,6 +232,45 @@ describe("GET /api/insights", () => {
     expect(listingPages).toHaveLength(800)
   })
 
+  it("keeps one page budget when a late 401 refreshes the token", async () => {
+    const manyRuns = Array.from({ length: 1000 }, (_, index) =>
+      actionRun(
+        1000 - index,
+        "success",
+        new Date(Date.UTC(2026, 10, 7, 8, 0) - index * 60_000).toISOString(),
+        1,
+      ),
+    )
+    let runPages = 0
+    const { forgejo, call, cookie } = await setup({
+      orgs: [
+        acme([
+          boardRepo("api", { actionRuns: manyRuns }),
+          boardRepo("web", { actionRuns: manyRuns }),
+        ]),
+      ],
+      // Forgejo rejects the token after 600 of the 800 listing pages.
+      intercept: (_, path) =>
+        path.endsWith("/actions/runs") && ++runPages === 600
+          ? new Response(null, { status: 401 })
+          : undefined,
+    })
+    const before = forgejo.requests.length
+
+    const response = await call("/api/insights?org=acme&repos=api,web&days=30&tz=UTC", {
+      headers: { cookie },
+    })
+
+    expect(response.status).toBe(200)
+    const reads = forgejo.requests.slice(before)
+    expect(reads.filter(({ path }) => path === "/login/oauth/access_token")).toHaveLength(1)
+    const listingPages = reads.filter(({ path }) =>
+      /\/(issues|actions\/runs|milestones)$/.test(path),
+    )
+    expect(listingPages.length).toBeLessThanOrEqual(800)
+    expect(reads.length).toBeLessThan(1000)
+  })
+
   it.each([
     ["days=7&tz=UTC", "days must be one of 30, 90, 180, 365"],
     ["days=30&tz=Mars/Olympus_Mons", "tz is not a known time zone"],

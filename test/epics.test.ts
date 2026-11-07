@@ -88,6 +88,37 @@ const fixtures = (): Partial<FakeForgejoFixtures> => ({
     path.includes("/forbidden/") ? new Response(null, { status: 403 }) : undefined,
 })
 
+// Requests that take a page from the budget: organization labels, listings, and child lookups.
+const PAGE_READ = /\/labels$|\/issues(\/\d+)?$/
+
+/** Twenty repositories of `open` and `closed` issues; r0#1 is an epic with 200 external children. */
+const crowdedOrg = (open: number, closed: number) => {
+  const names = Array.from({ length: 20 }, (_, i) => `r${i}`)
+  const repos = names.map((name) =>
+    boardRepo(name, {
+      issues: Array.from({ length: open + closed }, (_, i) =>
+        boardIssue(
+          name,
+          i + 1,
+          i < open
+            ? {}
+            : {
+                state: "closed",
+                closed_at: "2026-11-01T00:00:00Z",
+                updated_at: "2026-11-01T00:00:00Z",
+              },
+        ),
+      ),
+    }),
+  )
+  const epic = repos[0]?.issues[0]
+  if (epic !== undefined) {
+    epic.labels = [epicLabel]
+    epic.body = Array.from({ length: 200 }, (_, i) => `- [ ] external#${i + 1}`).join("\n")
+  }
+  return { names, org: acme(repos) }
+}
+
 describe("GET /api/epics", () => {
   it("decodes epic bodies separately and resolves children from real state and board columns", async () => {
     const forgejo = createFakeForgejo({ ...fixtures(), maxPageSize: 2 })
@@ -307,25 +338,8 @@ describe("GET /api/epics", () => {
   })
 
   it("stays within the Worker's subrequest limit and says what it did not read", async () => {
-    const closed = {
-      state: "closed",
-      closed_at: "2026-11-01T00:00:00Z",
-      updated_at: "2026-11-01T00:00:00Z",
-    } as const
-    const names = Array.from({ length: 20 }, (_, i) => `r${i}`)
-    const repos = names.map((name) =>
-      boardRepo(name, {
-        issues: Array.from({ length: 120 }, (_, i) =>
-          boardIssue(name, i + 1, i < 60 ? {} : closed),
-        ),
-      }),
-    )
-    const epic = repos[0]?.issues[0]
-    if (epic !== undefined) {
-      epic.labels = [epicLabel]
-      epic.body = Array.from({ length: 200 }, (_, i) => `- [ ] external#${i + 1}`).join("\n")
-    }
-    const forgejo = createFakeForgejo({ orgs: [acme(repos)], maxPageSize: 2 })
+    const { names, org } = crowdedOrg(60, 60)
+    const forgejo = createFakeForgejo({ orgs: [org], maxPageSize: 2 })
     const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
     const cookie = await signIn(call, forgejo)
     const before = forgejo.requests.length
@@ -339,7 +353,7 @@ describe("GET /api/epics", () => {
     const reads = forgejo.requests.slice(before)
     expect(reads.length).toBeLessThan(1000)
     // Labels, listings, and child lookups share 800 pages; each repository also reads itself.
-    expect(reads.filter(({ path }) => /\/labels$|\/issues(\/\d+)?$/.test(path))).toHaveLength(800)
+    expect(reads.filter(({ path }) => PAGE_READ.test(path))).toHaveLength(800)
     // Each repository needs 60 listing pages, more than its share of 800.
     expect(data.incomplete.listings).toHaveLength(40)
     expect(data.incomplete.listings).toContainEqual({ repo: "r0", listing: "closed" })
@@ -347,6 +361,37 @@ describe("GET /api/epics", () => {
     expect(data.epics.map(({ key }) => key)).toEqual(["acme/r0#1"])
     expect(data.epics[0]?.children).toHaveLength(200)
     expect(data.epics[0]?.children.every(({ _tag }) => _tag === "Unavailable")).toBe(true)
+  })
+
+  it.each([
+    // 600 of the 800 pages go to listings before Forgejo rejects the token.
+    { read: "listing", closed: 60, rejects: /^\/api\/v1\/repos\/acme\/r\d+\/issues$/, at: 600 },
+    // Listings take 621 pages, leaving 179 child lookups; the 150th is rejected.
+    { read: "child lookup", closed: 0, rejects: /\/external\/issues\//, at: 150 },
+  ])("keeps one page budget when a late $read 401 refreshes the token", async (scenario) => {
+    const { names, org } = crowdedOrg(60, scenario.closed)
+    let matched = 0
+    const forgejo = createFakeForgejo({
+      orgs: [org],
+      maxPageSize: 2,
+      intercept: (_, path) =>
+        scenario.rejects.test(path) && ++matched === scenario.at
+          ? new Response(null, { status: 401 })
+          : undefined,
+    })
+    const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
+    const cookie = await signIn(call, forgejo)
+    const before = forgejo.requests.length
+
+    const response = await call(`/api/epics?org=acme&repos=${names.join(",")}`, {
+      headers: { cookie },
+    })
+
+    expect(response.status).toBe(200)
+    const reads = forgejo.requests.slice(before)
+    expect(reads.filter(({ path }) => path === "/login/oauth/access_token")).toHaveLength(1)
+    expect(reads.filter(({ path }) => PAGE_READ.test(path)).length).toBeLessThanOrEqual(800)
+    expect(reads.length).toBeLessThan(1000)
   })
 
   it("bounds concurrent child reads to four", async () => {
