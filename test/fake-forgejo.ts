@@ -351,6 +351,20 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
         headers: { "x-total-count": String(fixtures.notifications.length) },
       })
     }
+    if (path === "/api/v1/repos/issues/search" && query.has("q")) {
+      const text = (query.get("q") ?? "").toLowerCase()
+      const state = query.get("state") ?? "all"
+      const seen = new Set<string>()
+      const matches = Object.values(fixtures.issues)
+        .flatMap(
+          (items) =>
+            (items ?? []) as ReadonlyArray<{ title: string; state: string; html_url: string }>,
+        )
+        .filter((issue) => !seen.has(issue.html_url) && seen.add(issue.html_url))
+        .filter((issue) => issue.title.toLowerCase().includes(text))
+        .filter((issue) => state === "all" || issue.state === state)
+      return paged(matches, query)
+    }
     if (path === "/api/v1/repos/issues/search") {
       const filter = (["review_requested", "assigned", "mentioned", "created"] as const).find(
         (name) => query.get(name) === "true",

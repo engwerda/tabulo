@@ -1,7 +1,7 @@
 import { Cause, Clock, Effect, Exit, Schema } from "effect"
 import { type Context, Hono } from "hono"
 import { deleteCookie, getCookie, setCookie } from "hono/cookie"
-import { type Dashboard, MoveCardRequest } from "../shared/api.ts"
+import { type Dashboard, type Instance, MoveCardRequest } from "../shared/api.ts"
 import { beginLogin, completeLogin } from "./auth/oauth.ts"
 import { currentSession, withAccessToken } from "./auth/session.ts"
 import {
@@ -30,6 +30,7 @@ import {
   type SessionNotFound,
 } from "./errors.ts"
 import { ForgejoClient, type HttpFetch, makeForgejoClient } from "./forgejo/client.ts"
+import { parseSearchQuery, searchItems } from "./search.ts"
 import {
   makeSessionStore,
   OAUTH_STATE_LIFETIME_MS,
@@ -235,6 +236,27 @@ export const createApp = (dependencies: Dependencies) => {
         loadDashboardSections(token).pipe(
           Effect.map((sections) => c.json({ user: session.user, ...sections } satisfies Dashboard)),
         ),
+      ),
+    ),
+  )
+
+  app.get("/api/search", (c) =>
+    run(
+      c,
+      Effect.flatMap(parseSearchQuery(c.req.query("q"), c.req.query("limit")), (query) =>
+        withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
+          searchItems(token, query).pipe(Effect.map((results) => c.json(results))),
+        ),
+      ),
+    ),
+  )
+
+  app.get("/api/instance", (c) =>
+    run(
+      c,
+      currentSession(getCookie(c, SESSION_COOKIE)).pipe(
+        Effect.flatMap(() => loadConfig(c.env)),
+        Effect.map((config) => c.json({ forgejoUrl: config.forgejo.baseUrl } satisfies Instance)),
       ),
     ),
   )

@@ -12,6 +12,9 @@
     "src/client/format.ts",
     "src/client/board/board-view.ts",
     "src/client/epics/epics-view.ts",
+    "src/client/palette/fuzzy.ts",
+    "src/client/palette/rank.ts",
+    "src/client/palette/shortcuts.ts",
     "test"
   ]
 }

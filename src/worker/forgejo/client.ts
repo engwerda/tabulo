@@ -70,6 +70,13 @@ export class ForgejoClient extends Context.Service<
       search: IssueSearch,
       limit: number,
     ) => Effect.Effect<Page<ForgejoIssue>, ForgejoError>
+    /** Issues and pull requests of every repository the user can read whose text matches `q`. */
+    readonly searchIssueText: (
+      token: AccessToken,
+      q: string,
+      state: "open" | "closed",
+      limit: number,
+    ) => Effect.Effect<ReadonlyArray<ForgejoIssue>, ForgejoError>
     readonly unreadNotifications: (
       token: AccessToken,
       limit: number,
@@ -329,6 +336,13 @@ export const makeForgejoClient = (
         },
         ForgejoIssue,
       ).pipe(Effect.map(knownTotal)),
+    searchIssueText: (token, q, state, limit) =>
+      api(
+        token,
+        "/repos/issues/search",
+        { q, state, limit: String(limit) },
+        Schema.Array(ForgejoIssue),
+      ).pipe(Effect.map(({ body }) => body)),
     unreadNotifications: (token, limit) =>
       page(token, "/notifications", { limit: String(limit) }, ForgejoNotification).pipe(
         Effect.map(knownTotal),

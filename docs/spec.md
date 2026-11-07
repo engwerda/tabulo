@@ -176,6 +176,31 @@ organization and repository selection. It shows open epics and epics closed with
   covers all selected epics, counts child completions across those epics, and marks open epics
   with zero completed children as at risk. The client refreshes every minute.
 
+### Search
+
+The command menu searches issues and pull requests, and finds repositories and views on the
+client.
+
+| Endpoint | Result |
+|---|---|
+| `GET /api/search?q=&limit=` | `{ items }`: issues and pull requests across every repository the user can read, as dashboard items. |
+| `GET /api/instance` | `{ forgejoUrl }`, so the client can link to a repository's page. |
+
+`q` is trimmed text of 1 to 100 characters, and Forgejo matches it against titles and
+descriptions. `limit` is a positive integer, default 10, and larger values answer with 20. The
+server answers 400 to a `q` or `limit` outside this. It asks Forgejo's `GET /repos/issues/search`
+as the user, first for `state=open` and then, for what is left of the limit, `state=closed`, so
+open items come first. The menu does not search before two characters, and waits 200 ms after
+the last key.
+
+### Keyboard shortcuts
+
+`Cmd` or `Ctrl` with `K` opens the menu, `?` opens the shortcut list, and `g` followed within a
+second by `d`, `b`, `i`, or `e` goes to the dashboard, board, insights, or epics, using the last
+organization and its remembered repositories. Keys without `Cmd` or `Ctrl` do nothing while the
+focus is in an input, textarea, select, or editable element. The shortcuts are one list in
+`src/client/palette/shortcuts.ts`, which the key handler and the shortcut list both read.
+
 ### Configuration
 
 | Variable | Kind | Purpose |
