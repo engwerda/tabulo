@@ -72,7 +72,7 @@ export const OrgSwitcher = ({ org }: { org: string }) => {
   const title = current?.fullName || current?.name || org
   return (
     <Popover
-      triggerClass="-ml-1.5 flex min-w-0 items-center gap-2 rounded-lg py-1 pr-1.5 pl-1.5 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800/70"
+      triggerClass="-ml-1.5 flex min-w-0 max-w-full items-center gap-2 rounded-lg py-1 pr-1.5 pl-1.5 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800/70"
       accessibleLabel={`Organization: ${title}. Switch organization`}
       label={
         <>
