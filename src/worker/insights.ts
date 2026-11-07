@@ -89,7 +89,11 @@ const count = <A>(items: ReadonlyArray<A>, predicate: (item: A) => boolean) =>
 
 const groupBy = <A>(items: ReadonlyArray<A>, key: (item: A) => string) => {
   const groups = new Map<string, Array<A>>()
-  for (const item of items) groups.set(key(item), [...(groups.get(key(item)) ?? []), item])
+  for (const item of items) {
+    const group = groups.get(key(item))
+    if (group === undefined) groups.set(key(item), [item])
+    else group.push(item)
+  }
   return groups
 }
 
