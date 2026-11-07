@@ -110,7 +110,7 @@ the board.
 | `POST /api/board/labels` | Adds or removes one label and answers with `{ card }`. |
 | `POST /api/board/milestone` | Sets or clears the milestone and answers with `{ card }`. |
 | `POST /api/board/comment` | Comments on the issue and answers with `{ comment }`. |
-| `GET /api/board/issue?org=&repo=&number=` | The card's description and latest 50 comments as HTML, `{ key, bodyHtml, comments, commentCount }`. |
+| `GET /api/board/issue?org=&repo=&number=` | The card's description and latest 20 comments as HTML, `{ key, bodyHtml, comments, commentCount }`. |
 | `GET /api/board/issue-options?org=&repo=` | The labels, open milestones, and assignable users a card of the repository can take, `{ labels, milestones, assignees }`. |
 
 `GET /api/board` reads the organization's labels and whether the user is a member, then for each
@@ -190,7 +190,7 @@ the board shows it, with its stored rank or the rank a board read would give it.
 `GET /api/board/issue` reads the issue's description and its comments and has Forgejo render
 them (`POST /api/v1/markdown` in `comment` mode, as Forgejo shows an issue), at most four at
 once. Forgejo does not page an issue's comments, so Tabulo reads them all and answers the
-latest 50, oldest first, with `commentCount` for all of them. Empty text answers `""` without
+latest 20, oldest first, with `commentCount` for all of them. Empty text answers `""` without
 a render. Anyone who can read the repository may ask; Forgejo
 answers 404 for an issue the user cannot see. The client sanitizes the HTML again before
 showing it.

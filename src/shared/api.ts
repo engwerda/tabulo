@@ -187,7 +187,7 @@ export const CardDetail = Schema.Struct({
   key: Schema.String,
   /** The description as Forgejo renders it; empty when the issue has none. */
   bodyHtml: Schema.String,
-  /** The latest comments, oldest first; at most 50. */
+  /** The latest comments, oldest first; at most 20. */
   comments: Schema.Array(CardComment),
   /** How many comments the issue has, which can exceed `comments.length`. */
   commentCount: Schema.Number,

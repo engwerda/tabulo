@@ -740,7 +740,9 @@ export const addComment = (token: AccessToken, _login: string, request: AddComme
     return { comment: toCardComment(comment, bodyHtml) } satisfies AddCommentResult
   })
 
-const MAX_DETAIL_COMMENTS = 50
+// Each comment costs a render request; with the issue and its comments a detail stays at 23
+// Forgejo requests, under the Workers Free plan's 50 subrequests per request.
+const MAX_DETAIL_COMMENTS = 20
 // Workers allow six open connections; renders leave two free.
 const RENDER_CONCURRENCY = 4
 
