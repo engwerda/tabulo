@@ -11,6 +11,7 @@
     "src/shared",
     "src/client/format.ts",
     "src/client/board/board-view.ts",
+    "src/client/epics/epics-view.ts",
     "test"
   ]
 }

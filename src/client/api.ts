@@ -2,6 +2,7 @@ import { Schema } from "effect"
 import {
   Board,
   Dashboard,
+  Epics,
   type MoveCardRequest,
   MoveCardResult,
   Org,
@@ -33,6 +34,7 @@ const decodeDashboard = Schema.decodeUnknownPromise(Dashboard)
 const decodeOrgs = Schema.decodeUnknownPromise(Schema.Array(Org))
 const decodeOrgRepos = Schema.decodeUnknownPromise(Schema.Array(OrgRepo))
 const decodeBoard = Schema.decodeUnknownPromise(Board)
+const decodeEpics = Schema.decodeUnknownPromise(Epics)
 const decodeMoveCardResult = Schema.decodeUnknownPromise(MoveCardResult)
 
 const requestJson = async (path: string, init?: RequestInit): Promise<unknown> => {
@@ -83,6 +85,11 @@ export const moveCard = async (move: MoveCardRequest): Promise<MoveCardResult> =
       headers: { "content-type": "application/json" },
       body: JSON.stringify(move),
     }),
+  )
+
+export const fetchEpics = async (org: string, repos: ReadonlyArray<string>): Promise<Epics> =>
+  decodeEpics(
+    await requestJson(`/api/epics?${new URLSearchParams({ org, repos: repos.join(",") })}`),
   )
 
 export const signOut = async (): Promise<void> => {
