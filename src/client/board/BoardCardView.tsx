@@ -13,6 +13,7 @@ import type { BoardCard, BoardColumn } from "../../shared/api.ts"
 import { AvatarStack } from "../Avatar.tsx"
 import { absoluteTime, shortAge } from "../format.ts"
 import {
+  CheckIcon,
   CommentIcon,
   ExternalIcon,
   GripIcon,
@@ -156,23 +157,26 @@ const CardMenu = ({
             <p className="px-2 pt-1 pb-1 text-[0.6875rem] font-semibold tracking-wide text-zinc-400 uppercase">
               Move to
             </p>
-            {columns
-              .filter((column) => column.key !== card.column)
-              .map((column) => (
+            {columns.map((column) => {
+              const here = column.key === card.column
+              return (
                 <button
                   key={column.key}
                   type="button"
-                  role="menuitem"
+                  role="menuitemradio"
+                  aria-checked={here}
                   className={menuItemClass}
                   onClick={() => {
                     close()
-                    actions.moveTo(card, column.key)
+                    if (!here) actions.moveTo(card, column.key)
                   }}
                 >
                   <ColumnDot column={column} />
-                  <span className="truncate">{column.title}</span>
+                  <span className="flex-1 truncate">{column.title}</span>
+                  {here && <CheckIcon className="size-4 text-indigo-600 dark:text-indigo-400" />}
                 </button>
-              ))}
+              )
+            })}
           </>
         )}
       </div>
@@ -323,6 +327,8 @@ type SortableCardProps = {
    * column to column and the arrow keys move between the cards inside one.
    */
   readonly tabbable: boolean
+  /** Forgejo has not confirmed this card's move yet. */
+  readonly saving: boolean
 }
 
 type CardContentsProps = {
@@ -335,6 +341,7 @@ type CardContentsProps = {
   readonly href: string
   readonly dragging: boolean
   readonly tabbable: boolean
+  readonly saving: boolean
   /** dnd-kit's keyboard activation, which the card's link carries. */
   readonly keyboard: {
     readonly ref: (element: HTMLElement | null) => void
@@ -360,6 +367,7 @@ const CardContents = memo(function CardContents({
   href,
   dragging,
   tabbable,
+  saving,
   keyboard,
 }: CardContentsProps) {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -413,13 +421,21 @@ const CardContents = memo(function CardContents({
           {!showRepo && <span className="sr-only">{card.repo}</span>}
           <CardReference card={card} showRepo={showRepo} />
         </a>
+        {saving && (
+          <span
+            title="Saving to Forgejo"
+            className="size-1.5 shrink-0 animate-pulse rounded-full bg-indigo-500"
+          >
+            <span className="sr-only">Saving</span>
+          </span>
+        )}
         {card.readOnlyReason === "archived" && (
           <span
             title={`${card.repo} is archived, so this card cannot be moved.`}
-            className="flex items-center gap-1 rounded bg-zinc-100 px-1 py-px text-[0.625rem] font-medium tracking-wide text-zinc-500 uppercase dark:bg-zinc-800 dark:text-zinc-400"
+            className="shrink-0 text-zinc-400"
           >
             <LockIcon className="size-3" />
-            Archived
+            <span className="sr-only">Archived</span>
           </span>
         )}
         <span
@@ -467,6 +483,7 @@ export const SortableCard = memo(function SortableCard({
   actions,
   hrefBase,
   tabbable,
+  saving,
 }: SortableCardProps) {
   const movable = viewerCanArrange && card.readOnlyReason === null
   const sortable = useSortable({ id: card.key, disabled: !movable })
@@ -519,6 +536,7 @@ export const SortableCard = memo(function SortableCard({
         href={href}
         dragging={sortable.isDragging}
         tabbable={tabbable}
+        saving={saving}
         keyboard={keyboard}
       />
     </li>

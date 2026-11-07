@@ -163,7 +163,7 @@ export const DashboardView = () => {
           <>
             <nav
               aria-label="Summary"
-              className="-mx-4 flex gap-3 overflow-x-auto px-4 [scrollbar-width:none] *:min-w-[12rem] *:flex-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:*:min-w-0 lg:grid-cols-4"
+              className="-mx-4 flex gap-3 overflow-x-auto px-4 [scrollbar-width:none] max-sm:[mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] *:min-w-[12rem] *:flex-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:*:min-w-0 lg:grid-cols-4"
             >
               <Stat
                 href="#review-requests"

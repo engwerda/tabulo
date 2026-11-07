@@ -93,16 +93,16 @@ export const FORGEJO_READ_ERRORS = [
 export const describeForgejoError = (error: ForgejoError) => {
   switch (error._tag) {
     case "ForgejoUnauthorized":
-      return "Forgejo returned HTTP 401"
+      return "Forgejo did not accept your sign-in"
     case "ForgejoForbidden":
-      return "Forgejo returned HTTP 403"
+      return "Forgejo did not allow this"
     case "ForgejoNotFound":
-      return "Forgejo returned HTTP 404"
+      return "Not found in Forgejo, or you cannot see it"
     case "ForgejoRequestFailed":
-      return `Forgejo returned HTTP ${error.status}`
+      return `Forgejo had a problem (HTTP ${error.status}); try again in a moment`
     case "ForgejoUnreachable":
-      return "Forgejo is unreachable"
+      return "Forgejo did not respond; try again in a moment"
     case "ForgejoDecodeFailed":
-      return "Forgejo sent an unexpected response"
+      return "Forgejo sent an answer Tabulo does not understand"
   }
 }

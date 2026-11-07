@@ -88,7 +88,10 @@ describe("GET /api/dashboard", () => {
           },
         ],
       },
-      mentioned: { _tag: "Failed", message: "Forgejo returned HTTP 500" },
+      mentioned: {
+        _tag: "Failed",
+        message: "Forgejo had a problem (HTTP 500); try again in a moment",
+      },
       created: {
         _tag: "Loaded",
         total: 1,

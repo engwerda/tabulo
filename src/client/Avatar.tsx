@@ -34,7 +34,8 @@ export const Avatar = ({
         style={{ backgroundColor: repoColor(name) }}
         className={`grid ${box} place-items-center font-semibold text-white`}
       >
-        {initials(name)}
+        {/* Two letters do not fit the smallest size. */}
+        {size === "xs" ? initials(name).slice(0, 1) : initials(name)}
       </span>
     )
   }

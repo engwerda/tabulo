@@ -24,8 +24,9 @@ export const buttonClass = {
     "inline-flex size-7 shrink-0 items-center justify-center rounded-md text-zinc-500 transition hover:bg-zinc-200/70 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
 } as const
 
+// 16px text on phones keeps iOS from zooming in when a field takes focus.
 export const inputClass =
-  "h-8 w-full rounded-lg border border-zinc-200 bg-white px-2.5 text-sm text-zinc-900 shadow-card transition placeholder:text-zinc-400 hover:border-zinc-300 focus:border-indigo-400 focus:outline-none focus:ring-3 focus:ring-indigo-500/15 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:hover:border-zinc-700 dark:focus:border-indigo-500"
+  "h-8 w-full rounded-lg border border-zinc-200 bg-white px-2.5 text-base sm:text-sm text-zinc-900 shadow-card transition placeholder:text-zinc-400 hover:border-zinc-300 focus:border-indigo-400 focus:outline-none focus:ring-3 focus:ring-indigo-500/15 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:hover:border-zinc-700 dark:focus:border-indigo-500"
 
 export const panelClass =
   "rounded-xl border border-zinc-200 bg-white shadow-pop dark:border-zinc-800 dark:bg-zinc-900"
@@ -231,6 +232,12 @@ export const Popover = ({
         aria-label={accessibleLabel}
         tabIndex={triggerTabIndex}
         onClick={() => setOpen(!open)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" && !open) {
+            event.preventDefault()
+            setOpen(true)
+          }
+        }}
         className={triggerClass}
       >
         {label}

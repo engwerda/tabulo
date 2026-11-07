@@ -304,7 +304,9 @@ describe("GET /api/board", () => {
 
     expect(response.status).toBe(200)
     const board = (await response.json()) as BoardBody
-    expect(board.failedRepos).toEqual([{ repo: "docs", message: "Forgejo returned HTTP 500" }])
+    expect(board.failedRepos).toEqual([
+      { repo: "docs", message: "Forgejo had a problem (HTTP 500); try again in a moment" },
+    ])
     expect(board.cards.map((card) => card.key)).toEqual(["acme/web#9"])
   })
 

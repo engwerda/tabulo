@@ -9,6 +9,7 @@ import { OrgPicker } from "./board/OrgPicker.tsx"
 import { DashboardView } from "./Dashboard.tsx"
 import { SESSION_USER, useSession } from "./session.ts"
 import { setTheme, type ThemeChoice, useTheme } from "./theme.ts"
+import { ErrorBoundary } from "./ui/ErrorBoundary.tsx"
 import {
   ColumnsIcon,
   DashboardIcon,
@@ -209,17 +210,30 @@ const NotFound = () => (
   </main>
 )
 
-const SignedIn = ({ user }: { user: User }) => (
-  <div className="flex min-h-dvh flex-col">
-    <Header user={user} />
-    <Switch>
-      <Route path="/" component={DashboardView} />
-      <Route path="/board" component={OrgPicker} />
-      <Route path="/board/:org">{({ org }) => <BoardPage key={org} org={org} />}</Route>
-      <Route component={NotFound} />
-    </Switch>
-  </div>
-)
+const SignedIn = ({ user }: { user: User }) => {
+  const [path] = useLocation()
+  return (
+    <div className="flex min-h-dvh flex-col">
+      <a
+        href="#content"
+        className="fixed top-2 left-2 z-50 -translate-y-16 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-pop transition focus:translate-y-0"
+      >
+        Skip to content
+      </a>
+      <Header user={user} />
+      <div id="content" tabIndex={-1} className="flex min-h-0 flex-1 flex-col focus:outline-none">
+        <ErrorBoundary resetKey={path}>
+          <Switch>
+            <Route path="/" component={DashboardView} />
+            <Route path="/board" component={OrgPicker} />
+            <Route path="/board/:org">{({ org }) => <BoardPage key={org} org={org} />}</Route>
+            <Route component={NotFound} />
+          </Switch>
+        </ErrorBoundary>
+      </div>
+    </div>
+  )
+}
 
 export const App = () => {
   const session = useSession()
