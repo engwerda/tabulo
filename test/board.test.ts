@@ -177,6 +177,24 @@ describe("GET /api/board", () => {
     ])
   })
 
+  it("follows every page when Forgejo leaves out X-Total-Count", async () => {
+    // Pages of 2 are below the 50 Tabulo asks for, as with a low MAX_RESPONSE_ITEMS.
+    const forgejo = createFakeForgejo({ orgs: [boardOrg()], maxPageSize: 2, omitTotalCount: true })
+    const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
+    const cookie = await signIn(call, forgejo)
+
+    const response = await call("/api/board?org=acme&repos=api", { headers: { cookie } })
+
+    const board = (await response.json()) as BoardBody
+    expect(board.columns.map((column) => column.key)).toContain("Status/Review")
+    expect(board.cards.map((card) => card.key).sort()).toEqual([
+      "acme/api#1",
+      "acme/api#2",
+      "acme/api#3",
+      "acme/api#6",
+    ])
+  })
+
   it("orders columns as BOARD_COLUMNS says and puts unlisted status labels before Done", async () => {
     const forgejo = createFakeForgejo({ orgs: [boardOrg()] })
     const call = tabulo(forgejo.fetch, {
