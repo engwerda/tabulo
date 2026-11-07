@@ -301,11 +301,7 @@ export const MirrorColumns = ({
       {({ x, bar, band, active }) => (
         <>
           {categories.map((category, index) => (
-            <g
-              key={category.key}
-              opacity={active === null || active === index ? 1 : 0.55}
-              style={growDelay(index, categories.length)}
-            >
+            <g key={category.key} opacity={active === null || active === index ? 1 : 0.55}>
               <path
                 className="chart-rise"
                 style={{ ...growDelay(index, categories.length), fill: up.color }}

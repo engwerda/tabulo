@@ -11,7 +11,7 @@ type StatTileProps = {
   /** Whether a rise is good news, which colors the change. */
   readonly goodWhen: "up" | "down" | "neutral"
   readonly deltaMode?: DeltaMode
-  /** What the change compares with, such as "vs previous 90 days". */
+  /** What the change compares with, such as "vs prior 90d". */
   readonly comparison: string
   readonly trend?: ReadonlyArray<number> | undefined
 }
