@@ -256,6 +256,13 @@ export const RepoInsight = Schema.Struct({
 })
 export type RepoInsight = typeof RepoInsight.Type
 
+/** A listing of a repository that Tabulo stopped reading before its end. */
+export const IncompleteListing = Schema.Struct({
+  repo: Schema.String,
+  listing: Schema.Literals(["open", "closed", "runs", "milestones"]),
+})
+export type IncompleteListing = typeof IncompleteListing.Type
+
 export const Insights = Schema.Struct({
   org: Schema.String,
   repos: Schema.Array(Schema.String),
@@ -311,6 +318,7 @@ export const Insights = Schema.Struct({
   attention: Schema.Array(AttentionItem),
   repoStats: Schema.Array(RepoInsight),
   failedRepos: Schema.Array(Schema.Struct({ repo: Schema.String, message: Schema.String })),
+  incomplete: Schema.Array(IncompleteListing),
 })
 export type Insights = typeof Insights.Type
 

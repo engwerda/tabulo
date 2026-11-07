@@ -7,7 +7,7 @@ import { relativeTime } from "../format.ts"
 import { ScopeBar } from "../scope/ScopeBar.tsx"
 import { useRepoSelection } from "../scope/use-repo-selection.ts"
 import { InsightsDashboard } from "./InsightsDashboard.tsx"
-import { insightsSummary, RANGE_LABELS } from "./summary.ts"
+import { incompleteNotice, insightsSummary, RANGE_LABELS } from "./summary.ts"
 
 const DEFAULT_DAYS: InsightDays = 90
 const STALE_TIME_MS = 5 * 60 * 1000
@@ -205,6 +205,14 @@ export const InsightsPage = ({ org }: { org: string }) => {
               >
                 Left out because they failed to load:{" "}
                 {data.failedRepos.map((failed) => `${failed.repo} (${failed.message})`).join(", ")}
+              </div>
+            )}
+            {data.incomplete.length > 0 && (
+              <div
+                role="alert"
+                className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+              >
+                {incompleteNotice(data.incomplete)}
               </div>
             )}
             {data.repoStats.length === 0 ? (

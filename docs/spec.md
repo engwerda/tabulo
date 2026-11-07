@@ -155,6 +155,11 @@ its workflow runs created since then, its languages, and its open milestones. It
 repositories at a time. A repository that fails to load is listed in `failedRepos`, and the
 others still show.
 
+Workers allow 1,000 subrequests per request, so the listing pages of one request share a
+budget of 800. A repository takes an equal share of the pages left when it starts and gives
+back what it does not use. A listing that runs out of pages is named in `incomplete`, and the
+page and the copied summary say which numbers are too low.
+
 - **Backlog.** An issue is open at a time when it was created before it and not closed by it.
   An issue whose state is closed closed at its `closed_at`, or at its last update when Forgejo
   sends no `closed_at`. The weekly backlog counts the issues open at the end of each week, or now for the current

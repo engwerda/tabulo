@@ -4,6 +4,7 @@ import type {
   Bucket,
   CiSummary,
   HealthStatus,
+  IncompleteListing,
   InsightDays,
   Insights,
   Language,
@@ -43,6 +44,7 @@ export type InsightsInput = {
   readonly now: number
   readonly loaded: ReadonlyArray<RepoActivity>
   readonly failedRepos: ReadonlyArray<{ readonly repo: string; readonly message: string }>
+  readonly incomplete: ReadonlyArray<IncompleteListing>
 }
 
 type Person = { readonly login: string; readonly avatarUrl: string }
@@ -665,5 +667,6 @@ export const buildInsights = (input: InsightsInput): Insights => {
     attention: attention.sort(byUrgency).slice(0, MAX_ATTENTION),
     repoStats,
     failedRepos: input.failedRepos,
+    incomplete: input.incomplete,
   }
 }

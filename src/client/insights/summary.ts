@@ -1,4 +1,4 @@
-import type { AttentionKind, InsightDays, Insights } from "../../shared/api.ts"
+import type { AttentionKind, IncompleteListing, InsightDays, Insights } from "../../shared/api.ts"
 import { formatCount, formatDay, formatHours, formatPercent } from "../charts/scale.ts"
 
 export const RANGE_LABELS: Record<InsightDays, { readonly short: string; readonly long: string }> =
@@ -15,6 +15,19 @@ export const ATTENTION_LABELS: Record<AttentionKind, string> = {
   stale_pull: "Idle pull request",
   stale_issue: "Idle issue",
 }
+
+const LISTING_LABELS: Record<IncompleteListing["listing"], string> = {
+  open: "open issues and pull requests",
+  closed: "closed issues and pull requests",
+  runs: "CI runs",
+  milestones: "milestones",
+}
+
+/** The listings Tabulo stopped reading early, as a sentence. */
+export const incompleteNotice = (incomplete: ReadonlyArray<IncompleteListing>) =>
+  `Tabulo reached its limit of Forgejo requests and read only part of the ${incomplete
+    .map(({ repo, listing }) => `${LISTING_LABELS[listing]} of ${repo}`)
+    .join(", ")}. Numbers that count them are too low.`
 
 const signed = (value: number) => `${value > 0 ? "+" : ""}${formatCount(value)}`
 
@@ -79,5 +92,6 @@ export const insightsSummary = (insights: Insights): string => {
       `Not included, because they failed to load: ${insights.failedRepos.map((failed) => failed.repo).join(", ")}.`,
     )
   }
+  if (insights.incomplete.length > 0) lines.push("", incompleteNotice(insights.incomplete))
   return `${lines.join("\n")}\n`
 }

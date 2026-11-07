@@ -49,6 +49,15 @@ export type TokenGrant = {
 
 export type Page<A> = { readonly items: ReadonlyArray<A>; readonly total: number }
 
+/**
+ * Forgejo pages that one request may still read. The readers that share it run concurrently,
+ * and each takes a page from it before reading the page.
+ */
+export type PageBudget = { remaining: number }
+
+/** A listing, and whether Tabulo read it to its end. */
+export type Listing<A> = { readonly items: ReadonlyArray<A>; readonly complete: boolean }
+
 export type IssueSearch = "review_requested" | "assigned" | "mentioned" | "created"
 
 /** A repository by owner and name, both already validated as path segments. */
@@ -141,7 +150,8 @@ export class ForgejoClient extends Context.Service<
       token: AccessToken,
       repo: RepoRef,
       listing: IssueListing,
-    ) => Effect.Effect<ReadonlyArray<ForgejoInsightIssue>, ForgejoError>
+      budget: PageBudget,
+    ) => Effect.Effect<Listing<ForgejoInsightIssue>, ForgejoError>
     /**
      * Workflow runs created at or after `since` (epoch milliseconds), newest first. `null` when
      * the repository has no Actions data: Actions are turned off, or the user cannot see them.
@@ -150,7 +160,8 @@ export class ForgejoClient extends Context.Service<
       token: AccessToken,
       repo: RepoRef,
       since: number,
-    ) => Effect.Effect<ReadonlyArray<ForgejoActionRun> | null, ForgejoError>
+      budget: PageBudget,
+    ) => Effect.Effect<Listing<ForgejoActionRun> | null, ForgejoError>
     readonly repoLanguages: (
       token: AccessToken,
       repo: RepoRef,
@@ -158,7 +169,8 @@ export class ForgejoClient extends Context.Service<
     readonly openMilestones: (
       token: AccessToken,
       repo: RepoRef,
-    ) => Effect.Effect<ReadonlyArray<ForgejoMilestone>, ForgejoError>
+      budget: PageBudget,
+    ) => Effect.Effect<Listing<ForgejoMilestone>, ForgejoError>
     /** The user's contributions in 15-minute slots over about the last year. */
     readonly userHeatmap: (
       token: AccessToken,
@@ -199,8 +211,6 @@ const knownTotal = <A>(page: {
 
 const PAGE_SIZE = 50
 const MAX_PAGES = 100
-// 1,000 runs: more than a year of CI for a busy repository.
-const MAX_ACTION_RUN_PAGES = 20
 
 const repoPath = (repo: RepoRef) =>
   `/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`
@@ -263,32 +273,63 @@ export const makeForgejoClient = (
       Effect.map(({ body, response }) => ({ items: body, total: totalCount(response) })),
     )
 
-  /** Every item of a paginated list. */
+  /**
+   * Reads pages from the first until the listing ends, `isLast` holds for a page, or the budget
+   * runs out.
+   */
+  const paginate = <A>(
+    budget: PageBudget,
+    readPage: (
+      number: number,
+    ) => Effect.Effect<
+      { readonly items: ReadonlyArray<A>; readonly total: number | undefined },
+      ForgejoError
+    >,
+    isLast: (batch: ReadonlyArray<A>) => boolean = () => false,
+  ) =>
+    Effect.gen(function* () {
+      const items: Array<A> = []
+      let fullPage = 0
+      for (let number = 1; budget.remaining > 0; number++) {
+        budget.remaining -= 1
+        const { items: batch, total } = yield* readPage(number)
+        items.push(...batch)
+        // Without a total, a short page is the last one. The longest page seen stands in for
+        // the page size because MAX_RESPONSE_ITEMS can be below the limit Tabulo asks for.
+        fullPage = Math.max(fullPage, batch.length)
+        if (
+          batch.length === 0 ||
+          isLast(batch) ||
+          (total === undefined ? batch.length < fullPage : items.length >= total)
+        ) {
+          return { items, complete: true } as Listing<A>
+        }
+      }
+      return { items, complete: false } as Listing<A>
+    })
+
+  /** A paginated list, as far as the budget reaches. */
+  const listing = <A>(
+    token: AccessToken,
+    path: string,
+    query: Record<string, string>,
+    item: Schema.Decoder<A>,
+    budget: PageBudget,
+  ) =>
+    paginate(budget, (number) =>
+      page(token, path, { ...query, limit: String(PAGE_SIZE), page: String(number) }, item),
+    )
+
+  /** Every item of a paginated list, up to MAX_PAGES pages. */
   const all = <A>(
     token: AccessToken,
     path: string,
     query: Record<string, string>,
     item: Schema.Decoder<A>,
   ) =>
-    Effect.gen(function* () {
-      const items: Array<A> = []
-      let fullPage = 0
-      for (let number = 1; number <= MAX_PAGES; number++) {
-        const { items: batch, total } = yield* page(
-          token,
-          path,
-          { ...query, limit: String(PAGE_SIZE), page: String(number) },
-          item,
-        )
-        items.push(...batch)
-        // Without a total, a short page is the last one. The longest page seen stands in for
-        // the page size because MAX_RESPONSE_ITEMS can be below the limit Tabulo asks for.
-        fullPage = Math.max(fullPage, batch.length)
-        if (batch.length === 0) break
-        if (total === undefined ? batch.length < fullPage : items.length >= total) break
-      }
-      return items as ReadonlyArray<A>
-    })
+    listing(token, path, query, item, { remaining: MAX_PAGES }).pipe(
+      Effect.map(({ items }) => items),
+    )
 
   const tokenRequest = (grant: Record<string, string>) =>
     Effect.gen(function* () {
@@ -422,38 +463,43 @@ export const makeForgejoClient = (
 
     insightRepo: (token, repo) =>
       api(token, repoPath(repo), {}, ForgejoInsightRepo).pipe(Effect.map(({ body }) => body)),
-    repoIssuesAndPulls: (token, repo, listing) =>
-      all(
+    repoIssuesAndPulls: (token, repo, issues, budget) =>
+      listing(
         token,
         `${repoPath(repo)}/issues`,
-        listing.state === "open"
+        issues.state === "open"
           ? { state: "open" }
-          : { state: "closed", since: listing.updatedSince },
+          : { state: "closed", since: issues.updatedSince },
         ForgejoInsightIssue,
+        budget,
       ),
-    actionRuns: (token, repo, since) =>
-      Effect.gen(function* () {
-        const runs: Array<ForgejoActionRun> = []
-        for (let number = 1; number <= MAX_ACTION_RUN_PAGES; number++) {
-          const { body } = yield* api(
+    actionRuns: (token, repo, since, budget) =>
+      paginate(
+        budget,
+        (number) =>
+          api(
             token,
             `${repoPath(repo)}/actions/runs`,
             { limit: String(PAGE_SIZE), page: String(number) },
             ForgejoActionRunPage,
-          )
-          const batch = body.workflow_runs
-          runs.push(...batch.filter((run) => Date.parse(run.created) >= since))
-          // Newest first: a run older than `since` means the later pages are older still.
-          if (batch.length === 0 || batch.some((run) => Date.parse(run.created) < since)) break
-        }
-        return runs as ReadonlyArray<ForgejoActionRun> | null
-      }).pipe(Effect.catchTag(["ForgejoNotFound", "ForgejoForbidden"], () => Effect.succeed(null))),
+          ).pipe(
+            Effect.map(({ body }) => ({ items: body.workflow_runs, total: body.total_count })),
+          ),
+        // Newest first: a run older than `since` means the later pages are older still.
+        (batch) => batch.some((run) => Date.parse(run.created) < since),
+      ).pipe(
+        Effect.map(({ items, complete }): Listing<ForgejoActionRun> | null => ({
+          items: items.filter((run) => Date.parse(run.created) >= since),
+          complete,
+        })),
+        Effect.catchTag(["ForgejoNotFound", "ForgejoForbidden"], () => Effect.succeed(null)),
+      ),
     repoLanguages: (token, repo) =>
       api(token, `${repoPath(repo)}/languages`, {}, ForgejoLanguages).pipe(
         Effect.map(({ body }) => body),
       ),
-    openMilestones: (token, repo) =>
-      all(token, `${repoPath(repo)}/milestones`, { state: "open" }, ForgejoMilestone),
+    openMilestones: (token, repo, budget) =>
+      listing(token, `${repoPath(repo)}/milestones`, { state: "open" }, ForgejoMilestone, budget),
     userHeatmap: (token, login) =>
       api(
         token,

@@ -163,6 +163,9 @@ Weeks start on Monday and hours are read in your browser's time zone.
 **Copy summary** copies a Markdown report of the page, for a chat message or a status update.
 
 CI numbers come from Forgejo Actions. A repository with Actions turned off shows no CI data.
+One page load reads at most 800 pages of issues, pull requests, runs, and milestones from
+Forgejo. When a busy organization needs more, the page says which listings it read only in
+part.
 
 The dashboard starts with your contribution calendar for the last year, with your current and
 longest streaks and your busiest day.

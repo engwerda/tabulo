@@ -100,6 +100,7 @@ const insights = (loaded: ReadonlyArray<RepoActivity>, fields: Partial<InsightsI
     now: NOW,
     loaded,
     failedRepos: [],
+    incomplete: [],
     ...fields,
   })
 

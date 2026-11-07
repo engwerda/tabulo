@@ -142,6 +142,8 @@ export type ForgejoActionRun = typeof ForgejoActionRun.Type
 
 export const ForgejoActionRunPage = Schema.Struct({
   workflow_runs: Schema.Array(ForgejoActionRun),
+  /** Runs across all pages. */
+  total_count: Schema.optionalKey(Schema.Number),
 })
 
 /** Bytes of code per language. */

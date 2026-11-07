@@ -165,6 +165,72 @@ describe("GET /api/insights", () => {
     expect(runPages).toEqual(["1", "2"])
   })
 
+  it("reads every workflow run in the window, without an empty page at the end", async () => {
+    // 1,050 runs, newest first and 30 seconds apart: 1,000 passed, then 50 failed.
+    const runs = Array.from({ length: 1050 }, (_, index) =>
+      actionRun(
+        1050 - index,
+        index < 1000 ? "success" : "failure",
+        new Date(Date.UTC(2026, 10, 7, 8, 0) - index * 30_000).toISOString(),
+        1,
+      ),
+    )
+    const { forgejo, call, cookie } = await setup({
+      orgs: [acme([boardRepo("api", { actionRuns: runs })])],
+      maxPageSize: 50,
+    })
+
+    const response = await call("/api/insights?org=acme&repos=api&days=30&tz=UTC", {
+      headers: { cookie },
+    })
+
+    const insights = (await response.json()) as Insights
+    expect(insights.ci?.runs).toBe(1050)
+    expect(insights.ci?.successRate).toBeCloseTo(1000 / 1050)
+    expect(insights.incomplete).toEqual([])
+    const runPages = forgejo.requests.filter(
+      (request) => request.path === "/api/v1/repos/acme/api/actions/runs",
+    )
+    expect(runPages).toHaveLength(21)
+  })
+
+  it("shares a page budget fairly between repositories and says what it did not read", async () => {
+    const manyRuns = Array.from({ length: 1000 }, (_, index) =>
+      actionRun(
+        1000 - index,
+        "success",
+        new Date(Date.UTC(2026, 10, 7, 8, 0) - index * 60_000).toISOString(),
+        1,
+      ),
+    )
+    const { forgejo, call, cookie } = await setup({
+      orgs: [
+        acme([
+          boardRepo("api", { actionRuns: manyRuns }),
+          boardRepo("web", { actionRuns: manyRuns }),
+        ]),
+      ],
+    })
+    const before = forgejo.requests.length
+
+    const response = await call("/api/insights?org=acme&repos=api,web&days=30&tz=UTC", {
+      headers: { cookie },
+    })
+
+    const insights = (await response.json()) as Insights
+    expect(insights.failedRepos).toEqual([])
+    expect(insights.incomplete).toEqual([
+      { repo: "api", listing: "runs" },
+      { repo: "web", listing: "runs" },
+    ])
+    // Two runs a page: each repository reads most of its half of the 800 listing pages.
+    for (const repo of insights.repoStats) expect(repo.ci?.runs).toBeGreaterThan(780)
+    const listingPages = forgejo.requests
+      .slice(before)
+      .filter((request) => /\/(issues|actions\/runs|milestones)$/.test(request.path))
+    expect(listingPages).toHaveLength(800)
+  })
+
   it.each([
     ["days=7&tz=UTC", "days must be one of 30, 90, 180, 365"],
     ["days=30&tz=Mars/Olympus_Mons", "tz is not a known time zone"],

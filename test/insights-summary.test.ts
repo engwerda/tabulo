@@ -70,6 +70,7 @@ const insights: Insights = {
     },
   ],
   failedRepos: [{ repo: "old", message: "Forgejo returned HTTP 404" }],
+  incomplete: [],
 }
 
 describe("insightsSummary", () => {
@@ -99,6 +100,22 @@ describe("insightsSummary", () => {
 
 Not included, because they failed to load: old.
 `)
+  })
+})
+
+describe("insightsSummary with listings read in part", () => {
+  it("says which listings Tabulo did not read to the end", () => {
+    const summary = insightsSummary({
+      ...insights,
+      incomplete: [
+        { repo: "api", listing: "runs" },
+        { repo: "web", listing: "closed" },
+      ],
+    })
+
+    expect(summary.trimEnd().split("\n").at(-1)).toBe(
+      "Tabulo reached its limit of Forgejo requests and read only part of the CI runs of api, closed issues and pull requests of web. Numbers that count them are too low.",
+    )
   })
 })
 
