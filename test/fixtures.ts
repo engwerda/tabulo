@@ -117,6 +117,14 @@ export const grace = {
   avatar_url: "https://forgejo.example/avatars/grace",
 }
 
+/** Can sign in to Forgejo but is not a member of acme. */
+export const outsider = {
+  id: 11,
+  login: "linus",
+  full_name: "Linus Outsider",
+  avatar_url: "https://forgejo.example/avatars/linus",
+}
+
 export const boardIssue = (
   repo: string,
   number: number,

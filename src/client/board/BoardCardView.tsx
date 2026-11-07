@@ -5,16 +5,19 @@ import { Avatar } from "../Avatar.tsx"
 import { LabelChips } from "../rows.tsx"
 
 const readOnlyReason = (card: BoardCard) =>
-  `You cannot change issues in ${card.repo}, so this card cannot be moved.`
+  card.readOnlyReason === "archived"
+    ? `${card.repo} is archived, so this card cannot be moved.`
+    : "Only members of the organization can move cards."
 
 type CardBodyProps = {
   readonly card: BoardCard
   readonly columns: ReadonlyArray<BoardColumn>
+  readonly canArrange: boolean
   readonly onMoveTo?: (column: string) => void
 }
 
 /** The card's content. The drag overlay renders it without the menu. */
-export const CardBody = ({ card, columns, onMoveTo }: CardBodyProps) => {
+export const CardBody = ({ card, columns, canArrange, onMoveTo }: CardBodyProps) => {
   const reasonId = `reason-${card.key}`
   return (
     <>
@@ -56,8 +59,8 @@ export const CardBody = ({ card, columns, onMoveTo }: CardBodyProps) => {
           <select
             id={`move-${card.key}`}
             value=""
-            disabled={!card.canWrite}
-            aria-describedby={card.canWrite ? undefined : reasonId}
+            disabled={!canArrange}
+            aria-describedby={canArrange ? undefined : reasonId}
             onChange={(event) => onMoveTo(event.target.value)}
             onPointerDown={(event) => event.stopPropagation()}
             className="w-full rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300"
@@ -73,7 +76,7 @@ export const CardBody = ({ card, columns, onMoveTo }: CardBodyProps) => {
                 </option>
               ))}
           </select>
-          {!card.canWrite && (
+          {!canArrange && (
             <p
               id={reasonId}
               className="mt-1 hidden text-xs text-amber-800 group-focus-within:block group-hover:block dark:text-amber-300"
@@ -92,11 +95,11 @@ const cardClass =
 
 type SortableCardProps = CardBodyProps & { readonly onMoveTo: (column: string) => void }
 
-export const SortableCard = ({ card, columns, onMoveTo }: SortableCardProps) => {
+export const SortableCard = ({ card, columns, canArrange, onMoveTo }: SortableCardProps) => {
   const sortable = useSortable({
     id: card.key,
     data: { column: card.column },
-    disabled: !card.canWrite,
+    disabled: !canArrange,
   })
   return (
     <li
@@ -114,20 +117,20 @@ export const SortableCard = ({ card, columns, onMoveTo }: SortableCardProps) => 
       {...sortable.listeners}
       aria-roledescription="card"
       aria-label={`${card.repo}#${card.number} ${card.title}`}
-      title={card.canWrite ? undefined : readOnlyReason(card)}
+      title={canArrange ? undefined : readOnlyReason(card)}
       className={`${cardClass} ${
-        card.canWrite ? "cursor-grab" : "cursor-default"
+        canArrange ? "cursor-grab" : "cursor-default"
       } focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 ${
         sortable.isDragging ? "opacity-40" : ""
       }`}
     >
-      <CardBody card={card} columns={columns} onMoveTo={onMoveTo} />
+      <CardBody card={card} columns={columns} canArrange={canArrange} onMoveTo={onMoveTo} />
     </li>
   )
 }
 
-export const OverlayCard = ({ card, columns }: CardBodyProps) => (
+export const OverlayCard = ({ card, columns }: Omit<CardBodyProps, "canArrange">) => (
   <div className={`${cardClass} cursor-grabbing shadow-lg ring-2 ring-indigo-500`}>
-    <CardBody card={card} columns={columns} />
+    <CardBody card={card} columns={columns} canArrange />
   </div>
 )

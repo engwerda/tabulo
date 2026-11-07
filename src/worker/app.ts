@@ -21,10 +21,10 @@ import {
   type ConfigInvalid,
   type ForgejoError,
   type ForgejoMovePartlyApplied,
+  type MoveForbidden,
   type OAuthCallbackInvalid,
   type OAuthGrantRejected,
   type OAuthStateInvalid,
-  type RepoWriteForbidden,
   type SessionNotFound,
 } from "./errors.ts"
 import { ForgejoClient, type HttpFetch, makeForgejoClient } from "./forgejo/client.ts"
@@ -51,7 +51,7 @@ type AppError =
   | OAuthCallbackInvalid
   | OAuthGrantRejected
   | OAuthStateInvalid
-  | RepoWriteForbidden
+  | MoveForbidden
   | SessionNotFound
 
 type AppContext = Context<{ Bindings: Env }>
@@ -92,8 +92,8 @@ const errorResponse = (c: AppContext, error: AppError): Response => {
       return c.json({ error: "Forgejo did not allow this" }, 403)
     case "ForgejoNotFound":
       return c.json({ error: "Not found in Forgejo, or you cannot see it" }, 404)
-    case "RepoWriteForbidden":
-      return c.json({ error: `You cannot change issues in ${error.repo}` }, 403)
+    case "MoveForbidden":
+      return c.json({ error: error.message }, 403)
     case "BoardRequestInvalid":
       return c.json({ error: error.message }, 400)
     case "ForgejoRequestFailed":
@@ -253,8 +253,8 @@ export const createApp = (dependencies: Dependencies) => {
     run(
       c,
       Effect.flatMap(parseBoardQuery(c.req.query("org"), c.req.query("repos")), (query) =>
-        withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
-          loadBoard(token, query).pipe(Effect.map((board) => c.json(board))),
+        withAccessToken(getCookie(c, SESSION_COOKIE), (token, session) =>
+          loadBoard(token, session.user.login, query).pipe(Effect.map((board) => c.json(board))),
         ),
       ),
     ),

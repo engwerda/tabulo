@@ -10,6 +10,7 @@ import {
   grace,
   highPriority,
   inProgress,
+  outsider,
   repoLabel,
   retired,
   review,
@@ -21,8 +22,10 @@ type Card = {
   column: string
   rank: string | null
   labels: Array<{ name: string }>
+  readOnlyReason: string | null
 }
 type BoardBody = {
+  viewerCanArrange: boolean
   columns: Array<{ key: string }>
   cards: Array<Card>
   failedRepos: Array<unknown>
@@ -136,7 +139,7 @@ describe("GET /api/board", () => {
         closedAt: null,
         column: "todo",
         rank: null,
-        canWrite: true,
+        readOnlyReason: null,
       },
       {
         key: "acme/api#2",
@@ -152,7 +155,7 @@ describe("GET /api/board", () => {
         closedAt: null,
         column: "Status/In Progress",
         rank: null,
-        canWrite: true,
+        readOnlyReason: null,
       },
       expect.objectContaining({
         key: "acme/api#3",
@@ -179,7 +182,7 @@ describe("GET /api/board", () => {
         closedAt: null,
         column: "Status/Review",
         rank: null,
-        canWrite: false,
+        readOnlyReason: null,
       },
     ])
   })
@@ -336,8 +339,8 @@ describe("GET /api/orgs", () => {
       },
     ])
     expect(await repos.json()).toEqual([
-      { name: "api", fullName: "acme/api", private: true, canWrite: true },
-      { name: "web", fullName: "acme/web", private: true, canWrite: false },
+      { name: "api", fullName: "acme/api", private: true, archived: false },
+      { name: "web", fullName: "acme/web", private: true, archived: false },
     ])
   })
 })
@@ -355,19 +358,30 @@ const rankRows = async () =>
   ).results
 
 const boardSession = async (overrides: Parameters<typeof createFakeForgejo>[0] = {}) => {
-  const forgejo = createFakeForgejo({ orgs: [boardOrg()], otherUsers: [grace], ...overrides })
+  const forgejo = createFakeForgejo({
+    orgs: [boardOrg()],
+    otherUsers: [grace, outsider],
+    ...overrides,
+  })
   const clock = createFakeClock()
   const call = tabulo(forgejo.fetch, { clock: clock.clock })
   const cookie = await signIn(call, forgejo)
-  const move = (body: {
-    repo: string
-    number: number
-    toColumn: string
-    orderedKeys: ReadonlyArray<string>
-  }) =>
+  const move = (
+    body: {
+      repo: string
+      number: number
+      toColumn: string
+      orderedKeys: ReadonlyArray<string>
+    },
+    as = cookie,
+  ) =>
     call("/api/board/move", {
       method: "POST",
-      headers: { cookie, origin: "https://tabulo.example", "content-type": "application/json" },
+      headers: {
+        cookie: as,
+        origin: "https://tabulo.example",
+        "content-type": "application/json",
+      },
       body: JSON.stringify({ org: "acme", ...body }),
     })
   const board = async (as = cookie) =>
@@ -594,8 +608,27 @@ describe("POST /api/board/move", () => {
     }
   })
 
-  it("refuses a move in a repository the user cannot write, without writing anything", async () => {
-    const { forgejo, move } = await boardSession()
+  it("lets a member without push access move a card when Forgejo allows the issue write", async () => {
+    const org = boardOrg()
+    const web = org.repos[1]
+    if (web === undefined) throw new Error("fixture has no web repository")
+    web.writers = []
+    web.triagers = ["grace"]
+    const { forgejo, call, move } = await boardSession({ orgs: [org] })
+    const graceCookie = await signIn(call, forgejo, "grace")
+
+    const response = await move(
+      { repo: "web", number: 9, toColumn: "Status/In Progress", orderedKeys: ["acme/web#9"] },
+      graceCookie,
+    )
+
+    expect(response.status).toBe(200)
+    expect(labelNames(forgejo.issue("acme", "web", 9))).toEqual(["Status/In Progress"])
+    expect(await rankRows()).toMatchObject([{ issue_key: "acme/web#9", updated_by: "grace" }])
+  })
+
+  it("refuses arranging to someone outside the organization and shows them the board read-only", async () => {
+    const { forgejo, call, move, board } = await boardSession()
     await move({
       repo: "api",
       number: 6,
@@ -603,18 +636,43 @@ describe("POST /api/board/move", () => {
       orderedKeys: ["acme/api#6", "acme/api#1"],
     })
     const before = await rankRows()
+    const outsiderCookie = await signIn(call, forgejo, "linus")
 
-    const response = await move({
-      repo: "web",
-      number: 9,
-      toColumn: "todo",
-      orderedKeys: ["acme/web#9", "acme/api#6", "acme/api#1"],
-    })
+    const reorder = await move(
+      { repo: "api", number: 1, toColumn: "todo", orderedKeys: ["acme/api#1", "acme/api#6"] },
+      outsiderCookie,
+    )
+    const view = await board(outsiderCookie)
 
-    expect(response.status).toBe(403)
+    expect(reorder.status).toBe(403)
     expect(writes(forgejo)).toEqual([])
     expect(await rankRows()).toEqual(before)
-    expect(labelNames(forgejo.issue("acme", "web", 9))).toEqual(["Status/Review"])
+    expect(view.viewerCanArrange).toBe(false)
+    expect((await board()).viewerCanArrange).toBe(true)
+  })
+
+  it("shows the cards of an archived repository read-only and refuses to move them", async () => {
+    const org = boardOrg()
+    org.repos.push(
+      boardRepo("old", { archived: true, issues: [boardIssue("old", 1, { labels: [review] })] }),
+    )
+    const { forgejo, call, cookie, move } = await boardSession({ orgs: [org] })
+
+    const view = (await (
+      await call("/api/board?org=acme&repos=api,old", { headers: { cookie } })
+    ).json()) as BoardBody
+    const response = await move({
+      repo: "old",
+      number: 1,
+      toColumn: "todo",
+      orderedKeys: ["acme/old#1"],
+    })
+
+    expect(view.cards.find((card) => card.key === "acme/old#1")?.readOnlyReason).toBe("archived")
+    expect(view.cards.find((card) => card.key === "acme/api#1")?.readOnlyReason).toBe(null)
+    expect(response.status).toBe(403)
+    expect(writes(forgejo)).toEqual([])
+    expect(await rankRows()).toEqual([])
   })
 
   it("answers 403 and keeps the order when Forgejo refuses the write", async () => {

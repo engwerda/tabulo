@@ -80,6 +80,12 @@ export class ForgejoClient extends Context.Service<
       token: AccessToken,
       org: string,
     ) => Effect.Effect<ReadonlyArray<ForgejoRepo>, ForgejoError>
+    /** Whether `login` is a member of the organization. Ask only about the token's own user. */
+    readonly isOrgMember: (
+      token: AccessToken,
+      org: string,
+      login: string,
+    ) => Effect.Effect<boolean, ForgejoError>
     readonly orgLabels: (
       token: AccessToken,
       org: string,
@@ -323,6 +329,17 @@ export const makeForgejoClient = (
       ),
     userOrgs: (token) => all(token, "/user/orgs", {}, ForgejoOrg),
     orgRepos: (token, org) => all(token, `/orgs/${encodeURIComponent(org)}/repos`, {}, ForgejoRepo),
+    // 204 for a member and 404 otherwise. Forgejo redirects a non-member asking about
+    // themselves to the public_members check, which fetch follows and which also answers 404.
+    isOrgMember: (token, org, login) =>
+      request(
+        token,
+        `/orgs/${encodeURIComponent(org)}/members/${encodeURIComponent(login)}`,
+        {},
+      ).pipe(
+        Effect.as(true),
+        Effect.catchTag("ForgejoNotFound", () => Effect.succeed(false)),
+      ),
     orgLabels: (token, org) =>
       all(token, `/orgs/${encodeURIComponent(org)}/labels`, {}, ForgejoLabel),
     repo: (token, repo) =>

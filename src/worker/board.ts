@@ -17,7 +17,7 @@ import {
   type ForgejoError,
   ForgejoMovePartlyApplied,
   type ForgejoUnauthorized,
-  RepoWriteForbidden,
+  MoveForbidden,
 } from "./errors.ts"
 import { type AccessToken, ForgejoClient, type RepoRef } from "./forgejo/client.ts"
 import {
@@ -128,9 +128,6 @@ export const boardLayout = (
 export const cardKey = (org: string, repo: string, number: number) =>
   `${org}/${repo}#${number}`.toLowerCase()
 
-export const canWrite = (repo: ForgejoRepo) =>
-  repo.permissions !== undefined && (repo.permissions.push || repo.permissions.admin)
-
 export const toBoardCard = (
   layout: BoardLayout,
   org: string,
@@ -154,7 +151,7 @@ export const toBoardCard = (
   closedAt: issue.closed_at,
   column: layout.columnOf(issue),
   rank,
-  canWrite: canWrite(repo),
+  readOnlyReason: repo.archived ? "archived" : null,
 })
 
 const NAME = /^[A-Za-z0-9_.-]+$/
@@ -201,7 +198,7 @@ export const listOrgRepos = (token: AccessToken, org: string) =>
             name: repo.name,
             fullName: repo.full_name,
             private: repo.private,
-            canWrite: canWrite(repo),
+            archived: repo.archived,
           }),
         )
         .sort((a, b) => byName(a.name, b.name)),
@@ -218,12 +215,17 @@ type RepoCards =
  */
 export const loadBoard = (
   token: AccessToken,
+  login: string,
   query: { org: string; repos: ReadonlyArray<string> },
 ) =>
   Effect.gen(function* () {
     const settings = yield* BoardConfig
     const forgejo = yield* ForgejoClient
-    const layout = boardLayout(settings, yield* forgejo.orgLabels(token, query.org))
+    const [orgLabels, viewerCanArrange] = yield* Effect.all(
+      [forgejo.orgLabels(token, query.org), forgejo.isOrgMember(token, query.org, login)],
+      { concurrency: "unbounded" },
+    )
+    const layout = boardLayout(settings, orgLabels)
     const windowStart = (yield* Clock.currentTimeMillis) - settings.doneDays * DAY_MS
     const updatedSince = new Date(windowStart).toISOString()
     // `since` filters by update time; an issue closed long ago may have been updated since.
@@ -268,6 +270,7 @@ export const loadBoard = (
     return {
       org: query.org,
       repos: query.repos,
+      viewerCanArrange,
       columns: layout.columns,
       cards: results.flatMap((result) =>
         result._tag === "Loaded"
@@ -347,8 +350,9 @@ const applyWrites = (issue: ForgejoRepoIssue, writes: ReadonlyArray<IssueWrite>)
 
 /**
  * Moves a card as the user who owns `token`: changes the issue's state and status label in
- * Forgejo when the column changes, then stores the column's order. Nothing is written unless
- * the user can push to the repository, and the order is not stored if a Forgejo write fails.
+ * Forgejo when the column changes, then stores the column's order. Only organization members
+ * may arrange cards, and never those of an archived repository; Forgejo decides each issue
+ * write. The order is not stored if a Forgejo write fails.
  */
 export const moveCard = (token: AccessToken, login: string, request: MoveCardRequest) =>
   Effect.gen(function* () {
@@ -368,6 +372,9 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
 
     const settings = yield* BoardConfig
     const forgejo = yield* ForgejoClient
+    if (!(yield* forgejo.isOrgMember(token, org, login))) {
+      return yield* new MoveForbidden({ message: `Only members of ${org} can arrange its board` })
+    }
     const [repo, issue, orgLabels] = yield* Effect.all(
       [
         forgejo.repo(token, repoRef),
@@ -379,7 +386,11 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
     if (issue.pull_request != null) {
       return yield* new BoardRequestInvalid({ message: "Pull requests are not on the board" })
     }
-    if (!canWrite(repo)) return yield* new RepoWriteForbidden({ repo: repo.full_name })
+    if (repo.archived) {
+      return yield* new MoveForbidden({
+        message: `${repo.full_name} is archived, so its issues cannot be moved`,
+      })
+    }
     const layout = boardLayout(settings, orgLabels)
     const target = layout.column(request.toColumn)
     if (target === undefined) {

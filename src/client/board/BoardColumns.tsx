@@ -35,12 +35,14 @@ const Column = ({
   cards,
   columns,
   highlighted,
+  viewerCanArrange,
   onMoveTo,
 }: {
   column: BoardColumn
   cards: ReadonlyArray<BoardCard>
   columns: ReadonlyArray<BoardColumn>
   highlighted: boolean
+  viewerCanArrange: boolean
   onMoveTo: (card: BoardCard, column: string) => void
 }) => {
   const droppable = useDroppable({
@@ -82,6 +84,7 @@ const Column = ({
               key={card.key}
               card={card}
               columns={columns}
+              canArrange={viewerCanArrange && card.readOnlyReason === null}
               onMoveTo={(target) => onMoveTo(card, target)}
             />
           ))}
@@ -177,6 +180,7 @@ export const BoardColumns = ({ board, visible, onMove, onDragChange }: BoardColu
             cards={columnCards(board.cards, column.key).filter(visible)}
             columns={board.columns}
             highlighted={activeKey !== null && overColumn === column.key}
+            viewerCanArrange={board.viewerCanArrange}
             onMoveTo={(card, toColumn) => onMove({ key: card.key, toColumn, index: 0 })}
           />
         ))}

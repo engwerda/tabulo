@@ -54,10 +54,8 @@ export const RepoPicker = ({ repos, selected, onChange, defaultOpen }: RepoPicke
                   className="accent-indigo-600"
                 />
                 <span className="truncate">{repo.name}</span>
-                {!repo.canWrite && (
-                  <span className="ml-auto text-xs text-zinc-500 dark:text-zinc-400">
-                    read only
-                  </span>
+                {repo.archived && (
+                  <span className="ml-auto text-xs text-zinc-500 dark:text-zinc-400">archived</span>
                 )}
               </label>
             ))

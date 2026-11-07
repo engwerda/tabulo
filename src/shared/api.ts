@@ -64,7 +64,7 @@ export const OrgRepo = Schema.Struct({
   name: Schema.String,
   fullName: Schema.String,
   private: Schema.Boolean,
-  canWrite: Schema.Boolean,
+  archived: Schema.Boolean,
 })
 export type OrgRepo = typeof OrgRepo.Type
 
@@ -111,13 +111,19 @@ export const BoardCard = Schema.Struct({
   column: Schema.String,
   /** Position within the column; compare ranks by code unit, not by locale. */
   rank: Schema.NullOr(Schema.String),
-  canWrite: Schema.Boolean,
+  /** Why nobody can move the card, whoever is viewing; null when it can be moved. */
+  readOnlyReason: Schema.NullOr(Schema.Literal("archived")),
 })
 export type BoardCard = typeof BoardCard.Type
 
 export const Board = Schema.Struct({
   org: Schema.String,
   repos: Schema.Array(Schema.String),
+  /**
+   * Whether the viewer may move and reorder cards: card order is Tabulo's data, so only
+   * members of the organization arrange it. Forgejo still decides each issue write.
+   */
+  viewerCanArrange: Schema.Boolean,
   columns: Schema.Array(BoardColumn),
   cards: Schema.Array(BoardCard),
   failedRepos: Schema.Array(Schema.Struct({ repo: Schema.String, message: Schema.String })),
