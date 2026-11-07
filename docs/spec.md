@@ -26,8 +26,9 @@ Forgejo stays the single source of truth: Tabulo stores only what Forgejo cannot
 
 | View | Milestone | Contents |
 |---|---|---|
-| My dashboard | 1 | Review requests, open issues and pull requests assigned to me, mentions, items I created, and unread notifications. |
+| My dashboard | 1 | My contribution calendar, review requests, open issues and pull requests assigned to me, mentions, items I created, and unread notifications. |
 | Board | 2 | Columns from exclusive scoped labels across chosen repositories. A drag changes the issue's status label or closes or reopens it. |
+| Insights | 2 | Throughput, backlog, merge time, CI health, needs attention, and repository health for chosen repositories. |
 | Epics | 3 | Each epic with its child issues and progress. |
 
 The board, insights, and epics are views of one organization. They share its chosen
@@ -139,6 +140,59 @@ characters. The server:
 4. Stores one rank, the moved card's, directly after `afterKey` in the column's order across
    the organization: between that rank and the next larger stored rank. Cards the user cannot
    see keep their places. If D1 fails here, it answers 200 with `orderSaved: false`.
+
+### Insights
+
+Insights aggregate the chosen repositories of one organization over a window of 30, 90, 180,
+or 365 days that ends now. Every number has the same number for the window before it, so the
+page can show a change. Weeks start on Monday and hours are read in the time zone the browser
+sends. Pull requests are counted apart from issues everywhere. `buildInsights` in
+`src/worker/insights.ts` computes every aggregate from decoded Forgejo data; loading only reads.
+
+For each repository Tabulo reads, as the user, the repository, its open issues and pull
+requests, the issues and pull requests closed and updated since the previous window started,
+its workflow runs created since then, its languages, and its open milestones. It reads two
+repositories at a time. A repository that fails to load is listed in `failedRepos`, and the
+others still show.
+
+- **Backlog.** An issue is open at a time when it was created before it and not closed by it.
+  The weekly backlog counts the issues open at the end of each week, or now for the current
+  week.
+- **Merge and close times.** Hours from creation to merge or close, for pull requests merged
+  and issues closed in the window. The page shows the median and, for merges, the 75th and
+  90th percentiles.
+- **CI.** Workflow runs from `/actions/runs`, whose `started` and `stopped` give durations.
+  The jobs that `/actions/tasks` lists are not used, because Forgejo's log cleanup rewrites
+  their `updated_at` days after the job ran. The pass rate is passed runs among runs that
+  passed or failed. A 404 or 403 from Forgejo means the repository has no CI data.
+- **Contributors.** A merged pull request counts for its author, a closed issue for each of
+  its assignees. Forgejo does not say who closed an issue.
+- **Needs attention.** CI whose latest finished run on the default branch failed, open
+  milestones past their due date with open issues, non-draft pull requests without an update
+  for 7 days, and assigned issues without an update for 21 days. In that order, then oldest
+  first, at most 15.
+- **Health.** A repository starts at 100 and each rule that applies subtracts its penalty.
+  The score is strong from 80, watch from 60, and risky below. `HEALTH_RULES` in
+  `src/worker/insights.ts` is the rule table.
+
+| Rule | Penalty |
+|---|---|
+| CI passes under 90% of runs (under 70%) | 15 (30) |
+| CI fails on the default branch | 15 |
+| Median merge time over 3 days (over 7 days) | 5 (15) |
+| Pull requests without an update for 7 days | 5 each, at most 20 |
+| Open issues grew by 5 or more and by 25% or more | 15 |
+| No activity for 21 days (60 days), unless archived | 10 (25) |
+| Overdue milestones | 10 each, at most 20 |
+
+The contribution calendar sums the user's Forgejo heatmap, which counts contributions in
+15-minute slots, per day in the browser's time zone over the last 365 days. A streak that has
+no contribution yet today still counts until the day ends.
+
+| Endpoint | Result |
+|---|---|
+| `GET /api/insights?org=&repos=a,b&days=90&tz=Europe/Amsterdam` | The `Insights` payload in `src/shared/api.ts`. `days` is 30, 90, 180, or 365 and defaults to 90. `tz` is an IANA time zone and defaults to UTC. Other values answer 400. At most 20 repositories. |
+| `GET /api/activity?tz=Europe/Amsterdam` | The signed-in user's days with contributions, total, current and longest streak, and busiest day. |
 
 ### Configuration
 

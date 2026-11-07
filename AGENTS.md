@@ -52,5 +52,8 @@ major version.
 - `src/client/theme.ts` owns the light, dark, and system theme. `public/theme-init.js` applies
   it before first paint with the same storage key. Chart colors are the `--chart-*` properties
   in `src/client/styles.css`.
+- `buildInsights` in `src/worker/insights.ts` computes every insights aggregate from decoded
+  Forgejo data, with no Effect services; `src/worker/load-insights.ts` only reads. The client's
+  charts in `src/client/charts/` are hand-built SVG and color from the `--chart-*` tokens.
 - `src/shared/api.ts` holds the API payload schemas. The client decodes responses with them.
 - Imports use explicit `.ts` extensions so `scripts/` runs under Node without a build step.

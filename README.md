@@ -5,7 +5,8 @@ with their review requests, the open issues and pull requests assigned to them, 
 the items they created, and their unread notifications, across every repository they can access.
 
 For a team lead it adds a kanban board across chosen repositories of one organization. Moving
-a card changes the issue's status label, or closes or reopens it, in Forgejo.
+a card changes the issue's status label, or closes or reopens it, in Forgejo. An insights page
+charts the throughput, backlog, CI health, and repository health of the same repositories.
 
 Forgejo stays the source of truth. Tabulo signs you in with Forgejo, acts with your own OAuth
 token, and links back to Forgejo for every issue and pull request. It needs no Forgejo plugin,
@@ -139,6 +140,32 @@ triage member who can write issues but not code can move cards too.
 The order of cards within a column is shared by everyone who opens the organization's board,
 whichever repositories they chose. Only members of the organization can move and reorder
 cards; others see the board read-only. Cards of archived repositories cannot be moved.
+
+## Use the insights
+
+Open **Insights** in the header, choose an organization, and choose its repositories, as for
+the board. Pick a period of 30 days, 90 days, 6 months, or a year. The address is
+`/insights/<org>?repos=<repo>,<repo>&days=<days>`, so a view can be bookmarked or shared.
+Weeks start on Monday and hours are read in your browser's time zone.
+
+- **Stat tiles** show open issues and pull requests, issues opened and closed, pull requests
+  merged, median times to close and merge, and the CI pass rate, each with its change from the
+  period before.
+- **Charts** show weekly throughput, the open issue backlog, time to merge, CI outcomes, when
+  work happens by weekday and hour, the age of open issues, the top labels, contributors, and
+  milestone progress. Each chart has a **Table** button that shows its numbers.
+- **Needs attention** lists CI that fails on the default branch, overdue milestones, pull
+  requests without an update for a week, and assigned issues without an update for three
+  weeks. Each entry links to Forgejo.
+- **Repositories** gives each repository a health score from 0 to 100 with the reasons it lost
+  points. Expand a row to read them.
+
+**Copy summary** copies a Markdown report of the page, for a chat message or a status update.
+
+CI numbers come from Forgejo Actions. A repository with Actions turned off shows no CI data.
+
+The dashboard starts with your contribution calendar for the last year, with your current and
+longest streaks and your busiest day.
 
 ## Check a Forgejo instance
 
