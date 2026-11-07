@@ -154,3 +154,7 @@ export type MoveCardResult = typeof MoveCardResult.Type
 /** Issues and pull requests matching a search, open ones first. */
 export const SearchResults = Schema.Struct({ items: Schema.Array(DashboardItem) })
 export type SearchResults = typeof SearchResults.Type
+
+/** Where Forgejo lives, for links the client builds itself, such as a repository's page. */
+export const Instance = Schema.Struct({ forgejoUrl: Schema.String })
+export type Instance = typeof Instance.Type

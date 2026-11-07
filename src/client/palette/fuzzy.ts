@@ -104,3 +104,40 @@ export const fuzzyMatch = (query: string, text: string): FuzzyMatch | null => {
   }
   return { score: total, indices: [...indices].sort((a, b) => a - b) }
 }
+
+/** Later fields count for less, so a title match beats a subtitle or keyword match. */
+const FIELD_WEIGHT = 0.6
+
+export type FieldsMatch = {
+  readonly score: number
+  /** Matched character indices per field, in the order of `fields`. */
+  readonly indices: ReadonlyArray<ReadonlyArray<number>>
+}
+
+type Placement = { readonly score: number; readonly field: number; readonly match: FuzzyMatch }
+
+/**
+ * Matches each space-separated term of `query` against the field it fits best, so that
+ * "acme board" finds a Board entry of acme whose title and subtitle are separate fields.
+ */
+export const fuzzyMatchFields = (
+  query: string,
+  fields: ReadonlyArray<string>,
+): FieldsMatch | null => {
+  const terms = query.split(/\s+/).filter((term) => term !== "")
+  const indices = fields.map(() => new Set<number>())
+  let total = 0
+  for (const term of terms) {
+    let best: Placement | null = null
+    for (const [field, text] of fields.entries()) {
+      const match = fuzzyMatch(term, text)
+      if (match === null) continue
+      const score = match.score * FIELD_WEIGHT ** field
+      if (best === null || score > best.score) best = { score, field, match }
+    }
+    if (best === null) return null
+    total += best.score
+    for (const index of best.match.indices) indices[best.field]?.add(index)
+  }
+  return { score: total, indices: indices.map((set) => [...set].sort((a, b) => a - b)) }
+}

@@ -31,6 +31,19 @@ beforeEach(async () => {
   ])
 })
 
+describe("GET /api/instance", () => {
+  it("returns 401 without a session", async () => {
+    const response = await tabulo(createFakeForgejo().fetch)("/api/instance")
+    expect(response.status).toBe(401)
+  })
+
+  it("names the Forgejo instance without a trailing slash", async () => {
+    const { get } = await setup()
+    const response = await get("/api/instance")
+    expect(await response.json()).toEqual({ forgejoUrl: "https://forgejo.example" })
+  })
+})
+
 describe("GET /api/search", () => {
   it("returns 401 without a session", async () => {
     const response = await tabulo(createFakeForgejo().fetch)("/api/search?q=rate")

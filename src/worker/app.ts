@@ -1,7 +1,7 @@
 import { Cause, Clock, Effect, Exit, Schema } from "effect"
 import { type Context, Hono } from "hono"
 import { deleteCookie, getCookie, setCookie } from "hono/cookie"
-import { type Dashboard, MoveCardRequest } from "../shared/api.ts"
+import { type Dashboard, type Instance, MoveCardRequest } from "../shared/api.ts"
 import { beginLogin, completeLogin } from "./auth/oauth.ts"
 import { currentSession, withAccessToken } from "./auth/session.ts"
 import {
@@ -242,6 +242,16 @@ export const createApp = (dependencies: Dependencies) => {
         withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
           searchItems(token, query).pipe(Effect.map((results) => c.json(results))),
         ),
+      ),
+    ),
+  )
+
+  app.get("/api/instance", (c) =>
+    run(
+      c,
+      currentSession(getCookie(c, SESSION_COOKIE)).pipe(
+        Effect.flatMap(() => loadConfig(c.env)),
+        Effect.map((config) => c.json({ forgejoUrl: config.forgejo.baseUrl } satisfies Instance)),
       ),
     ),
   )

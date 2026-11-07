@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { fuzzyMatch } from "../src/client/palette/fuzzy.ts"
+import { fuzzyMatch, fuzzyMatchFields } from "../src/client/palette/fuzzy.ts"
 
 const score = (query: string, text: string) => fuzzyMatch(query, text)?.score ?? Number.NaN
 
@@ -46,5 +46,22 @@ describe("fuzzyMatch", () => {
       0, 1, 2, 3, 5, 6, 7, 8, 9,
     ])
     expect(fuzzyMatch("rate zebra", "Rate limit")).toBeNull()
+  })
+})
+
+describe("fuzzyMatchFields", () => {
+  it("fits each term to the field it matches best", () => {
+    const match = fuzzyMatchFields("acme board", ["Board", "acme", "go open"])
+    expect(match?.indices).toEqual([[0, 1, 2, 3, 4], [0, 1, 2, 3], []])
+  })
+
+  it("rejects the match when a term fits no field", () => {
+    expect(fuzzyMatchFields("board zebra", ["Board", "acme"])).toBeNull()
+  })
+
+  it("scores a title match above the same match in a later field", () => {
+    const inTitle = fuzzyMatchFields("api", ["api", "web"])?.score ?? 0
+    const inSubtitle = fuzzyMatchFields("api", ["web", "api"])?.score ?? 0
+    expect(inTitle).toBeGreaterThan(inSubtitle)
   })
 })
