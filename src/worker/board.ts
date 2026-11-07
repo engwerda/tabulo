@@ -274,6 +274,7 @@ export const loadBoard = (
       )
     }
 
+    const readStartedAt = yield* Clock.currentTimeMillis
     const results = yield* Effect.forEach(query.repos, repoCards, {
       concurrency: REPO_CONCURRENCY,
     })
@@ -297,6 +298,7 @@ export const loadBoard = (
       fresh.map(({ key, column, rank }) => ({ key, column, rank })),
       removed,
       login,
+      readStartedAt,
     )
     return {
       org: query.org,
@@ -424,6 +426,10 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
     if (target === undefined) {
       return yield* new BoardRequestInvalid({ message: `There is no column ${request.toColumn}` })
     }
+
+    // A card that left the column the client saw was moved by someone else; acting on the
+    // stale view would undo their status change in Forgejo.
+    if (layout.columnOf(issue) !== request.fromColumn) return yield* new BoardChanged()
 
     const ranks = yield* CardRanks
     const rank = rankForDrop(yield* ranks.forOrg(org), {
