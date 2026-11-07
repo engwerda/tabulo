@@ -4,10 +4,14 @@ Tabulo is a planning companion for [Forgejo](https://forgejo.org). It shows each
 with their review requests, the open issues and pull requests assigned to them, their mentions,
 the items they created, and their unread notifications, across every repository they can access.
 
-Forgejo stays the source of truth. Tabulo signs you in with Forgejo, reads with your own OAuth
+For a team lead it adds a kanban board across chosen repositories of one organization. Moving
+a card changes the issue's status label, or closes or reopens it, in Forgejo.
+
+Forgejo stays the source of truth. Tabulo signs you in with Forgejo, acts with your own OAuth
 token, and links back to Forgejo for every issue and pull request. It needs no Forgejo plugin,
-no admin rights, and no shared service account. A board and an epics view follow in later
-milestones; [docs/spec.md](docs/spec.md) describes the plan.
+no admin rights, and no shared service account. The only thing it stores besides sessions is
+the order of cards within a board column. An epics view follows in a later milestone;
+[docs/spec.md](docs/spec.md) describes the plan.
 
 Tabulo is one Cloudflare Worker that serves both the API and the React app, with sessions in D1.
 
@@ -112,6 +116,26 @@ or credentials.
 
 Changing `SESSION_ENCRYPTION_KEY` signs everyone out, because existing tokens no longer decrypt.
 
+## Use the board
+
+The board's columns come from the organization's exclusive labels in the status scope, which is
+`Status/` unless `BOARD_STATUS_SCOPE` says otherwise. To set them up, open the organization's
+**Settings > Labels** in Forgejo and create labels such as `Status/In Progress` and
+`Status/Review` with **Exclusive** turned on.
+
+- **Todo** holds open issues without a status label.
+- Each status label is a column with its open issues.
+- **Done** holds issues closed within the last 14 days (`BOARD_DONE_DAYS`).
+
+Open **Board** in the header, choose an organization, and choose its repositories. The address
+is `/board/<org>?repos=<repo>,<repo>`, so a board can be bookmarked or shared, filters included.
+
+Drag a card with the mouse, or focus it and use Space and the arrow keys, or pick a column in
+its **Move to…** menu. Tabulo then changes the issue in Forgejo as you: it replaces the status
+label and keeps every other label, or closes or reopens the issue. You can move cards only in
+repositories where you have write access. The order of cards within a column is shared by
+everyone who opens the organization's board.
+
 ## Check a Forgejo instance
 
 `npm run check:forgejo` runs the same Forgejo client and dashboard code as the Worker, using a
@@ -132,6 +156,8 @@ The token needs read access to issues, repositories, notifications, and the user
 - Access and refresh tokens are encrypted with AES-GCM before they are written to D1, and never
   reach the browser.
 - Requests that change state must send an `Origin` header equal to `APP_URL`.
+- A card move reads the issue and your repository permissions fresh from Forgejo and changes
+  nothing unless you can push to the repository. Forgejo checks the write again itself.
 - The app is served with a Content Security Policy that allows only Tabulo's own scripts,
   styles, and requests, and images from Tabulo and `FORGEJO_URL`. It also forbids framing.
   `npm run build` writes the policy to `dist/client/_headers` from `FORGEJO_URL` in
