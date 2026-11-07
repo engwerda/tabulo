@@ -93,6 +93,11 @@ the board.
   may assign themselves; Forgejo decides. Forgejo authorizes each issue write as the user, so
   Tabulo does not check push access. Cards of archived repositories cannot be moved, added, or
   assigned.
+- **Address.** `/board/<org>` takes `repos` (comma-separated names), and the client-side
+  filters `q` (title words, or `#number` for one issue number), `assignee` (a login, `@me` for
+  the viewer, or `@none`), `label` (a full label name), and `milestone` (a title or `@none`).
+  `card=<repo>#<number>` opens that card's details. Logins cannot contain `@`; a milestone
+  titled `@none` cannot be chosen by name.
 
 | Endpoint | Result |
 |---|---|
