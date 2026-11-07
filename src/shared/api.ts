@@ -150,3 +150,179 @@ export const MoveCardResult = Schema.Struct({
   orderSaved: Schema.Boolean,
 })
 export type MoveCardResult = typeof MoveCardResult.Type
+
+// Insights and activity.
+
+export const INSIGHT_DAYS = [30, 90, 180, 365] as const
+export type InsightDays = (typeof INSIGHT_DAYS)[number]
+
+/** A count in the window and the same count in the window before it. */
+export const Tile = Schema.Struct({ value: Schema.Number, previous: Schema.Number })
+export type Tile = typeof Tile.Type
+
+/** A measure that is null when the window has nothing to measure, such as no merged pulls. */
+export const OptionalTile = Schema.Struct({
+  value: Schema.NullOr(Schema.Number),
+  previous: Schema.NullOr(Schema.Number),
+})
+export type OptionalTile = typeof OptionalTile.Type
+
+export const Bucket = Schema.Struct({ label: Schema.String, count: Schema.Number })
+export type Bucket = typeof Bucket.Type
+
+export const InsightWeek = Schema.Struct({
+  /** The Monday that starts the week, `YYYY-MM-DD` in the request's time zone. */
+  weekStart: Schema.String,
+  issuesOpened: Schema.Number,
+  issuesClosed: Schema.Number,
+  pullsOpened: Schema.Number,
+  pullsMerged: Schema.Number,
+  /** Open issues at the end of the week, or now for the current week. */
+  openIssues: Schema.Number,
+})
+export type InsightWeek = typeof InsightWeek.Type
+
+export const Language = Schema.Struct({ name: Schema.String, bytes: Schema.Number })
+export type Language = typeof Language.Type
+
+export const CiWeek = Schema.Struct({
+  weekStart: Schema.String,
+  success: Schema.Number,
+  failure: Schema.Number,
+  /** Cancelled, skipped, and unfinished runs. */
+  other: Schema.Number,
+})
+export type CiWeek = typeof CiWeek.Type
+
+export const CiSummary = Schema.Struct({
+  /** Workflow runs created in the window. */
+  runs: Schema.Number,
+  /** Passed runs among the runs that passed or failed. */
+  successRate: Schema.NullOr(Schema.Number),
+  medianDurationMinutes: Schema.NullOr(Schema.Number),
+  weekly: Schema.Array(CiWeek),
+  slowestWorkflows: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      repo: Schema.String,
+      medianDurationMinutes: Schema.Number,
+      runs: Schema.Number,
+    }),
+  ),
+})
+export type CiSummary = typeof CiSummary.Type
+
+export const AttentionKind = Schema.Literals([
+  "failing_ci",
+  "overdue_milestone",
+  "stale_pull",
+  "stale_issue",
+])
+export type AttentionKind = typeof AttentionKind.Type
+
+export const AttentionItem = Schema.Struct({
+  kind: AttentionKind,
+  repo: Schema.String,
+  title: Schema.String,
+  url: Schema.String,
+  detail: Schema.String,
+  ageDays: Schema.Number,
+})
+export type AttentionItem = typeof AttentionItem.Type
+
+export const HealthStatus = Schema.Literals(["strong", "watch", "risky"])
+export type HealthStatus = typeof HealthStatus.Type
+
+export const RepoInsight = Schema.Struct({
+  name: Schema.String,
+  url: Schema.String,
+  archived: Schema.Boolean,
+  openIssues: Schema.Number,
+  openPulls: Schema.Number,
+  issuesClosed: Schema.Number,
+  pullsMerged: Schema.Number,
+  lastActivity: Schema.String,
+  languages: Schema.Array(Language),
+  ci: Schema.NullOr(
+    Schema.Struct({ runs: Schema.Number, successRate: Schema.NullOr(Schema.Number) }),
+  ),
+  /** Issues and pull requests opened, closed, or merged per week, aligned with `weekly`. */
+  activity: Schema.Array(Schema.Number),
+  health: Schema.Struct({
+    score: Schema.Number,
+    status: HealthStatus,
+    reasons: Schema.Array(Schema.String),
+  }),
+})
+export type RepoInsight = typeof RepoInsight.Type
+
+export const Insights = Schema.Struct({
+  org: Schema.String,
+  repos: Schema.Array(Schema.String),
+  days: Schema.Literals(INSIGHT_DAYS),
+  tz: Schema.String,
+  generatedAt: Schema.String,
+  window: Schema.Struct({ start: Schema.String, end: Schema.String }),
+  tiles: Schema.Struct({
+    /** `previous` is the count at the start of the window. */
+    openIssues: Tile,
+    openPulls: Tile,
+    issuesOpened: Tile,
+    issuesClosed: Tile,
+    pullsMerged: Tile,
+    medianIssueCloseHours: OptionalTile,
+    medianPullMergeHours: OptionalTile,
+    ciSuccessRate: OptionalTile,
+  }),
+  weekly: Schema.Array(InsightWeek),
+  pullMergeTime: Schema.Struct({
+    p50: Schema.NullOr(Schema.Number),
+    p75: Schema.NullOr(Schema.Number),
+    p90: Schema.NullOr(Schema.Number),
+    buckets: Schema.Array(Bucket),
+  }),
+  /** Open issues by age. */
+  issueAge: Schema.Array(Bucket),
+  labels: Schema.Array(
+    Schema.Struct({ name: Schema.String, color: Schema.String, count: Schema.Number }),
+  ),
+  contributors: Schema.Array(
+    Schema.Struct({
+      login: Schema.String,
+      avatarUrl: Schema.String,
+      pullsMerged: Schema.Number,
+      issuesClosed: Schema.Number,
+    }),
+  ),
+  /** Events per weekday (Monday first) and hour in the request's time zone. */
+  punchcard: Schema.Array(Schema.Array(Schema.Number)),
+  languages: Schema.Array(Language),
+  ci: Schema.NullOr(CiSummary),
+  milestones: Schema.Array(
+    Schema.Struct({
+      repo: Schema.String,
+      title: Schema.String,
+      url: Schema.String,
+      openIssues: Schema.Number,
+      closedIssues: Schema.Number,
+      dueOn: Schema.NullOr(Schema.String),
+    }),
+  ),
+  attention: Schema.Array(AttentionItem),
+  repoStats: Schema.Array(RepoInsight),
+  failedRepos: Schema.Array(Schema.Struct({ repo: Schema.String, message: Schema.String })),
+})
+export type Insights = typeof Insights.Type
+
+export const ActivityDay = Schema.Struct({ date: Schema.String, count: Schema.Number })
+export type ActivityDay = typeof ActivityDay.Type
+
+export const Activity = Schema.Struct({
+  /** Every day of the last year, oldest first, ending today in the request's time zone. */
+  days: Schema.Array(ActivityDay),
+  total: Schema.Number,
+  currentStreak: Schema.Number,
+  longestStreak: Schema.Number,
+  busiestDay: Schema.NullOr(ActivityDay),
+})
+export type Activity = typeof Activity.Type
