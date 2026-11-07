@@ -86,6 +86,8 @@ type PopoverProps = {
   readonly focusFirstItem?: boolean
   /** -1 keeps the trigger out of the Tab order when a key opens the panel instead. */
   readonly triggerTabIndex?: number
+  /** Where focus goes when the panel closes; the trigger when left out. */
+  readonly returnFocus?: RefObject<HTMLElement | null>
 }
 
 const MENU_ITEMS = '[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]'
@@ -93,6 +95,10 @@ const MENU_ITEMS = '[role="menuitem"], [role="menuitemradio"], [role="menuitemch
 /** Up and down arrows move between a panel's menu items, Home and End to the ends. */
 const moveMenuFocus = (event: ReactKeyboardEvent<HTMLElement>) => {
   if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return
+  // In a search box Home and End move the caret.
+  if (event.target instanceof HTMLInputElement && (event.key === "Home" || event.key === "End")) {
+    return
+  }
   const items = [...event.currentTarget.querySelectorAll<HTMLElement>(MENU_ITEMS)]
   if (items.length === 0) return
   event.preventDefault()
@@ -104,7 +110,9 @@ const moveMenuFocus = (event: ReactKeyboardEvent<HTMLElement>) => {
         ? items.length - 1
         : event.key === "ArrowDown"
           ? (current + 1) % items.length
-          : (current - 1 + items.length) % items.length
+          : current === -1
+            ? items.length - 1
+            : (current - 1 + items.length) % items.length
   items[next]?.focus()
 }
 
@@ -138,6 +146,7 @@ export const Popover = ({
   containerClass = "relative",
   focusFirstItem = false,
   triggerTabIndex,
+  returnFocus,
 }: PopoverProps) => {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
   const open = controlledOpen ?? uncontrolledOpen
@@ -155,7 +164,7 @@ export const Popover = ({
   const close = () => setOpen(false)
   const closeRef = useRef(close)
   closeRef.current = close
-  useDismiss(open, close, container, trigger)
+  useDismiss(open, close, container, returnFocus ?? trigger)
 
   useLayoutEffect(() => {
     if (!open) {
@@ -231,7 +240,7 @@ export const Popover = ({
         >
           {children(() => {
             setOpen(false)
-            trigger.current?.focus()
+            ;(returnFocus ?? trigger).current?.focus()
           })}
         </div>
       )}

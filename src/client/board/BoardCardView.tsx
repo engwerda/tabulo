@@ -1,6 +1,14 @@
 import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { type KeyboardEvent, type MouseEvent, memo, useMemo, useState } from "react"
+import {
+  type KeyboardEvent,
+  type MouseEvent,
+  memo,
+  type RefObject,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import type { BoardCard, BoardColumn } from "../../shared/api.ts"
 import { AvatarStack } from "../Avatar.tsx"
 import { absoluteTime, shortAge } from "../format.ts"
@@ -56,6 +64,7 @@ const CardMenu = ({
   actions,
   open,
   onOpenChange,
+  returnFocus,
 }: {
   card: BoardCard
   columns: ReadonlyArray<BoardColumn>
@@ -64,6 +73,8 @@ const CardMenu = ({
   actions: CardActions
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** The card's link, which keeps the keyboard where the menu was opened from. */
+  returnFocus: RefObject<HTMLElement | null>
 }) => (
   <Popover
     strategy="fixed"
@@ -72,6 +83,7 @@ const CardMenu = ({
     focusFirstItem
     open={open}
     onOpenChange={onOpenChange}
+    returnFocus={returnFocus}
     accessibleLabel={`Actions for ${card.repo}#${card.number}`}
     triggerClass={`${buttonClass.iconSmall} relative z-10`}
     triggerTabIndex={-1}
@@ -333,6 +345,7 @@ const CardContents = memo(function CardContents({
   keyboard,
 }: CardContentsProps) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const link = useRef<HTMLAnchorElement | null>(null)
   const openPanel = (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
     event.preventDefault()
@@ -359,7 +372,10 @@ const CardContents = memo(function CardContents({
     <>
       <div className="flex h-5 items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
         <a
-          ref={movable ? keyboard.ref : undefined}
+          ref={(element) => {
+            link.current = element
+            if (movable) keyboard.ref(element)
+          }}
           href={href}
           data-card-link=""
           onClick={openPanel}
@@ -395,6 +411,7 @@ const CardContents = memo(function CardContents({
             actions={actions}
             open={menuOpen}
             onOpenChange={setMenuOpen}
+            returnFocus={link}
           />
           {movable && (
             <span
