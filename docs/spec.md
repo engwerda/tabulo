@@ -61,7 +61,8 @@ Forgejo stays the single source of truth: Tabulo stores only what Forgejo cannot
    only its SHA-256 hash.
 4. Tokens are encrypted with AES-GCM before they reach the database. They never reach the browser.
 5. An expired access token is refreshed with the refresh token. The session ends only when
-   Forgejo answers `invalid_grant`. Any other token endpoint failure returns HTTP 502 and keeps
+   Forgejo rejects the refresh token itself (`invalid_grant` or `unauthorized_client`). Any other
+   token endpoint failure, such as `invalid_client` or a rate limit, returns HTTP 502 and keeps
    the session. Forgejo can rotate refresh tokens, so when concurrent requests refresh the same
    session, the first stored tokens win and the other requests use them.
 6. `POST /auth/logout` deletes the session. Requests that change state must carry an `Origin`

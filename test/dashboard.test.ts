@@ -167,10 +167,20 @@ describe("access token refresh", () => {
     expect(searches.at(-1)?.authorization).toBe("Bearer access-2")
   })
 
-  it("deletes the session and returns 401 when Forgejo answers invalid_grant", async () => {
+  // Bodies as Forgejo v17 sends them (routers/web/auth/oauth.go, handleRefreshToken).
+  it.each([
+    [
+      "the user revoked the app",
+      { error: "invalid_grant", error_description: "grant does not exist" },
+    ],
+    [
+      "the refresh token expired or Forgejo's signing key changed",
+      { error: "unauthorized_client", error_description: "unable to parse refresh token" },
+    ],
+  ])("deletes the session and returns 401 when %s", async (_, body) => {
     const forgejo = createFakeForgejo({
       expiresIn: 30,
-      refreshFailure: { status: 400, body: JSON.stringify({ error: "invalid_grant" }) },
+      refreshFailure: { status: 400, body: JSON.stringify(body) },
     })
     const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
     const cookie = await signIn(call, forgejo)
@@ -184,8 +194,7 @@ describe("access token refresh", () => {
 
   it.each([
     ["429 from a rate limiter", 429, "Too Many Requests"],
-    ["401 invalid_client after a client secret rotation", 401, '{"error":"invalid_client"}'],
-    ["400 unauthorized_client", 400, '{"error":"unauthorized_client"}'],
+    ["400 invalid_client after a client secret rotation", 400, '{"error":"invalid_client"}'],
     ["400 with a body that is not JSON", 400, "<html>Bad Request</html>"],
   ])(
     "keeps the session and returns 502 when the refresh fails with %s",

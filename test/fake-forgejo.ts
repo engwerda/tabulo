@@ -83,7 +83,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
       form.get("client_id") !== "test-client-id" ||
       form.get("client_secret") !== "test-client-secret"
     ) {
-      return json({ error: "unauthorized_client" }, { status: 401 })
+      return json({ error: "invalid_client" }, { status: 400 })
     }
     if (form.get("grant_type") === "authorization_code") {
       const code = form.get("code") ?? ""
@@ -105,7 +105,10 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
       }
       const refresh = form.get("refresh_token") ?? ""
       if (!validRefreshTokens.has(refresh)) {
-        const rejection = json({ error: "invalid_grant" }, { status: 400 })
+        const rejection = json(
+          { error: "unauthorized_client", error_description: "token was already used" },
+          { status: 400 },
+        )
         return fixtures.beforeRefreshResponse("rejected").then(() => rejection)
       }
       // Rotation, as with Forgejo's INVALIDATE_REFRESH_TOKENS: each refresh token works once.

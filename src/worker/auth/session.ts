@@ -7,7 +7,7 @@ import { type Session, SessionStore } from "../session-store.ts"
 const REFRESH_MARGIN_MS = 60_000
 
 /**
- * How long a refresh rejected with `invalid_grant` waits for a concurrent request, possibly in
+ * How long a rejected refresh waits for a concurrent request, possibly in
  * another isolate, to store the tokens it got for the same refresh token. Forgejo rotates
  * refresh tokens, so the loser of that race is rejected before the winner has written.
  */

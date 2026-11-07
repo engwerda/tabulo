@@ -144,13 +144,18 @@ export const makeForgejoClient = (
         }),
       )
       if (!response.ok) {
-        // Only invalid_grant means the code or refresh token itself is dead. A rate limiter,
-        // a WAF, or a rotated client secret also answer 4xx, and must not end sessions.
+        // Forgejo answers every token error with 400. invalid_grant (grant revoked) and
+        // unauthorized_client (refresh token expired, unparseable, or already used) mean the
+        // grant is dead or rotated. invalid_client (rotated client secret), rate limiters and
+        // WAFs must not end sessions. See handleRefreshToken in Forgejo's oauth.go.
         const error = yield* readJson(response, OAuthErrorResponse).pipe(
           Effect.map((body) => body.error),
           Effect.orElseSucceed(() => undefined),
         )
-        if (response.status === 400 && error === "invalid_grant") {
+        if (
+          response.status === 400 &&
+          (error === "invalid_grant" || error === "unauthorized_client")
+        ) {
           return yield* new OAuthGrantRejected()
         }
         return yield* new ForgejoRequestFailed({ status: response.status })
