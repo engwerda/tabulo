@@ -38,6 +38,7 @@ import {
   BoardRequestInvalid,
   type BoardWriteForbidden,
   type ConfigInvalid,
+  describeForgejoError,
   type ForgejoError,
   type ForgejoMovePartlyApplied,
   type OAuthCallbackInvalid,
@@ -113,9 +114,9 @@ const errorResponse = (c: AppContext, error: AppError): Response => {
     case "OAuthGrantRejected":
       return c.text("Forgejo rejected the sign-in. Sign in again.", 400)
     case "ForgejoForbidden":
-      return c.json({ error: "Forgejo did not allow this" }, 403)
+      return c.json({ error: describeForgejoError(error) }, 403)
     case "ForgejoNotFound":
-      return c.json({ error: "Not found in Forgejo, or you cannot see it" }, 404)
+      return c.json({ error: describeForgejoError(error) }, 404)
     case "BoardWriteForbidden":
       return c.json({ error: error.message }, 403)
     case "BoardRequestInvalid":
@@ -123,11 +124,9 @@ const errorResponse = (c: AppContext, error: AppError): Response => {
     case "BoardChanged":
       return c.json({ error: "The board changed since it was loaded", code: "board_changed" }, 409)
     case "ForgejoRequestFailed":
-      return c.json({ error: `Forgejo returned HTTP ${error.status}` }, 502)
     case "ForgejoUnreachable":
-      return c.json({ error: "Forgejo is unreachable" }, 502)
     case "ForgejoDecodeFailed":
-      return c.json({ error: "Forgejo sent an unexpected response" }, 502)
+      return c.json({ error: describeForgejoError(error) }, 502)
     case "ForgejoMovePartlyApplied":
       return c.json(
         {

@@ -102,6 +102,11 @@ const FilterMenu = ({
               />
             </label>
           )}
+          {multiple && (
+            <p className="px-2 pt-1 pb-1.5 text-[0.6875rem] text-zinc-500 dark:text-zinc-400">
+              Shows cards with any of the chosen {plural}.
+            </p>
+          )}
           <div role="menu" aria-label={name} className="scroll-thin max-h-72 overflow-y-auto">
             <MenuOption
               selected={values.length === 0}
@@ -189,7 +194,7 @@ export const BoardFiltersBar = ({
 
   return (
     <search
-      className="scroll-thin flex items-center gap-2 overflow-x-auto px-4 pt-0.5 pb-3 *:shrink-0 sm:px-6 xl:flex-wrap xl:overflow-visible"
+      className="scroll-thin flex items-center gap-2 overflow-x-auto px-4 pt-0.5 pb-3 *:shrink-0 max-xl:[mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] sm:px-6 xl:flex-wrap xl:overflow-visible"
       aria-label="Filter cards"
     >
       <label className="relative w-60 shrink-0 max-sm:w-48">
@@ -206,13 +211,14 @@ export const BoardFiltersBar = ({
               event.currentTarget.blur()
             }
           }}
-          placeholder="Search or #number"
+          placeholder="Search cards"
+          title="Search titles, or type #12 for issue 12"
           aria-keyshortcuts="/"
           className={`${inputClass} peer pr-8 pl-8 [&::-webkit-search-cancel-button]:appearance-none`}
         />
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute top-1.5 right-2 hidden peer-placeholder-shown:sm:block"
+          className="pointer-events-none absolute top-1/2 right-2 hidden -translate-y-1/2 peer-placeholder-shown:sm:flex"
         >
           <Kbd>/</Kbd>
         </span>

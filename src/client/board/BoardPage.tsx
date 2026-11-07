@@ -1,4 +1,10 @@
-import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  useIsMutating,
+  useMutation,
+  useMutationState,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query"
 import {
   type ReactNode,
   useCallback,
@@ -67,7 +73,8 @@ export type CardUpdate = {
   readonly run: () => Promise<CardUpdateResult>
   readonly done: string
   readonly issue: string
-  readonly undo?: () => Promise<CardUpdateResult>
+  /** Reverses the change, and says what that did ("Removed Kind/Bug from api#3"). */
+  readonly undo?: { readonly run: () => Promise<CardUpdateResult>; readonly done: string }
 }
 const CARD_PARAM = "card"
 
@@ -213,26 +220,45 @@ const OrgNotFound = ({ org }: { org: string }) => (
   </div>
 )
 
-const ReposFailed = ({
-  failures,
-  onChoose,
-  onRetry,
+/** A centered state for something that went wrong, with what to do about it. */
+const Problem = ({
+  title,
+  detail,
+  actions,
 }: {
-  failures: ReadonlyArray<{ readonly repo: string; readonly message: string }>
-  onChoose: () => void
-  onRetry: () => void
+  title: string
+  detail: ReactNode
+  actions: ReactNode
 }) => (
   <div className="grid flex-1 place-items-center px-6 pb-16">
-    <div className="max-w-md text-center">
+    <div role="alert" className="max-w-md text-center">
       <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-amber-50 text-amber-500 dark:bg-amber-500/10">
         <AlertIcon className="size-5" />
       </div>
-      <h2 className="mt-5 text-base font-semibold tracking-tight">
-        {failures.length === 1
-          ? `Could not load ${failures[0]?.repo}`
-          : "Could not load these repositories"}
-      </h2>
-      <ul className="mt-2 space-y-0.5 text-sm text-zinc-600 dark:text-zinc-400">
+      <h2 className="mt-5 text-base font-semibold tracking-tight">{title}</h2>
+      <div className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">{detail}</div>
+      <div className="mt-5 flex justify-center gap-2">{actions}</div>
+    </div>
+  </div>
+)
+
+const ReposFailed = ({
+  failures,
+  onRemove,
+  onRetry,
+}: {
+  failures: ReadonlyArray<{ readonly repo: string; readonly message: string }>
+  onRemove: () => void
+  onRetry: () => void
+}) => (
+  <Problem
+    title={
+      failures.length === 1
+        ? `${failures[0]?.repo} did not load`
+        : "These repositories did not load"
+    }
+    detail={
+      <ul className="space-y-0.5">
         {failures.map((failure) => (
           <li key={failure.repo}>
             <span className="font-medium text-zinc-800 dark:text-zinc-200">{failure.repo}</span>:{" "}
@@ -240,16 +266,18 @@ const ReposFailed = ({
           </li>
         ))}
       </ul>
-      <div className="mt-5 flex justify-center gap-2">
+    }
+    actions={
+      <>
         <button type="button" onClick={onRetry} className={buttonClass.secondary}>
           Try again
         </button>
-        <button type="button" onClick={onChoose} className={buttonClass.primary}>
-          Choose repositories
+        <button type="button" onClick={onRemove} className={buttonClass.primary}>
+          Remove from the board
         </button>
-      </div>
-    </div>
-  </div>
+      </>
+    }
+  />
 )
 
 const NoMatches = ({ query, onClear }: { query: string; onClear: () => void }) => (
@@ -304,7 +332,6 @@ export const BoardPage = ({ org }: { org: string }) => {
   useEffect(() => {
     if (hasSelection) {
       restoredFor.current = org
-      storage.write(reposKey(org), selection)
       return
     }
     if (restoredFor.current === org) return
@@ -324,7 +351,7 @@ export const BoardPage = ({ org }: { org: string }) => {
         { replace: true },
       )
     }
-  }, [org, selection, hasSelection, setParams, repos.data])
+  }, [org, hasSelection, setParams, repos.data])
 
   const boardKey = ["board", org, selection] as const
   const writeKey = ["board-write", org, selection] as const
@@ -355,6 +382,14 @@ export const BoardPage = ({ org }: { org: string }) => {
 
   // The last write to finish reads the board again; an earlier one would read it while a later
   // write is still on its way and show that card back in its old place for a moment.
+  // Cards whose move Forgejo has not confirmed yet, for example while offline.
+  const saving = new Set(
+    useMutationState({
+      filters: { mutationKey: [...writeKey, "move"], status: "pending" },
+      select: (mutation) => (mutation.state.variables as { cardMove: CardMove }).cardMove.key,
+    }),
+  )
+
   const refetchAfterWrites = () =>
     queryClient.isMutating({ mutationKey: writeKey }) > 1
       ? undefined
@@ -428,6 +463,13 @@ export const BoardPage = ({ org }: { org: string }) => {
     const current = queryClient.getQueryData<Board>(boardKey)
     const card = current?.cards.find((candidate) => candidate.key === cardMove.key)
     if (current === undefined || card === undefined) return
+    if (!navigator.onLine) {
+      toast({
+        tone: "info",
+        title: "You are offline",
+        detail: `${card.repo}#${card.number} moves on the board now and in Forgejo once you are back online.`,
+      })
+    }
     const column = columnCards(current.cards, card.column)
     const index = column.findIndex((candidate) => candidate.key === card.key)
     const back: CardMove = {
@@ -507,16 +549,9 @@ export const BoardPage = ({ org }: { org: string }) => {
       toast({
         tone: "success",
         title: done,
-        detail: card.title,
         ...(undo === undefined
           ? {}
-          : {
-              action: {
-                label: "Undo",
-                run: () =>
-                  update.mutate({ run: undo, done: `Undid the change to ${issue}`, issue }),
-              },
-            }),
+          : { action: { label: "Undo", run: () => update.mutate({ ...undo, issue }) } }),
       })
     },
     onError: (error, variables) =>
@@ -534,7 +569,12 @@ export const BoardPage = ({ org }: { org: string }) => {
       setAssignee({ org, repo: card.repo, number: card.number, login: viewer.login, assigned: to })
     update.mutate({
       run: set(!assigned),
-      undo: set(assigned),
+      undo: {
+        run: set(assigned),
+        done: assigned
+          ? `Assigned ${card.repo}#${card.number} to you`
+          : `Unassigned you from ${card.repo}#${card.number}`,
+      },
       issue: `${card.repo}#${card.number}`,
       done: assigned
         ? `Unassigned you from ${card.repo}#${card.number}`
@@ -633,9 +673,11 @@ export const BoardPage = ({ org }: { org: string }) => {
     }
   }
 
-  // Board in the header returns here, but only to a board whose repositories all loaded.
+  // The repositories are remembered, and Board in the header returns here, only once they all
+  // loaded, so a mistyped repository is not brought back on the next visit.
   useEffect(() => {
     if (data !== undefined && data.failedRepos.length === 0 && data.repos.length > 0) {
+      storage.write(reposKey(data.org), data.repos.join(","))
       storage.write(
         LAST_BOARD_KEY,
         `/board/${encodeURIComponent(data.org)}?repos=${data.repos.join(",")}`,
@@ -738,6 +780,10 @@ export const BoardPage = ({ org }: { org: string }) => {
   })()
 
   const orgMissing = repos.error instanceof RequestFailed && repos.error.status === 404
+  const removeFailed = () => {
+    const failed = new Set(failures.map((failure) => failure.repo.toLowerCase()))
+    chooseRepos(selected.filter((repo) => !failed.has(repo.toLowerCase())))
+  }
   const clearFilters = () =>
     setParams(
       (current) => {
@@ -845,12 +891,17 @@ export const BoardPage = ({ org }: { org: string }) => {
             Could not load the repositories of {org}: {repos.error.message}
           </Notice>
         )}
-        {failures.length > 0 && dismissedFailures !== failureId && (
-          <Notice tone="warning" onDismiss={() => setDismissedFailures(failureId)}>
-            Some repositories could not be loaded:{" "}
-            {failures.map((failure) => `${failure.repo} (${failure.message})`).join(", ")}.
-          </Notice>
-        )}
+        {failures.length > 0 &&
+          failures.length < (data?.repos.length ?? 0) &&
+          dismissedFailures !== failureId && (
+            <Notice tone="warning" onDismiss={() => setDismissedFailures(failureId)}>
+              Some repositories did not load:{" "}
+              {failures.map((failure) => `${failure.repo} (${failure.message})`).join(", ")}.{" "}
+              <button type="button" onClick={removeFailed} className="font-medium underline">
+                Remove {failures.length === 1 ? "it" : "them"} from the board
+              </button>
+            </Notice>
+          )}
         {data !== undefined && !data.viewerCanArrange && (
           <Notice tone="info">
             You can view this board. Only members of {data.org} can move cards and add issues.
@@ -879,16 +930,19 @@ export const BoardPage = ({ org }: { org: string }) => {
           )
         ) : data === undefined ? (
           board.isError ? (
-            <Notice tone="error">
-              Could not load the board: {board.error.message}{" "}
-              <button
-                type="button"
-                onClick={() => void board.refetch()}
-                className="font-medium underline"
-              >
-                Retry
-              </button>
-            </Notice>
+            <Problem
+              title="The board did not load"
+              detail={board.error.message}
+              actions={
+                <button
+                  type="button"
+                  onClick={() => void board.refetch()}
+                  className={buttonClass.primary}
+                >
+                  Try again
+                </button>
+              }
+            />
           ) : (
             <div className="min-h-0 flex-1">
               <BoardSkeleton />
@@ -897,7 +951,7 @@ export const BoardPage = ({ org }: { org: string }) => {
         ) : data.failedRepos.length > 0 && data.failedRepos.length === data.repos.length ? (
           <ReposFailed
             failures={data.failedRepos}
-            onChoose={() => setPickerOpen(true)}
+            onRemove={removeFailed}
             onRetry={() => void board.refetch()}
           />
         ) : filtered && shownCount === 0 && data.cards.length > 0 ? (
@@ -906,6 +960,8 @@ export const BoardPage = ({ org }: { org: string }) => {
           <div className="min-h-0 flex-1">
             <BoardColumns
               board={data}
+              saving={saving}
+              panelOpen={selectedCard !== undefined}
               visible={visible}
               filtered={filtered}
               viewer={viewer.login}
@@ -926,7 +982,18 @@ export const BoardPage = ({ org }: { org: string }) => {
                       setComposerRepo(repo)
                       storage.write(composerRepoKey(org), repo)
                     }}
-                    onClose={() => setComposing(null)}
+                    onClose={() => {
+                      const column = composing
+                      setComposing(null)
+                      // Focus goes back to the column's + button, where the composer was opened.
+                      requestAnimationFrame(() =>
+                        document
+                          .querySelector<HTMLElement>(
+                            `button[aria-label="New issue in ${CSS.escape(columnTitle(column))}"]`,
+                          )
+                          ?.focus(),
+                      )
+                    }}
                     onCreate={async (repo, title) => {
                       await create.mutateAsync({ org: data.org, repo, title, column: composing })
                     }}

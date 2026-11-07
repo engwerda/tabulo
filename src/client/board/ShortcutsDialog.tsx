@@ -20,6 +20,7 @@ const GROUPS = [
       { keys: ["K"], action: "Previous card in the column" },
       { keys: ["A"], action: "Assign or unassign me" },
       { keys: ["O"], action: "Open in Forgejo" },
+      { keys: ["Ctrl", "Enter"], action: "Send a comment (⌘ Enter on a Mac)" },
       { keys: ["Esc"], action: "Close" },
     ],
   },
@@ -34,6 +35,15 @@ const GROUPS = [
       { keys: ["Space"], action: "Pick the card up, then drop it" },
       { keys: ["←", "↑", "↓", "→"], action: "Move a picked-up card" },
       { keys: ["Esc"], action: "Cancel a move" },
+    ],
+  },
+  {
+    title: "Menus",
+    shortcuts: [
+      { keys: ["↓"], action: "Open a menu from its button" },
+      { keys: ["↑", "↓"], action: "Go through its items" },
+      { keys: ["Enter"], action: "Choose an item" },
+      { keys: ["Esc"], action: "Close it" },
     ],
   },
 ] as const
@@ -55,7 +65,7 @@ export const ShortcutsDialog = ({ open, onClose }: { open: boolean; onClose: () 
         if (event.target === dialog.current) onClose()
       }}
       aria-labelledby="shortcuts-title"
-      className="m-auto max-h-[calc(100dvh-2rem)] w-[min(32rem,calc(100vw-2rem))] animate-pop-in overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-pop backdrop:bg-zinc-950/40 backdrop:backdrop-blur-[2px] dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+      className="m-auto max-h-[calc(100dvh-2rem)] w-[min(32rem,calc(100vw-2rem))] lg:w-[min(56rem,calc(100vw-2rem))] animate-pop-in overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-pop backdrop:bg-zinc-950/40 backdrop:backdrop-blur-[2px] dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
     >
       <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
         <h2 id="shortcuts-title" className="text-base font-semibold">
@@ -65,7 +75,7 @@ export const ShortcutsDialog = ({ open, onClose }: { open: boolean; onClose: () 
           <XIcon />
         </button>
       </div>
-      <div className="grid gap-6 px-5 py-5">
+      <div className="grid gap-6 px-5 py-5 lg:grid-cols-2 lg:gap-x-10">
         {GROUPS.map((group) => (
           <section key={group.title}>
             <h3 className="text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">

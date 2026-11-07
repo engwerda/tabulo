@@ -3,7 +3,7 @@ import { Link, Redirect } from "wouter"
 import type { Org } from "../../shared/api.ts"
 import { Avatar } from "../Avatar.tsx"
 import { fetchOrgs } from "../api.ts"
-import { CheckIcon, ChevronRightIcon } from "../ui/icons.tsx"
+import { AlertIcon, CheckIcon, ChevronRightIcon } from "../ui/icons.tsx"
 import { Popover } from "../ui/primitives.tsx"
 
 export const ORGS = ["orgs"] as const
@@ -77,7 +77,13 @@ export const OrgSwitcher = ({ org }: { org: string }) => {
       accessibleLabel={`Organization: ${title}. Switch organization`}
       label={
         <>
-          <Avatar url={current?.avatarUrl ?? ""} name={title} size="sm" className="rounded-md" />
+          {current === undefined && orgs.data !== undefined ? (
+            <span className="grid size-6 place-items-center rounded-md bg-zinc-100 text-zinc-400 dark:bg-zinc-800">
+              <AlertIcon className="size-3.5" />
+            </span>
+          ) : (
+            <Avatar url={current?.avatarUrl ?? ""} name={title} size="sm" className="rounded-md" />
+          )}
           <span className="truncate text-base font-semibold tracking-tight">{title}</span>
         </>
       }

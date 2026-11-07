@@ -59,7 +59,11 @@ const requestJson = async (path: string, init?: RequestInit): Promise<unknown> =
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: unknown; code?: unknown }
     throw new RequestFailed(
-      typeof body.error === "string" ? body.error : `Tabulo returned HTTP ${response.status}`,
+      typeof body.error === "string"
+        ? body.error
+        : response.status >= 500
+          ? "Tabulo did not get an answer; try again in a moment"
+          : `Something went wrong (HTTP ${response.status})`,
       response.status,
       typeof body.code === "string" ? body.code : undefined,
     )

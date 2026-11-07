@@ -6,10 +6,12 @@ import {
   type DragEndEvent,
   type DragOverEvent,
   DragOverlay,
+  type KeyboardCoordinateGetter,
   KeyboardSensor,
   MouseSensor,
   pointerWithin,
   TouchSensor,
+  type UniqueIdentifier,
   useDroppable,
   useSensor,
   useSensors,
@@ -34,6 +36,38 @@ import {
 
 const COLUMN_PREFIX = "column:"
 
+/**
+ * Left and right move a picked-up card one column at a time, collapsed columns included, to the
+ * top of that column. Up and down move it within a column as the sortable list does.
+ */
+const keyboardCoordinates: KeyboardCoordinateGetter = (event, args) => {
+  if (event.code !== "ArrowLeft" && event.code !== "ArrowRight") {
+    return sortableKeyboardCoordinates(event, args)
+  }
+  const { collisionRect, droppableRects, droppableContainers } = args.context
+  if (collisionRect === null) return undefined
+  const columns = droppableContainers
+    .getEnabled()
+    .filter((container) => String(container.id).startsWith(COLUMN_PREFIX))
+    .flatMap((container) => {
+      const rect = droppableRects.get(container.id)
+      return rect === undefined ? [] : [rect]
+    })
+    .sort((a, b) => a.left - b.left)
+  const middle = collisionRect.left + collisionRect.width / 2
+  const distance = (rect: { left: number; right: number }) =>
+    middle < rect.left ? rect.left - middle : middle > rect.right ? middle - rect.right : 0
+  const current = columns.reduce(
+    (best, rect, index) =>
+      best === -1 || distance(rect) < distance(columns[best] ?? rect) ? index : best,
+    -1,
+  )
+  const target = columns[current + (event.code === "ArrowRight" ? 1 : -1)]
+  if (target === undefined) return undefined
+  event.preventDefault()
+  return { x: target.left + (target.width - collisionRect.width) / 2, y: target.top + 4 }
+}
+
 const screenReaderInstructions = {
   draggable:
     "Press Enter to open the card's details, or Space to pick it up. While it is picked up, the arrow keys move it, Space drops it, and Escape cancels. Arrow keys move between cards, and the period key opens the card's menu.",
@@ -55,6 +89,10 @@ type BoardColumnsProps = {
   readonly canCreate: boolean
   readonly actions: CardActions
   readonly hrefBase: string
+  /** Keys of cards whose move Forgejo has not confirmed yet. */
+  readonly saving: ReadonlySet<string>
+  /** The details panel covers the right of the board, so the board leaves room for it. */
+  readonly panelOpen: boolean
   readonly onMove: (move: CardMove) => void
   readonly onDragChange: (dragging: boolean) => void
 }
@@ -182,9 +220,13 @@ const Column = ({
 }
 
 const EmptyColumn = ({ filtered, column }: { filtered: boolean; column: BoardColumn }) => (
-  <li className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-300/80 px-4 py-8 text-center text-xs text-zinc-500 dark:border-zinc-700/80 dark:text-zinc-500">
+  <li
+    className={`flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-300/80 px-4 text-center text-xs text-zinc-500 dark:border-zinc-700/80 dark:text-zinc-500 ${
+      filtered ? "py-3" : "py-8"
+    }`}
+  >
     {filtered
-      ? "No cards here match the filters."
+      ? "None match"
       : column._tag === "Done"
         ? "Nothing closed recently. Drop a card here to close its issue."
         : "No issues. Drop a card here."}
@@ -205,6 +247,8 @@ export const BoardColumns = ({
   canCreate,
   actions,
   hrefBase,
+  saving,
+  panelOpen,
   onMove,
   onDragChange,
 }: BoardColumnsProps) => {
@@ -212,7 +256,7 @@ export const BoardColumns = ({
     useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 6 } }),
     useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
+      coordinateGetter: keyboardCoordinates,
       // Enter on a card opens its details, so only Space picks a card up.
       keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space", "Enter"] },
     }),
@@ -258,16 +302,45 @@ export const BoardColumns = ({
 
   // A collapsed column is a narrow strip that corner distances never favour, so the pointer
   // decides when it is over one; everything else goes by the closest corners.
+  // When the preview moves the card into another column, the layout shifts under the pointer,
+  // and a fresh collision could point back at the old column, which moves it back, and so on.
+  // Collisions hold still for the frames in which the new layout settles.
+  const lastOver = useRef<UniqueIdentifier | null>(null)
+  const settling = useRef(false)
   const collision: CollisionDetection = (args) => {
+    if (settling.current && lastOver.current !== null) return [{ id: lastOver.current }]
     const strips = args.droppableContainers.filter((container) => {
       const id = String(container.id)
       return id.startsWith(COLUMN_PREFIX) && collapsed.has(id.slice(COLUMN_PREFIX.length))
     })
-    const onStrip = pointerWithin({ ...args, droppableContainers: strips })
-    return onStrip.length > 0 ? onStrip : closestCorners(args)
+    // A keyboard drag has no pointer, so the middle of the card stands in for it.
+    const onStrip =
+      args.pointerCoordinates === null
+        ? strips.flatMap((strip) => {
+            const rect = args.droppableRects.get(strip.id)
+            const middle = args.collisionRect.left + args.collisionRect.width / 2
+            return rect !== undefined && middle >= rect.left && middle <= rect.right
+              ? [{ id: strip.id }]
+              : []
+          })
+        : pointerWithin({ ...args, droppableContainers: strips })
+    const found = onStrip.length > 0 ? onStrip : closestCorners(args)
+    lastOver.current = found[0]?.id ?? lastOver.current
+    return found
+  }
+  const showPreview = (next: DragPreview | null) => {
+    settling.current = true
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        settling.current = false
+      }),
+    )
+    setPreview(next)
   }
 
   const finish = () => {
+    lastOver.current = null
+    settling.current = false
     setActiveKey(null)
     setOverColumn(null)
     setPreview(null)
@@ -281,15 +354,20 @@ export const BoardColumns = ({
     setOverColumn(toColumn ?? null)
     if (card === undefined || over === null || toColumn === undefined) return
     if (toColumn === (preview?.column ?? card.column)) return
+    // A column change needs the card's middle over that column, not just a near corner.
+    const dragged = active.rect.current.translated
+    if (dragged !== null) {
+      const middle = dragged.left + dragged.width / 2
+      if (middle < over.rect.left - 16 || middle > over.rect.left + over.rect.width + 16) return
+    }
     if (toColumn === card.column) {
-      setPreview(null)
+      showPreview(null)
       return
     }
     const others = shownKeys(toColumn).filter((other) => other !== key)
     const overIndex = others.indexOf(String(over.id))
-    const dragged = active.rect.current.translated
     const below = dragged !== null && dragged.top > over.rect.top + over.rect.height / 2
-    setPreview({
+    showPreview({
       key,
       column: toColumn,
       index: overIndex === -1 ? others.length : overIndex + (below ? 1 : 0),
@@ -329,11 +407,23 @@ export const BoardColumns = ({
     const element = scroller.current
     if (element === null) return
     const columns = [...element.children] as Array<HTMLElement>
+    // The last column can never scroll to the left edge, so the end of the scroller selects it.
+    if (element.scrollLeft + element.clientWidth >= element.scrollWidth - 2) {
+      setInView(columns.length - 1)
+      return
+    }
     const left = element.scrollLeft + element.clientWidth / 3
     const index = columns.findLastIndex((column) => column.offsetLeft <= left)
     setInView(Math.max(0, index))
   }
   const tabs = useRef<HTMLDivElement>(null)
+  // The open card stays in view beside the details panel, also while J and K browse.
+  useEffect(() => {
+    if (selectedKey === null) return
+    document
+      .querySelector(`[data-card-key="${CSS.escape(selectedKey)}"]`)
+      ?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" })
+  }, [selectedKey])
   // The tab of the column in view stays in view too.
   useEffect(() => {
     const tab = tabs.current?.children[inView] as HTMLElement | undefined
@@ -390,7 +480,9 @@ export const BoardColumns = ({
         <div
           ref={scroller}
           onScroll={trackColumn}
-          className="scroll-thin flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-4 sm:snap-none sm:px-6"
+          className={`scroll-thin flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-4 sm:snap-none sm:px-6 ${
+            panelOpen ? "sm:scroll-pr-[33rem] sm:pr-[33rem]" : ""
+          }`}
         >
           {board.columns.map((column, index) => {
             const all = columnCards(board.cards, column.key)
@@ -438,6 +530,7 @@ export const BoardColumns = ({
                     selected={selectedKey === card.key}
                     actions={actions}
                     hrefBase={hrefBase}
+                    saving={saving.has(card.key)}
                   />
                 ))}
               </Column>
