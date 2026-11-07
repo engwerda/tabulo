@@ -53,7 +53,7 @@ export const RepoPicker = ({ repos, selected, onChange, open, onOpenChange }: Re
         onOpenChange(next)
         if (!next) setSearch("")
       }}
-      triggerClass={`${selected.length === 0 ? buttonClass.primary : buttonClass.secondary} max-w-60`}
+      triggerClass={`${buttonClass.secondary} max-w-60`}
       accessibleLabel={`Repositories: ${selected.length} of ${repos.length} chosen`}
       label={
         <>
