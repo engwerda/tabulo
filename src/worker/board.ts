@@ -1,13 +1,23 @@
 import { Clock, Context, Effect } from "effect"
-import type { Board, BoardCard, BoardColumn, BoardLabel, Org, OrgRepo } from "../shared/api.ts"
+import type {
+  Board,
+  BoardCard,
+  BoardColumn,
+  BoardLabel,
+  MoveCardRequest,
+  Org,
+  OrgRepo,
+} from "../shared/api.ts"
+import { CardRanks, planRanks } from "./card-ranks.ts"
 import type { BoardSettings } from "./config.ts"
 import {
   BoardRequestInvalid,
   describeForgejoError,
   FORGEJO_READ_ERRORS,
   type ForgejoUnauthorized,
+  RepoWriteForbidden,
 } from "./errors.ts"
-import { type AccessToken, ForgejoClient } from "./forgejo/client.ts"
+import { type AccessToken, ForgejoClient, type RepoRef } from "./forgejo/client.ts"
 import {
   type ForgejoLabel,
   type ForgejoRepo,
@@ -100,7 +110,10 @@ export const boardLayout = (
   }
 }
 
-export const cardKey = (org: string, repo: string, number: number) => `${org}/${repo}#${number}`
+// Forgejo matches owner and repository names without regard to case, so keys and the rank
+// table do too.
+export const cardKey = (org: string, repo: string, number: number) =>
+  `${org}/${repo}#${number}`.toLowerCase()
 
 export const canWrite = (repo: ForgejoRepo) =>
   repo.permissions !== undefined && (repo.permissions.push || repo.permissions.admin)
@@ -136,7 +149,7 @@ const NAME = /^[A-Za-z0-9_.-]+$/
 /** An organization or repository name that is safe to put in a Forgejo API path. */
 export const parseName = (what: string, value: string | undefined) =>
   value !== undefined && NAME.test(value) && value !== "." && value !== ".."
-    ? Effect.succeed(value)
+    ? Effect.succeed(value.toLowerCase())
     : Effect.fail(new BoardRequestInvalid({ message: `${what} is not a valid name` }))
 
 export const parseBoardQuery = (org: string | undefined, repos: string | undefined) =>
@@ -234,13 +247,110 @@ export const loadBoard = (
     const results = yield* Effect.forEach(query.repos, repoCards, {
       concurrency: REPO_CONCURRENCY,
     })
+    const ranks = yield* CardRanks.use((store) => store.forOrg(query.org))
+    const rankOf = (card: BoardCard) => {
+      const stored = ranks.get(card.key)
+      return stored?.column === card.column ? stored.rank : null
+    }
     return {
       org: query.org,
       repos: query.repos,
       columns: layout.columns,
-      cards: results.flatMap((result) => (result._tag === "Loaded" ? result.cards : [])),
+      cards: results.flatMap((result) =>
+        result._tag === "Loaded"
+          ? result.cards.map((card) => ({ ...card, rank: rankOf(card) }))
+          : [],
+      ),
       failedRepos: results.flatMap((result) =>
         result._tag === "Failed" ? [{ repo: result.repo, message: result.message }] : [],
       ),
     } satisfies Board
+  })
+
+/** Changes the issue in Forgejo so that it belongs in `target`, and returns it as changed. */
+const putInColumn = (
+  token: AccessToken,
+  layout: BoardLayout,
+  repo: RepoRef,
+  issue: ForgejoRepoIssue,
+  target: BoardColumn,
+) =>
+  Effect.gen(function* () {
+    const forgejo = yield* ForgejoClient
+    if (target._tag === "Done")
+      return yield* forgejo.setIssueState(token, repo, issue.number, "closed")
+    const open =
+      issue.state === "closed"
+        ? yield* forgejo.setIssueState(token, repo, issue.number, "open")
+        : issue
+    const kept = open.labels
+      .filter((label) => !layout.isStatusLabel(label))
+      .map((label) => label.id)
+    const labels = yield* forgejo.replaceIssueLabels(
+      token,
+      repo,
+      issue.number,
+      target._tag === "Status" ? [...kept, target.label.id] : kept,
+    )
+    return { ...open, labels }
+  })
+
+/**
+ * Moves a card as the user who owns `token`: changes the issue's state and status label in
+ * Forgejo when the column changes, then stores the column's order. Nothing is written unless
+ * the user can push to the repository, and the order is not stored if a Forgejo write fails.
+ */
+export const moveCard = (token: AccessToken, login: string, request: MoveCardRequest) =>
+  Effect.gen(function* () {
+    const org = yield* parseName("org", request.org)
+    const repoRef = { owner: org, name: yield* parseName("repository", request.repo) }
+    const movedKey = cardKey(org, repoRef.name, request.number)
+    const { orderedKeys } = request
+    if (
+      !orderedKeys.includes(movedKey) ||
+      new Set(orderedKeys).size !== orderedKeys.length ||
+      !orderedKeys.every((key) => key.startsWith(`${org}/`))
+    ) {
+      return yield* new BoardRequestInvalid({
+        message: "orderedKeys must list the moved card and each card of the column once",
+      })
+    }
+
+    const settings = yield* BoardConfig
+    const forgejo = yield* ForgejoClient
+    const [repo, issue, orgLabels] = yield* Effect.all(
+      [
+        forgejo.repo(token, repoRef),
+        forgejo.issue(token, repoRef, request.number),
+        forgejo.orgLabels(token, org),
+      ],
+      { concurrency: "unbounded" },
+    )
+    if (issue.pull_request != null) {
+      return yield* new BoardRequestInvalid({ message: "Pull requests are not on the board" })
+    }
+    if (!canWrite(repo)) return yield* new RepoWriteForbidden({ repo: repo.full_name })
+    const layout = boardLayout(settings, orgLabels)
+    const target = layout.column(request.toColumn)
+    if (target === undefined) {
+      return yield* new BoardRequestInvalid({ message: `There is no column ${request.toColumn}` })
+    }
+
+    const moved =
+      layout.columnOf(issue) === target.key
+        ? issue
+        : yield* putInColumn(token, layout, repoRef, issue, target)
+
+    const ranks = yield* CardRanks
+    const stored = yield* ranks.forOrg(org)
+    const ranked = new Map(
+      orderedKeys.flatMap((key) => {
+        const row = stored.get(key)
+        return row?.column === target.key ? [[key, row.rank] as const] : []
+      }),
+    )
+    const updates = planRanks(orderedKeys, movedKey, ranked)
+    yield* ranks.write(org, target.key, updates, login)
+    const rank = updates.find((update) => update.key === movedKey)?.rank ?? null
+    return toBoardCard(layout, org, repo, moved, rank)
   })
