@@ -216,7 +216,7 @@ const SignedIn = ({ user }: { user: User }) => {
     <div className="flex min-h-dvh flex-col">
       <a
         href="#content"
-        className="fixed top-2 left-2 z-50 -translate-y-16 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-pop transition focus:translate-y-0"
+        className="sr-only rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-pop focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50"
       >
         Skip to content
       </a>

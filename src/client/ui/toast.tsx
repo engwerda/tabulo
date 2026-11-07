@@ -12,7 +12,8 @@ export type ToastInput = {
 
 type Toast = ToastInput & { readonly id: number }
 
-const ToastContext = createContext<(toast: ToastInput) => void>(() => {})
+/** Shows a toast and returns a function that dismisses it early. */
+const ToastContext = createContext<(toast: ToastInput) => () => void>(() => () => {})
 
 export const useToast = () => useContext(ToastContext)
 
@@ -61,8 +62,9 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
       const id = nextId.current
       setToasts((current) => [...current.slice(-1), { ...input, id }])
       schedule(id, input.tone)
+      return () => dismiss(id)
     },
-    [schedule],
+    [schedule, dismiss],
   )
 
   return (

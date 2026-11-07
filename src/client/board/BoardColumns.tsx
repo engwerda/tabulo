@@ -9,9 +9,7 @@ import {
   type KeyboardCoordinateGetter,
   KeyboardSensor,
   MouseSensor,
-  pointerWithin,
   TouchSensor,
-  type UniqueIdentifier,
   useDroppable,
   useSensor,
   useSensors,
@@ -150,7 +148,7 @@ const Column = ({
         className={`flex w-11 shrink-0 flex-col items-center gap-3 rounded-2xl border py-3 transition-colors ${
           highlighted
             ? "border-indigo-300 bg-indigo-50 dark:border-indigo-500/50 dark:bg-indigo-500/10"
-            : "border-transparent bg-zinc-100/80 hover:bg-zinc-200/60 dark:bg-zinc-900/60 dark:hover:bg-zinc-900"
+            : "border-transparent bg-zinc-100/80 hover:bg-zinc-200/60 dark:bg-zinc-900/80 dark:hover:bg-zinc-900"
         }`}
       >
         <button
@@ -181,7 +179,7 @@ const Column = ({
       className={`flex h-full min-w-[14.5rem] max-w-[24rem] shrink grow basis-[16.5rem] snap-start flex-col rounded-2xl border transition-colors max-sm:basis-[85vw] ${
         highlighted
           ? "border-indigo-300 bg-indigo-50/70 dark:border-indigo-500/50 dark:bg-indigo-500/[0.07]"
-          : "border-transparent bg-zinc-100/80 dark:bg-zinc-900/50"
+          : "border-transparent bg-zinc-100/80 dark:bg-zinc-900/80"
       }`}
     >
       <header className="flex h-11 shrink-0 items-center gap-2 pr-1.5 pl-3.5">
@@ -302,45 +300,33 @@ export const BoardColumns = ({
 
   // A collapsed column is a narrow strip that corner distances never favour, so the pointer
   // decides when it is over one; everything else goes by the closest corners.
-  // When the preview moves the card into another column, the layout shifts under the pointer,
-  // and a fresh collision could point back at the old column, which moves it back, and so on.
-  // Collisions hold still for the frames in which the new layout settles.
-  const lastOver = useRef<UniqueIdentifier | null>(null)
-  const settling = useRef(false)
+  /**
+   * Column first, then place: the column is the one under the pointer (the card's middle for a
+   * keyboard drag), and only that column's cards and list compete for the drop. Corner distances
+   * across the whole board would let a card in the next column beat a tall, empty list.
+   */
   const collision: CollisionDetection = (args) => {
-    if (settling.current && lastOver.current !== null) return [{ id: lastOver.current }]
-    const strips = args.droppableContainers.filter((container) => {
-      const id = String(container.id)
-      return id.startsWith(COLUMN_PREFIX) && collapsed.has(id.slice(COLUMN_PREFIX.length))
+    const point = args.pointerCoordinates ?? {
+      x: args.collisionRect.left + args.collisionRect.width / 2,
+      y: args.collisionRect.top + args.collisionRect.height / 2,
+    }
+    const columnUnder = args.droppableContainers.find((container) => {
+      if (!String(container.id).startsWith(COLUMN_PREFIX)) return false
+      const rect = args.droppableRects.get(container.id)
+      // A list is inset from its column by the column's padding and the gap between columns.
+      return rect !== undefined && point.x >= rect.left - 14 && point.x <= rect.right + 14
     })
-    // A keyboard drag has no pointer, so the middle of the card stands in for it.
-    const onStrip =
-      args.pointerCoordinates === null
-        ? strips.flatMap((strip) => {
-            const rect = args.droppableRects.get(strip.id)
-            const middle = args.collisionRect.left + args.collisionRect.width / 2
-            return rect !== undefined && middle >= rect.left && middle <= rect.right
-              ? [{ id: strip.id }]
-              : []
-          })
-        : pointerWithin({ ...args, droppableContainers: strips })
-    const found = onStrip.length > 0 ? onStrip : closestCorners(args)
-    lastOver.current = found[0]?.id ?? lastOver.current
-    return found
-  }
-  const showPreview = (next: DragPreview | null) => {
-    settling.current = true
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        settling.current = false
-      }),
+    if (columnUnder === undefined) return closestCorners(args)
+    const column = String(columnUnder.id).slice(COLUMN_PREFIX.length)
+    if (collapsed.has(column)) return [{ id: columnUnder.id }]
+    const inColumn = args.droppableContainers.filter(
+      (container) => container.id === columnUnder.id || targetColumn(container.id) === column,
     )
-    setPreview(next)
+    const found = closestCorners({ ...args, droppableContainers: inColumn })
+    return found.length > 0 ? found : [{ id: columnUnder.id }]
   }
 
   const finish = () => {
-    lastOver.current = null
-    settling.current = false
     setActiveKey(null)
     setOverColumn(null)
     setPreview(null)
@@ -354,20 +340,15 @@ export const BoardColumns = ({
     setOverColumn(toColumn ?? null)
     if (card === undefined || over === null || toColumn === undefined) return
     if (toColumn === (preview?.column ?? card.column)) return
-    // A column change needs the card's middle over that column, not just a near corner.
-    const dragged = active.rect.current.translated
-    if (dragged !== null) {
-      const middle = dragged.left + dragged.width / 2
-      if (middle < over.rect.left - 16 || middle > over.rect.left + over.rect.width + 16) return
-    }
     if (toColumn === card.column) {
-      showPreview(null)
+      setPreview(null)
       return
     }
     const others = shownKeys(toColumn).filter((other) => other !== key)
     const overIndex = others.indexOf(String(over.id))
+    const dragged = active.rect.current.translated
     const below = dragged !== null && dragged.top > over.rect.top + over.rect.height / 2
-    showPreview({
+    setPreview({
       key,
       column: toColumn,
       index: overIndex === -1 ? others.length : overIndex + (below ? 1 : 0),
@@ -397,6 +378,20 @@ export const BoardColumns = ({
       }
     }
     onMove({ key, toColumn, ...neighbours })
+    requestAnimationFrame(() => {
+      if (collapsed.has(toColumn)) {
+        // The card is hidden in the collapsed column, so the keyboard lands on its rail.
+        const title = columnTitle(toColumn)
+        document
+          .querySelector<HTMLElement>(`button[aria-label="Expand ${CSS.escape(title)}"]`)
+          ?.focus()
+      } else {
+        // A card dropped into a long column stays in sight.
+        document
+          .querySelector(`[data-card-key="${CSS.escape(key)}"]`)
+          ?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" })
+      }
+    })
   }
 
   const active = activeKey === null ? undefined : cardsByKey.get(activeKey)
@@ -435,7 +430,7 @@ export const BoardColumns = ({
       collisionDetection={collision}
       accessibility={{ announcements, screenReaderInstructions }}
       // Near an edge the board scrolls gently, so a held card does not race past columns.
-      autoScroll={{ acceleration: 4, threshold: { x: 0.12, y: 0.15 } }}
+      autoScroll={{ acceleration: 2, interval: 16, threshold: { x: 0.1, y: 0.15 } }}
       onDragStart={({ active }) => {
         setActiveKey(String(active.id))
         onDragChange(true)
@@ -464,7 +459,7 @@ export const BoardColumns = ({
                   block: "nearest",
                 })
               }
-              className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+              className={`flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition ${
                 inView === index
                   ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
                   : "border-zinc-200 bg-white text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
@@ -481,7 +476,7 @@ export const BoardColumns = ({
           ref={scroller}
           onScroll={trackColumn}
           className={`scroll-thin flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-4 sm:snap-none sm:px-6 ${
-            panelOpen ? "sm:scroll-pr-[33rem] sm:pr-[33rem]" : ""
+            panelOpen ? "lg:scroll-pr-[33rem] lg:pr-[33rem]" : ""
           }`}
         >
           {board.columns.map((column, index) => {

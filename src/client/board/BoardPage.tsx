@@ -13,6 +13,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react"
 import { Link, useSearchParams } from "wouter"
 import type { Board, BoardCard, CardUpdateResult, MoveCardRequest } from "../../shared/api.ts"
@@ -20,6 +21,7 @@ import {
   createCard,
   fetchBoard,
   fetchOrgRepos,
+  fetchOrgs,
   moveCard,
   RequestFailed,
   setAssignee,
@@ -55,7 +57,7 @@ import {
 } from "./board-view.ts"
 import { CardComposer } from "./CardComposer.tsx"
 import { CardPanel } from "./CardPanel.tsx"
-import { OrgSwitcher } from "./OrgPicker.tsx"
+import { ORGS, OrgSwitcher } from "./OrgPicker.tsx"
 import { RepoPicker } from "./RepoPicker.tsx"
 import { ShortcutsDialog } from "./ShortcutsDialog.tsx"
 
@@ -111,6 +113,18 @@ const readCollapsed = (org: string): ReadonlySet<string> => {
 /** `repo#number`, the card parameter's value. */
 const cardRef = (card: BoardCard) => `${card.repo}#${card.number}`
 
+const subscribeOnline = (changed: () => void) => {
+  window.addEventListener("online", changed)
+  window.addEventListener("offline", changed)
+  return () => {
+    window.removeEventListener("online", changed)
+    window.removeEventListener("offline", changed)
+  }
+}
+
+/** Whether the browser has a network connection; writes wait while it has none. */
+const useOnline = () => useSyncExternalStore(subscribeOnline, () => navigator.onLine)
+
 /** Re-renders every half minute so "updated 2 minutes ago" stays true. */
 const useNow = () => {
   const [now, setNow] = useState(Date.now)
@@ -165,7 +179,7 @@ const BoardSkeleton = () => (
       <div
         // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have no identity
         key={column}
-        className="flex min-w-[14.5rem] flex-1 flex-col gap-2 rounded-2xl bg-zinc-100/80 p-2 dark:bg-zinc-900/50"
+        className="flex min-w-[14.5rem] flex-1 flex-col gap-2 rounded-2xl bg-zinc-100/80 p-2 dark:bg-zinc-900/80"
       >
         <div className="mx-1.5 my-2.5 h-4 w-24 animate-shimmer rounded bg-zinc-200 dark:bg-zinc-800" />
         {Array.from({ length: count }, (_, card) => (
@@ -258,14 +272,18 @@ const ReposFailed = ({
         : "These repositories did not load"
     }
     detail={
-      <ul className="space-y-0.5">
-        {failures.map((failure) => (
-          <li key={failure.repo}>
-            <span className="font-medium text-zinc-800 dark:text-zinc-200">{failure.repo}</span>:{" "}
-            {failure.message}
-          </li>
-        ))}
-      </ul>
+      failures.length === 1 ? (
+        `${failures[0]?.message}.`
+      ) : (
+        <ul className="space-y-0.5">
+          {failures.map((failure) => (
+            <li key={failure.repo}>
+              <span className="font-medium text-zinc-800 dark:text-zinc-200">{failure.repo}</span>:{" "}
+              {failure.message}
+            </li>
+          ))}
+        </ul>
+      )
     }
     actions={
       <>
@@ -321,6 +339,7 @@ export const BoardPage = ({ org }: { org: string }) => {
   const searchInput = useRef<HTMLInputElement>(null)
 
   const repos = useQuery({ queryKey: ["org-repos", org], queryFn: () => fetchOrgRepos(org) })
+  const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
 
   const selection = selected.join(",")
   const hasSelection = selection !== ""
@@ -338,9 +357,9 @@ export const BoardPage = ({ org }: { org: string }) => {
     const remembered = storage.read(reposKey(org))
     const active = (repos.data ?? []).filter((repo) => !repo.archived).map((repo) => repo.name)
     const fallback = active.length > 0 && active.length <= MAX_BOARD_REPOS ? active.join(",") : null
-    if (!remembered && repos.data === undefined) return
+    if (remembered === null && repos.data === undefined) return
     restoredFor.current = org
-    const choice = remembered || fallback
+    const choice = remembered ?? fallback
     if (choice) {
       setParams(
         (current) => {
@@ -382,6 +401,20 @@ export const BoardPage = ({ org }: { org: string }) => {
 
   // The last write to finish reads the board again; an earlier one would read it while a later
   // write is still on its way and show that card back in its old place for a moment.
+  // Writes wait while the browser is offline; one notice says so and goes away once it is back.
+  const online = useOnline()
+  const dismissOffline = useRef<(() => void) | null>(null)
+  const offlineNotice = (detail: string) => {
+    dismissOffline.current?.()
+    dismissOffline.current = toast({ tone: "info", title: "You are offline", detail })
+  }
+  useEffect(() => {
+    if (online) {
+      dismissOffline.current?.()
+      dismissOffline.current = null
+    }
+  }, [online])
+
   // Cards whose move Forgejo has not confirmed yet, for example while offline.
   const saving = new Set(
     useMutationState({
@@ -464,11 +497,7 @@ export const BoardPage = ({ org }: { org: string }) => {
     const card = current?.cards.find((candidate) => candidate.key === cardMove.key)
     if (current === undefined || card === undefined) return
     if (!navigator.onLine) {
-      toast({
-        tone: "info",
-        title: "You are offline",
-        detail: `${card.repo}#${card.number} moves on the board now and in Forgejo once you are back online.`,
-      })
+      offlineNotice(`${card.repo}#${card.number} moves in Forgejo once you are back online.`)
     }
     const column = columnCards(current.cards, card.column)
     const index = column.findIndex((candidate) => candidate.key === card.key)
@@ -583,7 +612,8 @@ export const BoardPage = ({ org }: { org: string }) => {
   }
 
   const chooseRepos = (repoNames: ReadonlyArray<string>) => {
-    if (repoNames.length === 0) storage.write(reposKey(org), null)
+    // An empty choice is remembered too, so the next visit does not pick repositories again.
+    if (repoNames.length === 0) storage.write(reposKey(org), "")
     setParams(
       (current) => {
         const next = new URLSearchParams(current)
@@ -780,6 +810,13 @@ export const BoardPage = ({ org }: { org: string }) => {
   })()
 
   const orgMissing = repos.error instanceof RequestFailed && repos.error.status === 404
+  const allFailed =
+    data !== undefined &&
+    data.failedRepos.length > 0 &&
+    data.failedRepos.length === data.repos.length
+  const orgTitle =
+    orgs.data?.find((candidate) => candidate.name.toLowerCase() === org.toLowerCase())?.fullName ||
+    org
   const removeFailed = () => {
     const failed = new Set(failures.map((failure) => failure.repo.toLowerCase()))
     chooseRepos(selected.filter((repo) => !failed.has(repo.toLowerCase())))
@@ -807,7 +844,7 @@ export const BoardPage = ({ org }: { org: string }) => {
   return (
     <RepoPaletteProvider repos={data?.repos ?? selected}>
       <main className="flex h-[calc(100dvh-3.5rem-1px)] min-h-0 flex-col">
-        <h1 className="sr-only">Board for {org}</h1>
+        <h1 className="sr-only">Board for {orgTitle}</h1>
         <div className="flex items-center gap-3 px-4 pt-4 pb-3 sm:px-6">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <OrgSwitcher org={org} />
@@ -827,15 +864,22 @@ export const BoardPage = ({ org }: { org: string }) => {
             )}
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            {data !== undefined && (
-              <span
-                className="mr-1 hidden text-xs text-zinc-500 lg:inline dark:text-zinc-400"
-                title={new Date(board.dataUpdatedAt).toLocaleString()}
-              >
-                {board.isFetching
-                  ? "Refreshing…"
-                  : `Updated ${relativeTime(new Date(board.dataUpdatedAt).toISOString(), now)}`}
+            {!online ? (
+              <span className="mr-1 inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-500/15 dark:text-amber-200">
+                <span aria-hidden="true" className="size-1.5 rounded-full bg-amber-500" />
+                Offline
               </span>
+            ) : (
+              data !== undefined && (
+                <span
+                  className="mr-1 hidden text-xs text-zinc-500 lg:inline dark:text-zinc-400"
+                  title={new Date(board.dataUpdatedAt).toLocaleString()}
+                >
+                  {board.isFetching
+                    ? "Refreshing…"
+                    : `Updated ${relativeTime(new Date(board.dataUpdatedAt).toISOString(), now)}`}
+                </span>
+              )
             )}
             {hasSelection && (
               <button
@@ -875,7 +919,7 @@ export const BoardPage = ({ org }: { org: string }) => {
           </p>
         </div>
 
-        {data !== undefined && (
+        {data !== undefined && !allFailed && (
           <BoardFiltersBar
             cards={data.cards}
             filters={filters}
@@ -948,7 +992,7 @@ export const BoardPage = ({ org }: { org: string }) => {
               <BoardSkeleton />
             </div>
           )
-        ) : data.failedRepos.length > 0 && data.failedRepos.length === data.repos.length ? (
+        ) : allFailed ? (
           <ReposFailed
             failures={data.failedRepos}
             onRemove={removeFailed}
@@ -995,6 +1039,11 @@ export const BoardPage = ({ org }: { org: string }) => {
                       )
                     }}
                     onCreate={async (repo, title) => {
+                      if (!navigator.onLine) {
+                        offlineNotice(
+                          "The new issue is created in Forgejo once you are back online.",
+                        )
+                      }
                       await create.mutateAsync({ org: data.org, repo, title, column: composing })
                     }}
                   />

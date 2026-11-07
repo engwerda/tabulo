@@ -287,7 +287,16 @@ export const CardPanel = ({
   })
   const comment = useMutation({
     mutationFn: (body: string) => addComment({ org, repo: card.repo, number: card.number, body }),
-    onMutate: holdReads,
+    onMutate: () => {
+      if (!navigator.onLine) {
+        toast({
+          tone: "info",
+          title: "You are offline",
+          detail: "The comment is sent once you are back online.",
+        })
+      }
+      return holdReads()
+    },
     onSuccess: ({ comment: added }) => {
       queryClient.setQueryData<CardDetail>(detailKey, (current) =>
         current === undefined
@@ -374,6 +383,12 @@ export const CardPanel = ({
           <span className="flex min-w-0 items-center gap-2 pl-1 text-sm text-zinc-500 dark:text-zinc-400">
             <RepoTag repo={card.repo} />
             <span className="font-medium tabular-nums">#{card.number}</span>
+            {closed && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-300">
+                <IssueClosedIcon className="size-3.5" />
+                Closed
+              </span>
+            )}
           </span>
           <span className="ml-auto flex items-center">
             <span className="mr-1 hidden text-xs text-zinc-400 tabular-nums sm:inline">
@@ -434,12 +449,6 @@ export const CardPanel = ({
         </div>
         <div ref={scroller} className="scroll-thin min-h-0 flex-1 overflow-y-auto">
           <div className="px-6 pt-5 pb-8">
-            {closed && (
-              <span className="mb-3 inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-300">
-                <IssueClosedIcon className="size-3.5" />
-                Closed
-              </span>
-            )}
             <h2
               ref={heading}
               tabIndex={-1}

@@ -13,15 +13,16 @@ import type { BoardCard, BoardColumn } from "../../shared/api.ts"
 import { AvatarStack } from "../Avatar.tsx"
 import { absoluteTime, shortAge } from "../format.ts"
 import {
+  ArchiveIcon,
   CheckIcon,
   CommentIcon,
   ExternalIcon,
   GripIcon,
   IssueClosedIcon,
   LinkIcon,
-  LockIcon,
   MilestoneIcon,
   PanelIcon,
+  RefreshIcon,
   UserMinusIcon,
   UserPlusIcon,
 } from "../ui/icons.tsx"
@@ -85,7 +86,7 @@ const CardMenu = ({
     onOpenChange={onOpenChange}
     returnFocus={returnFocus}
     accessibleLabel={`Actions for ${card.repo}#${card.number}`}
-    triggerClass={`${buttonClass.iconSmall} relative z-10`}
+    triggerClass={`${buttonClass.iconSmall} relative z-10 [@media(pointer:coarse)]:size-9`}
     triggerTabIndex={-1}
     panelClass="w-56 p-1"
     label={
@@ -310,7 +311,7 @@ const CardFace = ({ card }: { card: BoardCard }) => {
 }
 
 const cardBase =
-  "group/card relative rounded-xl border bg-white p-3 select-none [-webkit-touch-callout:none] dark:bg-zinc-900"
+  "group/card relative rounded-xl border bg-white p-3 select-none [-webkit-touch-callout:none] dark:bg-zinc-800/60"
 
 type SortableCardProps = {
   readonly card: BoardCard
@@ -424,9 +425,10 @@ const CardContents = memo(function CardContents({
         {saving && (
           <span
             title="Saving to Forgejo"
-            className="size-1.5 shrink-0 animate-pulse rounded-full bg-indigo-500"
+            className="flex shrink-0 items-center gap-1 text-[0.6875rem] text-zinc-400"
           >
-            <span className="sr-only">Saving</span>
+            <RefreshIcon className="size-3 animate-spin" />
+            Saving
           </span>
         )}
         {card.readOnlyReason === "archived" && (
@@ -434,7 +436,7 @@ const CardContents = memo(function CardContents({
             title={`${card.repo} is archived, so this card cannot be moved.`}
             className="shrink-0 text-zinc-400"
           >
-            <LockIcon className="size-3" />
+            <ArchiveIcon className="size-3.5" />
             <span className="sr-only">Archived</span>
           </span>
         )}
