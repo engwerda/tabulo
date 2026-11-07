@@ -8,6 +8,7 @@ import {
   createFakeForgejo,
   type FakeIssue,
   type FakeLabel,
+  type FakeMilestone,
   type FakeRepo,
   type FakeUser,
   FORGEJO_URL,
@@ -79,10 +80,14 @@ const L = {
   security: label("Area/Security", "7c3aed"),
 }
 
-const milestones = ["v1.4", "v1.5", "Q1 launch"].map((title, index) => ({
+const milestones: Array<FakeMilestone> = ["v1.4", "v1.5", "Q1 launch"].map((title, index) => ({
   id: index + 1,
   title,
+  description: "",
   state: "open",
+  open_issues: 0,
+  closed_issues: 0,
+  due_on: null,
 }))
 
 type Seed = {
@@ -133,6 +138,7 @@ const repo = (name: string, seeds: ReadonlyArray<Seed>, archived = false): FakeR
   labels: [],
   issues: issuesOf(name, seeds),
   failIssueListing: false,
+  milestones,
 })
 
 const repos = [
