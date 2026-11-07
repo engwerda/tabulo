@@ -4,7 +4,7 @@ import { fetchEpics } from "../api.ts"
 import { ScopeBar } from "../scope/ScopeBar.tsx"
 import { useRepoSelection } from "../scope/use-repo-selection.ts"
 import { EpicCard } from "./EpicCard.tsx"
-import { epicSummary, readEpicFilters, visibleEpics } from "./epics-view.ts"
+import { epicSummary, incompleteNotice, readEpicFilters, visibleEpics } from "./epics-view.ts"
 
 const focus =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
@@ -65,6 +65,9 @@ export const EpicsPage = ({ org }: { org: string }) => {
   const all = epics.data?.epics ?? []
   const shown = visibleEpics(all, params)
   const summary = epicSummary(all)
+  const notice = epics.data === undefined ? "" : incompleteNotice(epics.data.incomplete)
+  const noneLoaded = epics.data?.failedRepos.length === repoSelection.selected.length
+  const partlyRead = (epics.data?.incomplete.listings.length ?? 0) > 0
   const assignees = [
     ...new Set([
       filters.assignee,
@@ -187,6 +190,14 @@ export const EpicsPage = ({ org }: { org: string }) => {
             </button>
           </div>
         )}
+        {hasSelection && notice !== "" && (
+          <div
+            role="status"
+            className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100"
+          >
+            {notice}
+          </div>
+        )}
         {!hasSelection ? (
           <section className="rounded-xl border border-dashed border-zinc-300 px-6 py-14 text-center dark:border-zinc-700">
             <h3 className="font-semibold">Choose where to look</h3>
@@ -262,9 +273,11 @@ export const EpicsPage = ({ org }: { org: string }) => {
                 <h3 className="font-semibold">
                   {filtered
                     ? "No epics match your filters"
-                    : epics.data.failedRepos.length === repoSelection.selected.length
+                    : noneLoaded
                       ? "No epics could be loaded"
-                      : "No epics yet"}
+                      : partlyRead
+                        ? "No epics in what Tabulo read"
+                        : "No epics yet"}
                 </h3>
                 {filtered ? (
                   <button
@@ -275,7 +288,8 @@ export const EpicsPage = ({ org }: { org: string }) => {
                     Clear filters
                   </button>
                 ) : (
-                  epics.data.failedRepos.length !== repoSelection.selected.length && (
+                  !noneLoaded &&
+                  !partlyRead && (
                     <div className="mx-auto max-w-md text-sm text-zinc-500 dark:text-zinc-400">
                       <p className="mt-2">
                         Add the epic label to a Forgejo issue, then reference its children in the

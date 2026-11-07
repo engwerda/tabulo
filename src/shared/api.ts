@@ -376,12 +376,25 @@ export const Epic = Schema.Struct({
 })
 export type Epic = typeof Epic.Type
 
+/** An issue listing of a repository that the Epics page budget cut short. */
+export const IncompleteEpicListing = Schema.Struct({
+  repo: Schema.String,
+  listing: Schema.Literals(["open", "closed"]),
+})
+export type IncompleteEpicListing = typeof IncompleteEpicListing.Type
+
 export const Epics = Schema.Struct({
   org: Schema.String,
   repos: Schema.Array(Schema.String),
   columns: Schema.Array(BoardColumn),
   epics: Schema.Array(Epic),
   failedRepos: Schema.Array(Schema.Struct({ repo: Schema.String, message: Schema.String })),
+  incomplete: Schema.Struct({
+    /** Epics in the unread part of these listings are missing. */
+    listings: Schema.Array(IncompleteEpicListing),
+    /** Child references Tabulo did not look up; they show as unavailable. */
+    children: Schema.Number,
+  }),
 })
 export type Epics = typeof Epics.Type
 /** Issues and pull requests matching a search, open ones first. */

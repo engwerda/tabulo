@@ -152,6 +152,7 @@ describe("GET /api/epics", () => {
     ])
     expect(data.epics.find(({ number }) => number === 12)?.progress.total).toBe(0)
     expect(data.failedRepos).toEqual([{ repo: "broken", message: "Forgejo returned HTTP 500" }])
+    expect(data.incomplete).toEqual({ listings: [], children: 0 })
     expect(forgejo.requests.filter(({ path }) => path.endsWith("/issues/2"))).toHaveLength(0)
     expect(forgejo.requests.filter(({ path }) => path.endsWith("/issues/3"))).toHaveLength(1)
     expect(
@@ -283,9 +284,69 @@ describe("GET /api/epics", () => {
       _tag: "Unavailable",
       ref: "acme/external#400",
     })
+    expect(data.incomplete).toEqual({ listings: [], children: 200 })
     expect(forgejo.requests.filter(({ path }) => path.includes("/external/issues/"))).toHaveLength(
       200,
     )
+  })
+
+  it("reads a repository past 100 pages", async () => {
+    const issues = Array.from({ length: 300 }, (_, i) =>
+      boardIssue("api", i + 1, i === 250 ? { labels: [epicLabel] } : {}),
+    )
+    const forgejo = createFakeForgejo({
+      orgs: [acme([boardRepo("api", { issues })])],
+      maxPageSize: 2,
+    })
+    const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
+    const cookie = await signIn(call, forgejo)
+    const response = await call("/api/epics?org=acme&repos=api", { headers: { cookie } })
+    const data = Schema.decodeUnknownSync(Epics)(await response.json())
+    expect(data.epics.map(({ number }) => number)).toEqual([251])
+    expect(data.incomplete).toEqual({ listings: [], children: 0 })
+  })
+
+  it("stays within the Worker's subrequest limit and says what it did not read", async () => {
+    const closed = {
+      state: "closed",
+      closed_at: "2026-11-01T00:00:00Z",
+      updated_at: "2026-11-01T00:00:00Z",
+    } as const
+    const names = Array.from({ length: 20 }, (_, i) => `r${i}`)
+    const repos = names.map((name) =>
+      boardRepo(name, {
+        issues: Array.from({ length: 120 }, (_, i) =>
+          boardIssue(name, i + 1, i < 60 ? {} : closed),
+        ),
+      }),
+    )
+    const epic = repos[0]?.issues[0]
+    if (epic !== undefined) {
+      epic.labels = [epicLabel]
+      epic.body = Array.from({ length: 200 }, (_, i) => `- [ ] external#${i + 1}`).join("\n")
+    }
+    const forgejo = createFakeForgejo({ orgs: [acme(repos)], maxPageSize: 2 })
+    const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
+    const cookie = await signIn(call, forgejo)
+    const before = forgejo.requests.length
+
+    const response = await call(`/api/epics?org=acme&repos=${names.join(",")}`, {
+      headers: { cookie },
+    })
+
+    expect(response.status).toBe(200)
+    const data = Schema.decodeUnknownSync(Epics)(await response.json())
+    const reads = forgejo.requests.slice(before)
+    expect(reads.length).toBeLessThan(1000)
+    // Labels, listings, and child lookups share 800 pages; each repository also reads itself.
+    expect(reads.filter(({ path }) => /\/labels$|\/issues(\/\d+)?$/.test(path))).toHaveLength(800)
+    // Each repository needs 60 listing pages, more than its share of 800.
+    expect(data.incomplete.listings).toHaveLength(40)
+    expect(data.incomplete.listings).toContainEqual({ repo: "r0", listing: "closed" })
+    expect(data.incomplete.children).toBe(200)
+    expect(data.epics.map(({ key }) => key)).toEqual(["acme/r0#1"])
+    expect(data.epics[0]?.children).toHaveLength(200)
+    expect(data.epics[0]?.children.every(({ _tag }) => _tag === "Unavailable")).toBe(true)
   })
 
   it("bounds concurrent child reads to four", async () => {

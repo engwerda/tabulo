@@ -1,8 +1,15 @@
 import { Clock, Context, Effect } from "effect"
-import type { Epic, EpicChild, Epics } from "../shared/api.ts"
+import type { Epic, EpicChild, Epics, IncompleteEpicListing } from "../shared/api.ts"
 import { BoardConfig, boardLayout, cardKey, toBoardCard } from "./board.ts"
 import { describeForgejoError, FORGEJO_READ_ERRORS } from "./errors.ts"
-import { type AccessToken, ForgejoClient, type RepoRef } from "./forgejo/client.ts"
+import {
+  type AccessToken,
+  ForgejoClient,
+  PAGE_BUDGET,
+  type PageBudget,
+  type RepoRef,
+  sharePages,
+} from "./forgejo/client.ts"
 import type { ForgejoEpicIssue, ForgejoRepo, ForgejoRepoIssue } from "./forgejo/schemas.ts"
 
 export type EpicReference = RepoRef & { readonly number: number; readonly ref: string }
@@ -122,6 +129,7 @@ type RepoEpics =
       readonly _tag: "Loaded"
       readonly repo: ForgejoRepo
       readonly issues: ReadonlyArray<ForgejoEpicIssue>
+      readonly incomplete: ReadonlyArray<IncompleteEpicListing["listing"]>
     }
   | { readonly _tag: "Failed"; readonly repo: string; readonly message: string }
 
@@ -132,26 +140,35 @@ export const loadEpics = Effect.fn("loadEpics")(function* (
   const settings = yield* BoardConfig
   const config = yield* EpicsConfig
   const forgejo = yield* ForgejoClient
-  const layout = boardLayout(settings, yield* forgejo.orgLabels(token, query.org))
+  // Labels, listings, and child lookups take their pages from one pool, in that order.
+  const pool: PageBudget = { remaining: PAGE_BUDGET }
+  const layout = boardLayout(settings, yield* forgejo.orgLabels(token, query.org, pool))
   const windowStart = (yield* Clock.currentTimeMillis) - settings.doneDays * 86_400_000
   const updatedSince = new Date(windowStart).toISOString()
+  const share = sharePages(pool, query.repos.length)
   const results = yield* Effect.forEach(
     query.repos,
     (name) => {
       const ref = { owner: query.org, name }
-      return Effect.all(
-        [
-          forgejo.repo(token, ref),
-          forgejo.repoEpicIssues(token, ref, { state: "open" }),
-          forgejo.repoEpicIssues(token, ref, { state: "closed", updatedSince }),
-        ],
-        { concurrency: "unbounded" },
+      return share((budget) =>
+        Effect.all(
+          [
+            forgejo.repo(token, ref),
+            forgejo.repoEpicIssues(token, ref, { state: "open" }, budget),
+            forgejo.repoEpicIssues(token, ref, { state: "closed", updatedSince }, budget),
+          ],
+          { concurrency: "unbounded" },
+        ),
       ).pipe(
         Effect.map(
           ([repo, open, closed]): RepoEpics => ({
             _tag: "Loaded",
             repo,
-            issues: [...open, ...closed],
+            issues: [...open.items, ...closed.items],
+            incomplete: [
+              ...(open.complete ? [] : ["open" as const]),
+              ...(closed.complete ? [] : ["closed" as const]),
+            ],
           }),
         ),
         Effect.catchTag(FORGEJO_READ_ERRORS, (error) =>
@@ -213,9 +230,11 @@ export const loadEpics = Effect.fn("loadEpics")(function* (
       avatarUrl: avatar_url,
     })),
   })
+  const lookups = [...missing.values()].slice(0, Math.min(MAX_CHILD_LOOKUPS, pool.remaining))
+  pool.remaining -= lookups.length
   const resolved = new Map(
     yield* Effect.forEach(
-      [...missing.values()].slice(0, MAX_CHILD_LOOKUPS),
+      lookups,
       (ref) =>
         forgejo.issue(token, ref, ref.number).pipe(
           Effect.map((issue) => [ref.ref, toChild(ref, issue)] as const),
@@ -259,5 +278,11 @@ export const loadEpics = Effect.fn("loadEpics")(function* (
     failedRepos: results.flatMap((result) =>
       result._tag === "Failed" ? [{ repo: result.repo, message: result.message }] : [],
     ),
+    incomplete: {
+      listings: loaded.flatMap(({ repo, incomplete }) =>
+        incomplete.map((listing) => ({ repo: repo.name, listing })),
+      ),
+      children: missing.size - lookups.length,
+    },
   } satisfies Epics
 })

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   completion,
   epicSummary,
+  incompleteNotice,
   readEpicFilters,
   visibleEpics,
 } from "../src/client/epics/epics-view.ts"
@@ -58,6 +59,26 @@ describe("epics view", () => {
   it("summarizes children rather than averaging epic percentages, and counts open epics with children but none done as at risk", () => {
     expect(epicSummary(items)).toEqual({ total: 20, done: 6, percent: 30, atRisk: 1 })
     expect(epicSummary([])).toEqual({ total: 0, done: 0, percent: 0, atRisk: 0 })
+  })
+  it("says which listings and how many children Tabulo did not read", () => {
+    expect(incompleteNotice({ listings: [], children: 0 })).toBe("")
+    expect(
+      incompleteNotice({
+        listings: [
+          { repo: "api", listing: "open" },
+          { repo: "web", listing: "closed" },
+        ],
+        children: 0,
+      }),
+    ).toBe(
+      "Tabulo reached its limit of Forgejo requests and read only part of the open issues of api, recently closed issues of web, so some epics may be missing.",
+    )
+    expect(incompleteNotice({ listings: [], children: 1 })).toBe(
+      "Tabulo reached its limit of Forgejo requests and did not look up 1 child, which shows as unavailable.",
+    )
+    expect(incompleteNotice({ listings: [{ repo: "api", listing: "open" }], children: 3 })).toBe(
+      "Tabulo reached its limit of Forgejo requests and read only part of the open issues of api, so some epics may be missing. It did not look up 3 children, which show as unavailable.",
+    )
   })
   it("handles empty progress without dividing by zero", () => {
     expect(completion({ total: 0, done: 0 })).toBe(0)

@@ -104,7 +104,7 @@ the board.
 | `GET /api/orgs/:org/repos` | The organization's repositories the user can see, with `archived`. |
 | `GET /api/board?org=&repos=a,b` | Columns, cards, `viewerCanArrange`, and `failedRepos`. At most 20 repositories. |
 | `POST /api/board/move` | Moves one card and answers with `{ card, orderSaved }`. |
-| `GET /api/epics?org=&repos=a,b` | Epic cards, children, progress, board columns, and `failedRepos`. At most 20 repositories. |
+| `GET /api/epics?org=&repos=a,b` | Epic cards, children, progress, board columns, `failedRepos`, and `incomplete`. At most 20 repositories. |
 
 `GET /api/board` reads the organization's labels and whether the user is a member, then for each
 repository the repository, its open issues, and the issues closed since the start of the Done
@@ -219,7 +219,9 @@ organization and repository selection. It shows open epics and epics closed with
   number refers to the epic's repository, a repo-only reference to its organization. The pure
   `parseEpicChildren` function in `src/worker/epics.ts` ignores fenced and indented code
   (indentation counts from the enclosing list item) and HTML comments, preserves body order,
-  deduplicates case-insensitively, and caps each epic at 200 children. Forgejo dependencies do
+  deduplicates case-insensitively, and caps each epic at 200 children. As in CommonMark, a
+  fence may open right after a list marker and ends with its list item. An unclosed HTML
+  comment hides the rest of the body, as Forgejo renders it. Forgejo dependencies do
   not create epic links.
 - **Progress.** Checkbox state is ignored. The child's real issue state and labels determine
   its column through `boardLayout`, including repository status labels matching an organization
@@ -232,12 +234,21 @@ organization and repository selection. It shows open epics and epics closed with
   possible. Missing children, including older closed issues and pull requests, are read
   individually with at most four concurrent requests and 200 unique lookups per endpoint call.
   Duplicate references across epics share that lookup. A 403, 404, or lookup beyond that cap
-  becomes `{ _tag: "Unavailable", ref }`. Other child failures fail the request. Failed
+  or the page budget becomes `{ _tag: "Unavailable", ref }`. Other child failures fail the
+  request. Failed
   repositories enter `failedRepos`; an authentication failure still ends the request. This
   endpoint writes no Forgejo data or card ranks.
+- **Page budget.** The organization labels, repository listings, and child lookups of one
+  request share the 800-page budget that Insights uses, in that order. A repository takes an
+  equal share of the pages left when it starts and gives back what it does not use. Each child
+  lookup takes one page. A listing that runs out of pages is named in `incomplete.listings`,
+  and epics in its unread part are missing. `incomplete.children` counts the child references
+  that were not looked up.
 - **Display.** Each epic exposes its issue details and board column, progress segments and
   legend, completion percentage, and an expandable child list. The response is
-  `{ org, repos, columns, epics, failedRepos }`; children are tagged `Issue` or `Unavailable`.
+  `{ org, repos, columns, epics, failedRepos, incomplete }`; children are tagged `Issue` or
+  `Unavailable`. When `incomplete` names anything, the page says what Tabulo did not read,
+  and an empty page does not claim that there are no epics.
   Search (`q`), epic state (`state`), assignee (`assignee`), and sort (`sort`, values `updated`,
   `progress`, `children`) live in the URL. The default sort is most recently updated; progress
   and child-count sorts run descending with update time and key as tie breakers. The summary

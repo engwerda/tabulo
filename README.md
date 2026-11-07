@@ -188,8 +188,8 @@ list children as tasks:
 
 A bare number belongs to the epic's repository; `web#34` belongs to the same organization.
 Only the first reference after a task checkbox counts, and pull request references count too.
-Code, HTML comments, and Forgejo dependencies do not create links. Tabulo keeps the first 200
-unique references in body order.
+Code, HTML comments, and Forgejo dependencies do not create links. An HTML comment you leave
+unclosed hides the rest of the body. Tabulo keeps the first 200 unique references in body order.
 
 Open **Epics**, choose an organization and repositories, then expand a card to see its children.
 The address `/epics/<org>?repos=<repo>,<repo>` keeps your selection, filters, and sort order,
@@ -200,7 +200,9 @@ Progress comes from each child's actual Forgejo state and the board's column rul
 of its checkbox. Closed children count as Done, even when closed before the board's Done window.
 Epics themselves appear while open or closed within `BOARD_DONE_DAYS`. Unavailable children
 stay in the total and show as unavailable, including references beyond the request's limit of
-200 individual child lookups. The summary counts open epics that have children but none done as at risk.
+200 individual child lookups. Like the insights, one page load reads at most 800 pages from
+Forgejo, and the page says what it did not read when a busy organization needs more. The
+summary counts open epics that have children but none done as at risk.
 The page refreshes every minute.
 
 ## Search and shortcuts

@@ -140,9 +140,11 @@ export class ForgejoClient extends Context.Service<
       org: string,
       login: string,
     ) => Effect.Effect<boolean, ForgejoError>
+    /** Every label, or as many as `budget` reaches. */
     readonly orgLabels: (
       token: AccessToken,
       org: string,
+      budget?: PageBudget,
     ) => Effect.Effect<ReadonlyArray<ForgejoLabel>, ForgejoError>
     readonly repo: (token: AccessToken, repo: RepoRef) => Effect.Effect<ForgejoRepo, ForgejoError>
     readonly repoIssues: (
@@ -154,7 +156,8 @@ export class ForgejoClient extends Context.Service<
       token: AccessToken,
       repo: RepoRef,
       listing: IssueListing,
-    ) => Effect.Effect<ReadonlyArray<ForgejoEpicIssue>, ForgejoError>
+      budget: PageBudget,
+    ) => Effect.Effect<Listing<ForgejoEpicIssue>, ForgejoError>
     readonly issue: (
       token: AccessToken,
       repo: RepoRef,
@@ -394,16 +397,18 @@ export const makeForgejoClient = (
   const listRepoIssues = <A>(
     token: AccessToken,
     repo: RepoRef,
-    listing: IssueListing,
+    issues: IssueListing,
     item: Schema.Decoder<A>,
+    budget: PageBudget,
   ) =>
-    all(
+    listing(
       token,
       `${repoPath(repo)}/issues`,
-      listing.state === "open"
+      issues.state === "open"
         ? { type: "issues", state: "open" }
-        : { type: "issues", state: "closed", since: listing.updatedSince },
+        : { type: "issues", state: "closed", since: issues.updatedSince },
       item,
+      budget,
     )
 
   const tokenRequest = (grant: Record<string, string>) =>
@@ -502,13 +507,18 @@ export const makeForgejoClient = (
         Effect.as(true),
         Effect.catchTag("ForgejoNotFound", () => Effect.succeed(false)),
       ),
-    orgLabels: (token, org) =>
-      all(token, `/orgs/${encodeURIComponent(org)}/labels`, {}, ForgejoLabel),
+    orgLabels: (token, org, budget = { remaining: MAX_PAGES }) =>
+      listing(token, `/orgs/${encodeURIComponent(org)}/labels`, {}, ForgejoLabel, budget).pipe(
+        Effect.map(({ items }) => items),
+      ),
     repo: (token, repo) =>
       api(token, repoPath(repo), {}, ForgejoRepo).pipe(Effect.map(({ body }) => body)),
-    repoIssues: (token, repo, listing) => listRepoIssues(token, repo, listing, ForgejoRepoIssue),
-    repoEpicIssues: (token, repo, listing) =>
-      listRepoIssues(token, repo, listing, ForgejoEpicIssue),
+    repoIssues: (token, repo, issues) =>
+      listRepoIssues(token, repo, issues, ForgejoRepoIssue, { remaining: MAX_PAGES }).pipe(
+        Effect.map(({ items }) => items),
+      ),
+    repoEpicIssues: (token, repo, issues, budget) =>
+      listRepoIssues(token, repo, issues, ForgejoEpicIssue, budget),
     issue: (token, repo, number) =>
       api(token, `${repoPath(repo)}/issues/${number}`, {}, ForgejoRepoIssue).pipe(
         Effect.map(({ body }) => body),

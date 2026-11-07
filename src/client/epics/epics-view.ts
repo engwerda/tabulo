@@ -1,4 +1,4 @@
-import type { Epic } from "../../shared/api.ts"
+import type { Epic, Epics } from "../../shared/api.ts"
 
 export const completion = ({ total, done }: Pick<Epic["progress"], "total" | "done">) =>
   total === 0 ? 0 : Math.round((done / total) * 100)
@@ -50,4 +50,20 @@ export const epicSummary = (epics: ReadonlyArray<Epic>) => {
       (epic) => epic.state === "open" && epic.progress.total > 0 && epic.progress.done === 0,
     ).length,
   }
+}
+
+const LISTING_LABELS = { open: "open issues", closed: "recently closed issues" } as const
+
+/** What Tabulo did not read, as sentences; empty when it read everything. */
+export const incompleteNotice = ({ listings, children }: Epics["incomplete"]) => {
+  const lookups =
+    children === 1
+      ? "did not look up 1 child, which shows as unavailable."
+      : `did not look up ${children} children, which show as unavailable.`
+  const limit = "Tabulo reached its limit of Forgejo requests and"
+  if (listings.length === 0) return children === 0 ? "" : `${limit} ${lookups}`
+  const partly = `${limit} read only part of the ${listings
+    .map(({ repo, listing }) => `${LISTING_LABELS[listing]} of ${repo}`)
+    .join(", ")}, so some epics may be missing.`
+  return children === 0 ? partly : `${partly} It ${lookups}`
 }
