@@ -51,7 +51,7 @@ export const ShortcutsDialog = ({ open, onClose }: { open: boolean; onClose: () 
         if (event.target === dialog.current) onClose()
       }}
       aria-labelledby="shortcuts-title"
-      className="m-auto w-[min(32rem,calc(100vw-2rem))] animate-pop-in rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-pop backdrop:bg-zinc-950/40 backdrop:backdrop-blur-[2px] dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+      className="m-auto max-h-[calc(100dvh-2rem)] w-[min(32rem,calc(100vw-2rem))] animate-pop-in overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-pop backdrop:bg-zinc-950/40 backdrop:backdrop-blur-[2px] dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
     >
       <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
         <h2 id="shortcuts-title" className="text-base font-semibold">

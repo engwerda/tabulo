@@ -30,7 +30,10 @@ const sanitize = (html: string) => {
     link.setAttribute("target", "_blank")
     link.setAttribute("rel", "noreferrer")
   }
-  for (const box of template.content.querySelectorAll("input")) box.setAttribute("disabled", "")
+  for (const box of template.content.querySelectorAll("input")) {
+    box.setAttribute("disabled", "")
+    box.setAttribute("aria-label", box.closest("li")?.textContent?.trim() || "Task")
+  }
   return template.innerHTML
 }
 
@@ -263,6 +266,9 @@ export const CardPanel = ({
               <span className="flex flex-wrap items-center gap-1.5 py-0.5">
                 <Avatar url={card.author.avatarUrl} name={card.author.login} size="xs" />
                 {card.author.login}
+                <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-600">
+                  ·
+                </span>
                 <time
                   dateTime={card.createdAt}
                   title={absoluteTime(card.createdAt)}
