@@ -553,8 +553,8 @@ export const BoardPage = ({ org }: { org: string }) => {
   return (
     <main className="flex h-[calc(100dvh-3.5rem-1px)] min-h-0 flex-col">
       <h1 className="sr-only">Board for {org}</h1>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pt-4 pb-3 sm:px-6">
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="flex items-center gap-3 px-4 pt-4 pb-3 sm:px-6">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <OrgSwitcher org={org} />
           <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-700">
             /
@@ -569,10 +569,10 @@ export const BoardPage = ({ org }: { org: string }) => {
             />
           )}
         </div>
-        <div className="ml-auto flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           {data !== undefined && (
             <span
-              className="mr-1 hidden text-xs text-zinc-500 md:inline dark:text-zinc-400"
+              className="mr-1 hidden text-xs text-zinc-500 lg:inline dark:text-zinc-400"
               title={new Date(board.dataUpdatedAt).toLocaleString()}
             >
               {board.isFetching

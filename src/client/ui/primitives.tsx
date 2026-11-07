@@ -152,7 +152,7 @@ export const Popover = ({
       ? "fixed"
       : `absolute top-full mt-1.5 ${align === "end" ? "right-0 origin-top-right" : "left-0 origin-top-left"}`
   return (
-    <div ref={container} className="relative">
+    <div ref={container} className="relative min-w-0">
       <button
         ref={trigger}
         type="button"

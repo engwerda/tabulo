@@ -53,12 +53,13 @@ export const RepoPicker = ({ repos, selected, onChange, open, onOpenChange }: Re
         onOpenChange(next)
         if (!next) setSearch("")
       }}
-      triggerClass={`${buttonClass.secondary} max-w-60`}
+      triggerClass={`${buttonClass.secondary} min-w-0 max-w-60 shrink-0`}
       accessibleLabel={`Repositories: ${selected.length} of ${repos.length} chosen`}
       label={
         <>
           <RepoIcon className="size-4 opacity-70" />
-          <span className="truncate">{summary}</span>
+          <span className="truncate max-sm:hidden">{summary}</span>
+          <span className="tabular-nums sm:hidden">{selected.length}</span>
         </>
       }
       panelClass="w-80 p-1.5"
