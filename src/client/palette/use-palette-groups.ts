@@ -19,8 +19,8 @@ import type { ShortcutId } from "./shortcuts.ts"
 export type RunContext = {
   readonly navigate: (to: string) => void
   readonly openShortcuts: () => void
-  /** Shows a short confirmation, then closes the palette. */
-  readonly confirm: (message: string) => void
+  /** Keeps the palette open to report how `task` went, then closes it if it succeeded. */
+  readonly report: (task: Promise<unknown>, success: string, failure: string) => void
   readonly signOut: () => void
 }
 
@@ -250,12 +250,12 @@ export const usePaletteGroups = (query: string, active: boolean) => {
         keywords: "url share address",
         icon: "link",
         remember: true,
-        run: ({ confirm }) => {
-          // Confirmed before the write settles: a keystroke grants the write, and the menu
-          // must decide synchronously whether to stay open.
-          navigator.clipboard.writeText(window.location.href).catch(() => {})
-          confirm("Link copied")
-        },
+        run: ({ report }) =>
+          report(
+            new Promise((resolve) => resolve(navigator.clipboard.writeText(window.location.href))),
+            "Link copied",
+            "Could not copy the link",
+          ),
       },
       {
         id: "action:shortcuts",

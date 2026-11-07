@@ -166,9 +166,8 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
   const [, navigate] = useLocation()
   const [query, setQuery] = useState("")
   const [activeId, setActiveId] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<{ text: string; failed: boolean } | null>(null)
   const input = useRef<HTMLInputElement>(null)
-  const keepOpen = useRef(false)
   const listId = useId()
   const recent = useMemo(readRecent, [])
   const { groups, searchStatus, searchError, minSearchLength } = usePaletteGroups(query, true)
@@ -206,21 +205,29 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
     document.getElementById(`${listId}-option-${activeIndex}`)?.scrollIntoView({ block: "nearest" })
   }, [listId, activeIndex])
 
-  const context: RunContext = {
-    navigate,
-    openShortcuts: onOpenShortcuts,
-    signOut,
-    confirm: (message) => {
-      keepOpen.current = true
-      setNotice(message)
-      window.setTimeout(onClose, CONFIRM_MS)
-    },
-  }
+  useEffect(() => {
+    if (notice === null || notice.failed) return
+    const timer = window.setTimeout(onClose, CONFIRM_MS)
+    return () => window.clearTimeout(timer)
+  }, [notice, onClose])
 
   const choose = (item: PaletteItem) => {
     if (item.remember) rememberCommand(item.id)
+    let reporting = false
+    const context: RunContext = {
+      navigate,
+      openShortcuts: onOpenShortcuts,
+      signOut,
+      report: (task, success, failure) => {
+        reporting = true
+        task.then(
+          () => setNotice({ text: success, failed: false }),
+          () => setNotice({ text: failure, failed: true }),
+        )
+      },
+    }
     item.run(context)
-    if (!keepOpen.current) onClose()
+    if (!reporting) onClose()
   }
 
   const move = (step: number) => {
@@ -390,9 +397,15 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
               </span>
             </span>
           ) : (
-            <span className="flex items-center gap-1.5 font-medium text-emerald-700 dark:text-emerald-400">
+            <span
+              className={`flex items-center gap-1.5 font-medium ${
+                notice.failed
+                  ? "text-red-700 dark:text-red-400"
+                  : "text-emerald-700 dark:text-emerald-400"
+              }`}
+            >
               <Glyph name="link" className="size-3.5" />
-              {notice}
+              {notice.text}
             </span>
           )}
           <span className="sm:ml-auto">
