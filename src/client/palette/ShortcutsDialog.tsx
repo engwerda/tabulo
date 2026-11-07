@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useLayoutEffect, useRef } from "react"
 import { Kbd, ShortcutKeys } from "./keys.tsx"
 import { MENU_KEYS, SHORTCUTS } from "./shortcuts.ts"
 
@@ -6,7 +6,9 @@ const GROUPS = ["General", "Go to"] as const
 
 export const ShortcutsDialog = ({ open, onClose }: { open: boolean; onClose: () => void }) => {
   const dialog = useRef<HTMLDialogElement>(null)
-  useEffect(() => {
+  // A layout effect closes the modal before the command menu's effect focuses its input, which
+  // a still-open modal would block and its closing would undo.
+  useLayoutEffect(() => {
     const element = dialog.current
     if (element === null) return
     if (open && !element.open) element.showModal()
