@@ -272,3 +272,10 @@ export const PanelIcon = ({ className }: IconProps) => (
     <path d="M9.75 2.25v11.5" />
   </Stroke>
 )
+
+export const AtIcon = ({ className }: IconProps) => (
+  <Stroke className={className}>
+    <circle cx="8" cy="8" r="2.5" />
+    <path d="M10.5 8v1a1.75 1.75 0 0 0 3.5 0V8a6 6 0 1 0-2.4 4.8" />
+  </Stroke>
+)

@@ -65,7 +65,7 @@ export const CardComposer = ({
         value={title}
         rows={2}
         maxLength={255}
-        disabled={pending}
+        readOnly={pending}
         placeholder="Issue title"
         onChange={(event) => setTitle(event.target.value.replace(/\n/g, " "))}
         onKeyDown={(event) => {
@@ -74,7 +74,7 @@ export const CardComposer = ({
             submit()
           }
         }}
-        className="block w-full resize-none bg-transparent text-[0.8125rem] leading-5 font-medium text-zinc-900 placeholder:font-normal placeholder:text-zinc-400 focus:outline-none disabled:opacity-60 dark:text-zinc-100"
+        className="block w-full resize-none bg-transparent text-[0.8125rem] leading-5 font-medium text-zinc-900 placeholder:font-normal placeholder:text-zinc-400 focus:outline-none read-only:opacity-60 dark:text-zinc-100"
       />
       <div className="mt-2 flex items-center gap-2">
         {repos.length > 1 ? (

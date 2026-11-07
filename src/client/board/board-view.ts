@@ -6,12 +6,12 @@ export const columnCards = (cards: ReadonlyArray<BoardCard>, column: string) =>
   cards.filter((card) => card.column === column).sort(compareCardOrder)
 
 export type BoardFilters = {
-  /** A login, ME, or NONE. */
-  readonly assignee: string | null
+  /** Logins, ME, or NONE; a card matches when it has any of them. Empty means any. */
+  readonly assignee: ReadonlyArray<string>
   /** A milestone title or NONE. */
   readonly milestone: string | null
-  /** A full label name or NONE. */
-  readonly label: string | null
+  /** Full label names or NONE; a card matches when it has any of them. Empty means any. */
+  readonly label: ReadonlyArray<string>
   readonly text: string
 }
 
@@ -27,26 +27,29 @@ export const FILTER_PARAMS = {
 } as const satisfies Record<keyof BoardFilters, string>
 
 export const readFilters = (params: URLSearchParams): BoardFilters => ({
-  assignee: params.get(FILTER_PARAMS.assignee),
+  assignee: params.getAll(FILTER_PARAMS.assignee),
   milestone: params.get(FILTER_PARAMS.milestone),
-  label: params.get(FILTER_PARAMS.label),
+  label: params.getAll(FILTER_PARAMS.label),
   text: params.get(FILTER_PARAMS.text) ?? "",
 })
 
 export const isFiltered = (filters: BoardFilters) =>
-  filters.assignee !== null ||
+  filters.assignee.length > 0 ||
   filters.milestone !== null ||
-  filters.label !== null ||
+  filters.label.length > 0 ||
   filters.text.trim() !== ""
 
-const matchesAssignee = (card: BoardCard, assignee: string | null, viewer: string) => {
-  if (assignee === null) return true
+const matchesAssignee = (card: BoardCard, assignee: string, viewer: string) => {
   if (assignee === NONE) return card.assignees.length === 0
   const login = assignee === ME ? viewer : assignee
   return card.assignees.some((candidate) => candidate.login === login)
 }
 
-/** `viewer` is the signed-in login, which ME stands for. */
+const matchesLabel = (card: BoardCard, label: string) =>
+  label === NONE
+    ? card.labels.length === 0
+    : card.labels.some((candidate) => candidate.name === label)
+
 const matchesText = (card: BoardCard, query: string) => {
   const text = query.trim().toLowerCase()
   if (text === "") return true
@@ -59,16 +62,15 @@ const matchesText = (card: BoardCard, query: string) => {
   )
 }
 
+/** `viewer` is the signed-in login, which ME stands for. */
 export const matchesFilters = (card: BoardCard, filters: BoardFilters, viewer: string) =>
-  matchesAssignee(card, filters.assignee, viewer) &&
+  (filters.assignee.length === 0 ||
+    filters.assignee.some((assignee) => matchesAssignee(card, assignee, viewer))) &&
   (filters.milestone === null ||
     (filters.milestone === NONE
       ? card.milestone === null
       : card.milestone === filters.milestone)) &&
-  (filters.label === null ||
-    (filters.label === NONE
-      ? card.labels.length === 0
-      : card.labels.some((label) => label.name === filters.label))) &&
+  (filters.label.length === 0 || filters.label.some((label) => matchesLabel(card, label))) &&
   matchesText(card, filters.text)
 
 const sortedUnique = (values: ReadonlyArray<string>) =>

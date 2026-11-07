@@ -2,7 +2,7 @@ import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@ta
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { App } from "./App.tsx"
-import { Unauthenticated } from "./api.ts"
+import { RequestFailed, Unauthenticated } from "./api.ts"
 import "./styles.css"
 import { SESSION_USER } from "./session.ts"
 import "./theme.ts"
@@ -18,7 +18,11 @@ const queryClient = new QueryClient({
   mutationCache: new MutationCache({ onError: signOutOnUnauthenticated }),
   defaultOptions: {
     queries: {
-      retry: (failureCount, error) => !(error instanceof Unauthenticated) && failureCount < 2,
+      // A 4xx answer will not change on retry, so only server and network failures retry.
+      retry: (failureCount, error) =>
+        !(error instanceof Unauthenticated) &&
+        !(error instanceof RequestFailed && error.status < 500) &&
+        failureCount < 2,
     },
   },
 })

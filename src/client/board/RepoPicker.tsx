@@ -70,7 +70,9 @@ export const RepoPicker = ({ repos, selected, onChange, open, onOpenChange }: Re
         <>
           <RepoIcon className="size-4 opacity-70" />
           <span className="truncate max-sm:hidden">{summary}</span>
-          <span className="tabular-nums sm:hidden">{selected.length}</span>
+          <span className="whitespace-nowrap tabular-nums sm:hidden">
+            {selected.length} {selected.length === 1 ? "repo" : "repos"}
+          </span>
         </>
       }
       panelClass="w-80 p-1.5"
@@ -78,7 +80,7 @@ export const RepoPicker = ({ repos, selected, onChange, open, onOpenChange }: Re
       {() => (
         <>
           <label className="relative block">
-            <span className="sr-only">Find a repository</span>
+            <span className="sr-only">Search repositories</span>
             <SearchIcon className="pointer-events-none absolute top-2 left-2.5 size-4 text-zinc-400" />
             <input
               // biome-ignore lint/a11y/noAutofocus: the panel opened to choose from it
@@ -86,7 +88,7 @@ export const RepoPicker = ({ repos, selected, onChange, open, onOpenChange }: Re
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Find a repository"
+              placeholder="Search repositories"
               className={`${inputClass} pl-8 shadow-none`}
             />
           </label>

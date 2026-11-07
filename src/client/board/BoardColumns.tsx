@@ -19,7 +19,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
-import { type ReactNode, useRef, useState } from "react"
+import { type ReactNode, useEffect, useRef, useState } from "react"
 import type { Board, BoardCard, BoardColumn } from "../../shared/api.ts"
 import { CollapseIcon, ExpandIcon, PlusIcon } from "../ui/icons.tsx"
 import { buttonClass } from "../ui/primitives.tsx"
@@ -33,6 +33,11 @@ import {
 } from "./board-view.ts"
 
 const COLUMN_PREFIX = "column:"
+
+const screenReaderInstructions = {
+  draggable:
+    "Press Enter to open the card's details, or Space to pick it up. While it is picked up, the arrow keys move it, Space drops it, and Escape cancels. Arrow keys move between cards, and the period key opens the card's menu.",
+}
 
 type BoardColumnsProps = {
   readonly board: Board
@@ -135,7 +140,7 @@ const Column = ({
   return (
     <section
       aria-labelledby={headingId}
-      className={`flex h-full min-w-[16.5rem] max-w-[24rem] shrink-0 grow basis-[16.5rem] snap-start flex-col rounded-2xl border transition-colors max-sm:basis-[85vw] ${
+      className={`flex h-full min-w-[14.5rem] max-w-[24rem] shrink grow basis-[16.5rem] snap-start flex-col rounded-2xl border transition-colors max-sm:basis-[85vw] ${
         highlighted
           ? "border-indigo-300 bg-indigo-50/70 dark:border-indigo-500/50 dark:bg-indigo-500/[0.07]"
           : "border-transparent bg-zinc-100/80 dark:bg-zinc-900/50"
@@ -158,7 +163,7 @@ const Column = ({
             aria-expanded="true"
             aria-label={`Collapse ${column.title}`}
             title={`Collapse ${column.title}`}
-            className={buttonClass.iconSmall}
+            className={`${buttonClass.iconSmall} max-sm:hidden`}
           >
             <CollapseIcon className="size-3.5" />
           </button>
@@ -328,11 +333,19 @@ export const BoardColumns = ({
     const index = columns.findLastIndex((column) => column.offsetLeft <= left)
     setInView(Math.max(0, index))
   }
+  const tabs = useRef<HTMLDivElement>(null)
+  // The tab of the column in view stays in view too.
+  useEffect(() => {
+    const tab = tabs.current?.children[inView] as HTMLElement | undefined
+    tab?.scrollIntoView({ block: "nearest", inline: "nearest" })
+  }, [inView])
   return (
     <DndContext
       sensors={sensors}
       collisionDetection={collision}
-      accessibility={{ announcements }}
+      accessibility={{ announcements, screenReaderInstructions }}
+      // Near an edge the board scrolls gently, so a held card does not race past columns.
+      autoScroll={{ acceleration: 4, threshold: { x: 0.12, y: 0.15 } }}
       onDragStart={({ active }) => {
         setActiveKey(String(active.id))
         onDragChange(true)
@@ -342,15 +355,18 @@ export const BoardColumns = ({
       onDragCancel={finish}
     >
       <div className="flex h-full min-h-0 flex-col">
-        <nav
+        <div
+          ref={tabs}
+          role="tablist"
           aria-label="Columns"
-          className="scroll-thin flex shrink-0 gap-1 overflow-x-auto px-4 pb-2 sm:hidden"
+          className="flex shrink-0 gap-1 overflow-x-auto px-4 pb-2 [mask-image:linear-gradient(to_right,transparent,black_1rem,black_calc(100%-1.5rem),transparent)] [scrollbar-width:none] sm:hidden"
         >
           {board.columns.map((column, index) => (
             <button
               key={column.key}
               type="button"
-              aria-current={inView === index ? "true" : undefined}
+              role="tab"
+              aria-selected={inView === index}
               onClick={() =>
                 (scroller.current?.children[index] as HTMLElement | undefined)?.scrollIntoView({
                   behavior: "smooth",
@@ -370,7 +386,7 @@ export const BoardColumns = ({
               </span>
             </button>
           ))}
-        </nav>
+        </div>
         <div
           ref={scroller}
           onScroll={trackColumn}

@@ -62,7 +62,7 @@ export const AvatarStack = ({
   const shown = people.slice(0, max)
   const rest = people.length - shown.length
   return (
-    <ul className="flex shrink-0 -space-x-1.5" aria-label="Assignees">
+    <ul className="flex shrink-0 -space-x-1" aria-label="Assignees">
       {shown.map((person) => (
         <li key={person.login} title={person.login} className="flex">
           <span className="sr-only">{person.login}</span>

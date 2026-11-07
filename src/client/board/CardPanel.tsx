@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import DOMPurify from "dompurify"
 import { type ReactNode, useEffect, useRef, useState } from "react"
-import type { BoardCard, BoardColumn, CardDetail, CardUpdateResult } from "../../shared/api.ts"
+import type { BoardCard, BoardColumn, CardDetail } from "../../shared/api.ts"
 import { Avatar } from "../Avatar.tsx"
 import {
   addComment,
@@ -29,6 +29,7 @@ import { LabelChip, LabelList } from "../ui/LabelChip.tsx"
 import { buttonClass, inputClass, Kbd, Popover } from "../ui/primitives.tsx"
 import { useToast } from "../ui/toast.tsx"
 import { ColumnDot, RepoTag } from "./BoardCardView.tsx"
+import type { CardUpdate } from "./BoardPage.tsx"
 
 /** Forgejo already sanitizes rendered Markdown; this keeps Tabulo safe if it ever does not. */
 const sanitize = (html: string) => {
@@ -61,6 +62,8 @@ const Property = ({ name, children }: { name: string; children: ReactNode }) => 
   </>
 )
 
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform)
+
 const sectionTitle =
   "text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400"
 
@@ -75,6 +78,7 @@ type Choice = { readonly value: string; readonly label: string; readonly icon?: 
 /** A searchable menu of choices: several stay picked for labels and assignees, one for others. */
 const Picker = ({
   name,
+  searchName,
   trigger,
   choices,
   picked,
@@ -83,6 +87,8 @@ const Picker = ({
   disabled,
 }: {
   name: string
+  /** The plural the search box names, such as "labels". */
+  searchName: string
   trigger: ReactNode
   choices: ReadonlyArray<Choice> | undefined
   picked: ReadonlySet<string>
@@ -97,7 +103,6 @@ const Picker = ({
   return (
     <Popover
       label={trigger}
-      chevron={false}
       accessibleLabel={`Change ${name.toLowerCase()}`}
       triggerClass={editTrigger}
       containerClass="relative min-w-0"
@@ -109,7 +114,7 @@ const Picker = ({
       {(close) => (
         <>
           <label className="relative mb-1 block">
-            <span className="sr-only">Find {name.toLowerCase()}</span>
+            <span className="sr-only">Search {searchName}</span>
             <SearchIcon className="pointer-events-none absolute top-2 left-2.5 size-4 text-zinc-400" />
             <input
               // biome-ignore lint/a11y/noAutofocus: the menu opened to search it
@@ -117,7 +122,7 @@ const Picker = ({
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder={`Find ${name.toLowerCase()}`}
+              placeholder={`Search ${searchName}`}
               className={`${inputClass} pl-8 shadow-none`}
             />
           </label>
@@ -192,12 +197,12 @@ const CommentBox = ({ onSubmit }: { onSubmit: (body: string) => Promise<unknown>
           }
           if (event.key === "Escape") event.currentTarget.blur()
         }}
-        className="block w-full resize-y rounded-t-xl bg-transparent px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none disabled:opacity-60 dark:text-zinc-100"
+        className="block max-h-64 min-h-[4.5rem] w-full resize-none rounded-t-xl bg-transparent px-3 py-2.5 [field-sizing:content] text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none disabled:opacity-60 dark:text-zinc-100"
       />
       <div className="flex items-center justify-end gap-2 border-t border-zinc-100 px-2 py-1.5 dark:border-zinc-800">
-        <span className="mr-auto hidden items-center gap-1 pl-1 text-[0.6875rem] text-zinc-400 sm:flex">
-          <Kbd>Ctrl</Kbd>
-          <Kbd>Enter</Kbd>
+        <span className="mr-auto hidden items-center gap-1 pl-1 text-[0.6875rem] text-zinc-400 sm:flex [@media(hover:none)]:hidden">
+          <Kbd>{IS_MAC ? "⌘" : "Ctrl"}</Kbd>
+          <Kbd>Enter</Kbd> to comment
         </span>
         <button
           type="submit"
@@ -223,7 +228,7 @@ type CardPanelProps = {
   readonly onMoveTo: (column: string) => void
   readonly onToggleAssigned: () => void
   /** Runs a change to the card's labels, milestone, or assignees and shows its result. */
-  readonly onUpdate: (run: () => Promise<CardUpdateResult>) => void
+  readonly onUpdate: (change: CardUpdate) => void
   /** The card with its new comment count after the viewer commented. */
   readonly onCommented: (card: BoardCard) => void
   /** Stops board reads in flight before a write, so their older answers cannot undo it. */
@@ -288,6 +293,7 @@ export const CardPanel = ({
   const assigned = card.assignees.some((assignee) => assignee.login === viewer)
   const closed = card.state === "closed"
   const ref = { org, repo: card.repo, number: card.number }
+  const name = `${card.repo}#${card.number}`
 
   // Focus the heading when the panel opens or shows another card, so screen readers announce it.
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs again for each card shown
@@ -425,19 +431,24 @@ export const CardPanel = ({
                 {editable ? (
                   <Picker
                     name="Assignees"
+                    searchName="people"
                     multiple
                     disabled={updating}
                     choices={assigneeChoices}
                     picked={new Set(card.assignees.map((person) => person.login))}
-                    onPick={(login) =>
-                      onUpdate(() =>
-                        setAssignee({
-                          ...ref,
-                          login,
-                          assigned: !card.assignees.some((person) => person.login === login),
-                        }),
-                      )
-                    }
+                    onPick={(login) => {
+                      const on = card.assignees.some((person) => person.login === login)
+                      const set = (to: boolean) => () =>
+                        setAssignee({ ...ref, login, assigned: to })
+                      onUpdate({
+                        run: set(!on),
+                        undo: set(on),
+                        issue: name,
+                        done: on
+                          ? `Unassigned ${login} from ${name}`
+                          : `Assigned ${login} to ${name}`,
+                      })
+                    }}
                     trigger={
                       card.assignees.length === 0 ? (
                         <span className="text-zinc-500 dark:text-zinc-400">Nobody</span>
@@ -480,19 +491,26 @@ export const CardPanel = ({
               {editable ? (
                 <Picker
                   name="Labels"
+                  searchName="labels"
                   multiple
                   disabled={updating}
                   choices={labelChoices}
                   picked={new Set(card.labels.map((label) => String(label.id)))}
-                  onPick={(id) =>
-                    onUpdate(() =>
-                      setLabel({
-                        ...ref,
-                        labelId: Number(id),
-                        present: !card.labels.some((label) => String(label.id) === id),
-                      }),
-                    )
-                  }
+                  onPick={(id) => {
+                    const on = card.labels.some((label) => String(label.id) === id)
+                    const labelName =
+                      options.data?.labels.find((label) => String(label.id) === id)?.name ?? "label"
+                    const set = (to: boolean) => () =>
+                      setLabel({ ...ref, labelId: Number(id), present: to })
+                    onUpdate({
+                      run: set(!on),
+                      undo: set(on),
+                      issue: name,
+                      done: on
+                        ? `Removed ${labelName} from ${name}`
+                        : `Added ${labelName} to ${name}`,
+                    })
+                  }}
                   trigger={
                     card.labels.length === 0 ? (
                       <span className="text-zinc-500 dark:text-zinc-400">None</span>
@@ -519,15 +537,31 @@ export const CardPanel = ({
               {editable ? (
                 <Picker
                   name="Milestone"
+                  searchName="milestones"
                   multiple={false}
                   disabled={updating}
                   choices={milestoneChoices}
                   picked={new Set(pickedMilestone === null ? [] : [pickedMilestone])}
-                  onPick={(id) =>
-                    onUpdate(() =>
-                      setMilestone({ ...ref, milestoneId: id === "" ? null : Number(id) }),
-                    )
-                  }
+                  onPick={(id) => {
+                    const to = id === "" ? null : Number(id)
+                    const title = options.data?.milestones.find(
+                      (milestone) => milestone.id === to,
+                    )?.title
+                    // A closed milestone has no choice to go back to, so it gets no Undo.
+                    const back =
+                      card.milestone === null ? null : (currentMilestone?.id ?? undefined)
+                    onUpdate({
+                      run: () => setMilestone({ ...ref, milestoneId: to }),
+                      ...(back === undefined
+                        ? {}
+                        : { undo: () => setMilestone({ ...ref, milestoneId: back }) }),
+                      issue: name,
+                      done:
+                        title === undefined
+                          ? `Cleared the milestone of ${name}`
+                          : `Set ${name}'s milestone to ${title}`,
+                    })
+                  }}
                   trigger={
                     card.milestone ?? <span className="text-zinc-500 dark:text-zinc-400">None</span>
                   }
@@ -541,7 +575,7 @@ export const CardPanel = ({
               <span className="flex flex-wrap items-center gap-1.5 px-1.5 py-1">
                 <Avatar url={card.author.avatarUrl} name={card.author.login} size="xs" />
                 {card.author.login}
-                <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-600">
+                <span aria-hidden="true" className="text-zinc-400 dark:text-zinc-500">
                   ·
                 </span>
                 <time
@@ -659,7 +693,7 @@ export const CardPanel = ({
           <ExternalIcon className="size-4 text-zinc-400" />
           Open in Forgejo
         </a>
-        <span className="ml-auto hidden items-center gap-1 text-xs text-zinc-400 sm:flex">
+        <span className="ml-auto hidden items-center gap-1 text-xs text-zinc-400 sm:flex [@media(hover:none)]:hidden">
           <Kbd>J</Kbd>
           <Kbd>K</Kbd> to browse
         </span>

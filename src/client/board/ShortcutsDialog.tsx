@@ -24,12 +24,15 @@ const GROUPS = [
     ],
   },
   {
-    title: "Moving with the keyboard",
+    title: "Cards",
     shortcuts: [
-      { keys: ["Tab"], action: "Focus a card's drag handle" },
-      { keys: ["Space"], action: "Pick up or drop the card" },
-      { keys: ["←", "↑", "↓", "→"], action: "Move the picked-up card" },
-      { keys: ["Esc"], action: "Cancel the move" },
+      { keys: ["←", "↑", "↓", "→"], action: "Go to another card" },
+      { keys: ["Home", "End"], action: "First or last card in the column" },
+      { keys: ["Enter"], action: "Open the card's details" },
+      { keys: ["."], action: "Open the card's menu" },
+      { keys: ["Space"], action: "Pick the card up, then drop it" },
+      { keys: ["←", "↑", "↓", "→"], action: "Move a picked-up card" },
+      { keys: ["Esc"], action: "Cancel a move" },
     ],
   },
 ] as const
