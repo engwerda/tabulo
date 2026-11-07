@@ -377,9 +377,9 @@ const applyWrites = (issue: ForgejoRepoIssue, writes: ReadonlyArray<IssueWrite>)
 
 /**
  * Moves a card as the user who owns `token`: changes the issue's state and status label in
- * Forgejo when the column changes, then stores the column's order. Only organization members
- * may arrange cards, and never those of an archived repository; Forgejo decides each issue
- * write. The order is not stored if a Forgejo write fails.
+ * Forgejo when the column changes, then stores the card's rank directly after `afterKey`.
+ * Only organization members may arrange cards, and never those of an archived repository;
+ * Forgejo decides each issue write. No rank is stored if a Forgejo write fails.
  */
 export const moveCard = (token: AccessToken, login: string, request: MoveCardRequest) =>
   Effect.gen(function* () {

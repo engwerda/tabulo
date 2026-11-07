@@ -130,11 +130,15 @@ The board's columns come from the organization's exclusive labels in the status 
 Open **Board** in the header, choose an organization, and choose its repositories. The address
 is `/board/<org>?repos=<repo>,<repo>`, so a board can be bookmarked or shared, filters included.
 
-Drag a card with the mouse, or focus it and use Space and the arrow keys, or pick a column in
-its **Move to…** menu. Tabulo then changes the issue in Forgejo as you: it replaces the status
-label and keeps every other label, or closes or reopens the issue. You can move cards only in
-repositories where you have write access. The order of cards within a column is shared by
-everyone who opens the organization's board.
+Drag a card by its handle with the mouse, or focus the handle and use Space and the arrow keys,
+or pick a column in the card's column menu. Tabulo then changes the issue in Forgejo as you: it
+adds the column's status label, removes it when the card goes to Todo, or closes or reopens the
+issue. Other labels stay as they are. Forgejo decides whether you may change the issue, so a
+triage member who can write issues but not code can move cards too.
+
+The order of cards within a column is shared by everyone who opens the organization's board,
+whichever repositories they chose. Only members of the organization can move and reorder
+cards; others see the board read-only. Cards of archived repositories cannot be moved.
 
 ## Check a Forgejo instance
 
@@ -156,8 +160,8 @@ The token needs read access to issues, repositories, notifications, and the user
 - Access and refresh tokens are encrypted with AES-GCM before they are written to D1, and never
   reach the browser.
 - Requests that change state must send an `Origin` header equal to `APP_URL`.
-- A card move reads the issue and your repository permissions fresh from Forgejo and changes
-  nothing unless you can push to the repository. Forgejo checks the write again itself.
+- A card move checks that you are a member of the organization and that the repository is not
+  archived. Forgejo then authorizes each issue write as you.
 - The app is served with a Content Security Policy that allows only Tabulo's own scripts,
   styles, and requests, and images from Tabulo and `FORGEJO_URL`. It also forbids framing.
   `npm run build` writes the policy to `dist/client/_headers` from `FORGEJO_URL` in
