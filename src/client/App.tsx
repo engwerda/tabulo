@@ -1,23 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import type { Dashboard, DashboardItem, NotificationItem, User } from "../shared/api.ts"
+import type { User } from "../shared/api.ts"
 import { Avatar } from "./Avatar.tsx"
-import { fetchDashboard, fetchSessionUser, signOut, Unauthenticated } from "./api.ts"
-import { ItemRow, NotificationRow } from "./rows.tsx"
-import { SectionCard } from "./SectionCard.tsx"
+import { fetchSessionUser, signOut } from "./api.ts"
+import { DashboardView } from "./Dashboard.tsx"
 
-const SESSION_USER = ["session-user"] as const
-const DASHBOARD = ["dashboard"] as const
-
-const ITEM_SECTIONS = [
-  {
-    key: "reviewRequests",
-    title: "Review requests",
-    empty: "No pull requests are waiting for your review.",
-  },
-  { key: "assigned", title: "Assigned to me", empty: "Nothing open is assigned to you." },
-  { key: "mentioned", title: "Mentions", empty: "No open issues or pull requests mention you." },
-  { key: "created", title: "Created by me", empty: "You have no open issues or pull requests." },
-] as const satisfies ReadonlyArray<{ key: keyof Dashboard; title: string; empty: string }>
+export const SESSION_USER = ["session-user"] as const
 
 const SignIn = () => (
   <main className="grid min-h-dvh place-items-center px-6">
@@ -41,7 +28,7 @@ const Header = ({ user }: { user: User }) => {
   const logout = useMutation({
     mutationFn: signOut,
     onSuccess: () => {
-      queryClient.removeQueries({ queryKey: DASHBOARD })
+      queryClient.clear()
       queryClient.setQueryData(SESSION_USER, null)
     },
   })
@@ -69,90 +56,12 @@ const Header = ({ user }: { user: User }) => {
   )
 }
 
-const SkeletonGrid = () => (
-  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-hidden="true">
-    {Array.from({ length: 5 }, (_, index) => (
-      <div
-        // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have no identity
-        key={index}
-        className="h-48 animate-pulse rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
-      />
-    ))}
-  </div>
+const SignedIn = ({ user }: { user: User }) => (
+  <>
+    <Header user={user} />
+    <DashboardView />
+  </>
 )
-
-const DashboardView = ({ user }: { user: User }) => {
-  const queryClient = useQueryClient()
-  const dashboard = useQuery({
-    queryKey: DASHBOARD,
-    queryFn: async () => {
-      try {
-        return await fetchDashboard()
-      } catch (error) {
-        if (error instanceof Unauthenticated) queryClient.setQueryData(SESSION_USER, null)
-        throw error
-      }
-    },
-    refetchInterval: 60_000,
-    refetchOnWindowFocus: true,
-  })
-  const retry = () => void dashboard.refetch()
-
-  return (
-    <>
-      <Header user={user} />
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-        <h1 className="sr-only">My dashboard</h1>
-        <p className="sr-only" aria-live="polite">
-          {dashboard.isFetching ? "Refreshing dashboard" : ""}
-        </p>
-        {dashboard.data === undefined ? (
-          dashboard.isError ? (
-            <div
-              role="alert"
-              className="flex flex-col items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
-            >
-              <p>Could not load the dashboard: {dashboard.error.message}</p>
-              <button
-                type="button"
-                onClick={retry}
-                className="rounded-md border border-red-300 px-3 py-1.5 font-medium hover:bg-red-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 dark:border-red-800 dark:hover:bg-red-900"
-              >
-                Retry
-              </button>
-            </div>
-          ) : (
-            <SkeletonGrid />
-          )
-        ) : (
-          <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {ITEM_SECTIONS.map(({ key, title, empty }) => (
-              <SectionCard<DashboardItem>
-                key={key}
-                title={title}
-                empty={empty}
-                section={dashboard.data[key]}
-                itemKey={(item) => `${item.repo}#${item.number}`}
-                renderItem={(item) => <ItemRow item={item} />}
-                onRetry={retry}
-                retrying={dashboard.isFetching}
-              />
-            ))}
-            <SectionCard<NotificationItem>
-              title="Unread notifications"
-              empty="You are all caught up."
-              section={dashboard.data.notifications}
-              itemKey={(notification) => notification.id}
-              renderItem={(notification) => <NotificationRow notification={notification} />}
-              onRetry={retry}
-              retrying={dashboard.isFetching}
-            />
-          </div>
-        )}
-      </main>
-    </>
-  )
-}
 
 export const App = () => {
   const session = useQuery({ queryKey: SESSION_USER, queryFn: fetchSessionUser })
@@ -173,5 +82,5 @@ export const App = () => {
       </main>
     )
   }
-  return session.data === null ? <SignIn /> : <DashboardView user={session.data} />
+  return session.data === null ? <SignIn /> : <SignedIn user={session.data} />
 }

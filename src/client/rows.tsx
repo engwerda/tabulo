@@ -4,6 +4,26 @@ import { absoluteTime, relativeTime, textColorOn } from "./format.ts"
 const linkClass =
   "block rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
 
+/** Label names on their Forgejo colors, with text that keeps WCAG AA contrast. */
+export const LabelChips = ({
+  labels,
+}: {
+  labels: ReadonlyArray<{ readonly name: string; readonly color: string }>
+}) =>
+  labels.length === 0 ? null : (
+    <ul className="mt-1.5 flex flex-wrap gap-1" aria-label="Labels">
+      {labels.map((label) => (
+        <li
+          key={label.name}
+          className="rounded-full px-2 py-0.5 text-xs font-medium"
+          style={{ backgroundColor: label.color, color: textColorOn(label.color) }}
+        >
+          {label.name}
+        </li>
+      ))}
+    </ul>
+  )
+
 const Updated = ({ iso }: { iso: string }) => (
   <time dateTime={iso} title={absoluteTime(iso)}>
     {relativeTime(iso)}
@@ -50,19 +70,7 @@ export const ItemRow = ({ item }: { item: DashboardItem }) => (
           {item.title}
         </span>
       </a>
-      {item.labels.length > 0 && (
-        <ul className="mt-1.5 flex flex-wrap gap-1" aria-label="Labels">
-          {item.labels.map((label) => (
-            <li
-              key={label.name}
-              className="rounded-full px-2 py-0.5 text-xs font-medium"
-              style={{ backgroundColor: label.color, color: textColorOn(label.color) }}
-            >
-              {label.name}
-            </li>
-          ))}
-        </ul>
-      )}
+      <LabelChips labels={item.labels} />
       <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
         {item.author} · updated <Updated iso={item.updatedAt} />
         {item.comments > 0 && ` · ${item.comments} ${item.comments === 1 ? "comment" : "comments"}`}
