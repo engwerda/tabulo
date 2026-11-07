@@ -401,10 +401,23 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
   }
 
   /**
+   * Forgejo 15+'s DeleteIssueLabel lookup: the identifier as a name among the repository's
+   * labels, then among the organization's, then as the id of a repository label. An
+   * organization label's id finds nothing.
+   */
+  const labelByIdentifier = (org: FakeOrg, repo: FakeRepo, identifier: string) =>
+    repo.labels.find((label) => label.name === identifier) ??
+    org.labels.find((label) => label.name === identifier) ??
+    (/^-?\d+$/.test(identifier)
+      ? repo.labels.find((label) => label.id === Number(identifier))
+      : undefined)
+
+  /**
    * Forgejo's issue label endpoints. POST adds labels and PUT replaces the set; every label
    * either adds removes the issue's other labels in its exclusive scope, repository-level and
-   * organization-level alike (RemoveDuplicateExclusiveIssueLabels). DELETE removes one label.
-   * Unknown ids in a POST or PUT are ignored, as in Forgejo.
+   * organization-level alike (RemoveDuplicateExclusiveIssueLabels). Unknown ids in a POST or
+   * PUT are ignored, as in Forgejo. DELETE removes one label, found by `labelByIdentifier`,
+   * and succeeds when the issue does not have it.
    */
   const issueLabels = (
     method: string,
@@ -412,22 +425,21 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     repo: FakeRepo,
     issue: FakeIssue,
     login: string,
-    labelId: string | undefined,
+    identifier: string | undefined,
     body: unknown,
   ) => {
     if (method === "GET") return json(issue.labels)
     if (repo.archived) return archivedRefusal()
     if (!canWriteIssues(repo, login)) return forbidden()
-    const available = [...org.labels, ...repo.labels]
-    if (method === "DELETE" && labelId !== undefined) {
-      if (!available.some((label) => label.id === Number(labelId))) {
-        return json({ message: "label does not exist" }, { status: 422 })
-      }
-      issue.labels = issue.labels.filter((label) => label.id !== Number(labelId))
+    if (method === "DELETE" && identifier !== undefined) {
+      const removed = labelByIdentifier(org, repo, identifier)
+      if (removed === undefined) return json({ message: "label does not exist" }, { status: 422 })
+      issue.labels = issue.labels.filter((label) => label.id !== removed.id)
       issue.updated_at = fixtures.now
       return new Response(null, { status: 204 })
     }
-    if (labelId !== undefined || (method !== "POST" && method !== "PUT")) {
+    const available = [...org.labels, ...repo.labels]
+    if (identifier !== undefined || (method !== "POST" && method !== "PUT")) {
       return json({ message: "method not allowed" }, { status: 405 })
     }
     const ids = (body as { labels: ReadonlyArray<number> }).labels
@@ -511,7 +523,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
           )
     }
     const repoPath =
-      /^\/api\/v1\/repos\/([^/]+)\/([^/]+)(?:\/issues(?:\/(\d+)(\/labels(?:\/(\d+))?)?)?)?$/.exec(
+      /^\/api\/v1\/repos\/([^/]+)\/([^/]+)(?:\/issues(?:\/(\d+)(\/labels(?:\/([^/]+))?)?)?)?$/.exec(
         path,
       )
     if (repoPath !== null) {
@@ -528,7 +540,15 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
       const issue = repo.issues.find((candidate) => candidate.number === Number(number))
       if (issue === undefined) return notFound()
       if (labels !== undefined) {
-        return issueLabels(method, org, repo, issue, login, labelId, body)
+        return issueLabels(
+          method,
+          org,
+          repo,
+          issue,
+          login,
+          labelId === undefined ? undefined : decodeURIComponent(labelId),
+          body,
+        )
       }
       return method === "PATCH" ? editIssue(repo, issue, login, body) : json(issue)
     }

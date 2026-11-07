@@ -539,7 +539,7 @@ describe("POST /api/board/move", () => {
     [
       "Todo removes its status label, then reopens the issue",
       "todo",
-      { method: "DELETE", path: "/api/v1/repos/acme/api/issues/3/labels/12" },
+      { method: "DELETE", path: "/api/v1/repos/acme/api/issues/3/labels/Status%2FReview" },
       [],
     ],
   ])("moving out of Done to %s", async (_, toColumn, labelWrite, labels) => {
@@ -582,7 +582,7 @@ describe("POST /api/board/move", () => {
     expect(await rankRows()).toEqual([])
   })
 
-  it("moving to Todo removes each status column label and keeps the others", async () => {
+  it("moving to Todo removes each status column label, an organization label by name, and keeps the others", async () => {
     const repoReview = repoLabel("api", 30, "Status/Review", "00aabb", true)
     const abandoned = repoLabel("api", 31, "Status/Abandoned", "999999", true)
     const org = boardOrg()
@@ -605,7 +605,11 @@ describe("POST /api/board/move", () => {
 
     expect([fromOrgLabel.status, fromRepoLabel.status]).toEqual([200, 200])
     expect(writes(forgejo)).toEqual([
-      { method: "DELETE", path: "/api/v1/repos/acme/api/issues/2/labels/11", body: undefined },
+      {
+        method: "DELETE",
+        path: "/api/v1/repos/acme/api/issues/2/labels/Status%2FIn%20Progress",
+        body: undefined,
+      },
       { method: "DELETE", path: "/api/v1/repos/acme/api/issues/7/labels/30", body: undefined },
     ])
     expect(labelNames(forgejo.issue("acme", "api", 2))).toEqual(["Kind/Bug"])

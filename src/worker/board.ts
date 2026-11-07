@@ -337,6 +337,14 @@ export const loadBoard = (
     } satisfies Board
   })
 
+/**
+ * The identifier that removes `label` from an issue: an organization label's name, a
+ * repository label's id. A repository label with the same name shadows an organization label,
+ * and Forgejo then removes nothing.
+ */
+const labelIdentifier = (orgLabels: ReadonlyArray<ForgejoLabel>, label: ForgejoLabel) =>
+  orgLabels.some((orgLabel) => orgLabel.id === label.id) ? label.name : String(label.id)
+
 /** One Forgejo write of a move, given the issue as the previous write left it. */
 type IssueWrite = (
   issue: ForgejoRepoIssue,
@@ -349,6 +357,7 @@ type IssueWrite = (
 const columnWrites = (
   token: AccessToken,
   layout: BoardLayout,
+  orgLabels: ReadonlyArray<ForgejoLabel>,
   repo: RepoRef,
   issue: ForgejoRepoIssue,
   target: BoardColumn,
@@ -372,7 +381,12 @@ const columnWrites = (
             (label): IssueWrite =>
               (current) =>
                 ForgejoClient.use((forgejo) =>
-                  forgejo.removeIssueLabel(token, repo, current.number, label.id),
+                  forgejo.removeIssueLabel(
+                    token,
+                    repo,
+                    current.number,
+                    labelIdentifier(orgLabels, label),
+                  ),
                 ).pipe(
                   Effect.as({
                     ...current,
@@ -470,7 +484,7 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
     const moved =
       layout.columnOf(issue) === target.key
         ? issue
-        : yield* applyWrites(issue, columnWrites(token, layout, repoRef, issue, target))
+        : yield* applyWrites(issue, columnWrites(token, layout, orgLabels, repoRef, issue, target))
 
     const saved = yield* Effect.exit(
       ranks.place(org, { key: movedKey, column: target.key, rank }, login),
