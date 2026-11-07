@@ -46,6 +46,8 @@ export const epicSummary = (epics: ReadonlyArray<Epic>) => {
     total,
     done,
     percent: completion({ total, done }),
-    atRisk: epics.filter((epic) => epic.state === "open" && epic.progress.done === 0).length,
+    atRisk: epics.filter(
+      (epic) => epic.state === "open" && epic.progress.total > 0 && epic.progress.done === 0,
+    ).length,
   }
 }

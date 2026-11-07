@@ -186,7 +186,7 @@ Progress comes from each child's actual Forgejo state and the board's column rul
 of its checkbox. Closed children count as Done, even when closed before the board's Done window.
 Epics themselves appear while open or closed within `BOARD_DONE_DAYS`. Unavailable children
 stay in the total and show as unavailable, including references beyond the request's limit of
-200 individual child lookups. The summary counts open epics with no children done as at risk.
+200 individual child lookups. The summary counts open epics that have children but none done as at risk.
 The page refreshes every minute.
 
 ## Check a Forgejo instance

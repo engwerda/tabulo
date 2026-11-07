@@ -178,7 +178,7 @@ organization and repository selection. It shows open epics and epics closed with
   `progress`, `children`) live in the URL. The default sort is most recently updated; progress
   and child-count sorts run descending with update time and key as tie breakers. The summary
   covers all selected epics, counts child completions across those epics, and marks open epics
-  with zero completed children as at risk. The client refreshes every minute.
+  that have children but none completed as at risk. The client refreshes every minute.
 
 ### Search
 

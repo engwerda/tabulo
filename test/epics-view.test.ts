@@ -55,8 +55,8 @@ describe("epics view", () => {
     expect(keys("sort=children")).toEqual([1, 4, 2, 3])
     expect(items.map(({ number }) => number)).toEqual([1, 2, 3, 4])
   })
-  it("summarizes children rather than averaging epic percentages", () => {
-    expect(epicSummary(items)).toEqual({ total: 20, done: 6, percent: 30, atRisk: 2 })
+  it("summarizes children rather than averaging epic percentages, and counts open epics with children but none done as at risk", () => {
+    expect(epicSummary(items)).toEqual({ total: 20, done: 6, percent: 30, atRisk: 1 })
     expect(epicSummary([])).toEqual({ total: 0, done: 0, percent: 0, atRisk: 0 })
   })
   it("handles empty progress without dividing by zero", () => {
