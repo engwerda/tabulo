@@ -20,7 +20,7 @@ export const RepoPicker = ({ repos, selected, onChange }: RepoPickerProps) => {
   const visibleChosen = visible.filter((repo) => chosen.has(repo.name)).length
   const allVisibleChosen = visible.length > 0 && visibleChosen === visible.length
 
-  // Keeps the board's repository order stable whatever order the user clicks in.
+  // Keeps the organization's repository order stable whatever order the user clicks in.
   const choose = (isChosen: (name: string) => boolean) =>
     onChange(repos.map((repo) => repo.name).filter(isChosen))
   const toggle = (name: string) =>
@@ -100,7 +100,7 @@ export const RepoPicker = ({ repos, selected, onChange }: RepoPickerProps) => {
           </label>
         )}
         <fieldset className="mt-1 max-h-72 overflow-y-auto">
-          <legend className="sr-only">Repositories on the board</legend>
+          <legend className="sr-only">Repositories to show</legend>
           {visible.length === 0 ? (
             <p className="px-2 py-1 text-sm text-zinc-500">No repository matches.</p>
           ) : (

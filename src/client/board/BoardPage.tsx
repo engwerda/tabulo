@@ -1,8 +1,10 @@
 import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { type ReactNode, useEffect, useRef, useState } from "react"
-import { Link, useSearchParams } from "wouter"
+import { type ReactNode, useState } from "react"
+import { useSearchParams } from "wouter"
 import type { Board, MoveCardRequest } from "../../shared/api.ts"
-import { fetchBoard, fetchOrgRepos, moveCard, RequestFailed } from "../api.ts"
+import { fetchBoard, moveCard, RequestFailed } from "../api.ts"
+import { ScopeBar } from "../scope/ScopeBar.tsx"
+import { useRepoSelection } from "../scope/use-repo-selection.ts"
 import { BoardColumns } from "./BoardColumns.tsx"
 import { BoardFiltersBar } from "./BoardFiltersBar.tsx"
 import {
@@ -13,32 +15,8 @@ import {
   readFilters,
   replaceCard,
 } from "./board-view.ts"
-import { RepoPicker } from "./RepoPicker.tsx"
 
 const REFRESH_MS = 60_000
-
-const rememberedReposKey = (org: string) => `tabulo.board.repos.${org.toLowerCase()}`
-
-// Remembering the selection is a convenience: storage can be missing or refuse writes.
-const readRememberedRepos = (org: string) => {
-  try {
-    return window.localStorage.getItem(rememberedReposKey(org))
-  } catch {
-    return null
-  }
-}
-
-const rememberRepos = (org: string, repos: string) => {
-  try {
-    window.localStorage.setItem(rememberedReposKey(org), repos)
-  } catch {}
-}
-
-const forgetRepos = (org: string) => {
-  try {
-    window.localStorage.removeItem(rememberedReposKey(org))
-  } catch {}
-}
 
 const Banner = ({
   tone,
@@ -73,7 +51,8 @@ const Banner = ({
 export const BoardPage = ({ org }: { org: string }) => {
   const queryClient = useQueryClient()
   const [params, setParams] = useSearchParams()
-  const selected = (params.get("repos") ?? "").split(",").filter((name) => name !== "")
+  const repoSelection = useRepoSelection(org)
+  const { selected, selection } = repoSelection
   const filters = readFilters(params)
   const [dragging, setDragging] = useState(false)
   const [moveNotice, setMoveNotice] = useState<{
@@ -82,32 +61,7 @@ export const BoardPage = ({ org }: { org: string }) => {
   } | null>(null)
   const [dismissedFailures, setDismissedFailures] = useState<string | null>(null)
 
-  const repos = useQuery({ queryKey: ["org-repos", org], queryFn: () => fetchOrgRepos(org) })
-
-  const selection = selected.join(",")
   const hasSelection = selection !== ""
-  // The remembered selection fills an empty address once per organization; after that an empty
-  // selection is the user's choice.
-  const restoredFor = useRef<string | null>(null)
-  useEffect(() => {
-    const firstVisit = restoredFor.current !== org
-    restoredFor.current = org
-    if (hasSelection) {
-      rememberRepos(org, selection)
-      return
-    }
-    const remembered = firstVisit ? readRememberedRepos(org) : null
-    if (remembered) {
-      setParams(
-        (current) => {
-          const next = new URLSearchParams(current)
-          next.set("repos", remembered)
-          return next
-        },
-        { replace: true },
-      )
-    }
-  }, [org, selection, hasSelection, setParams])
 
   const boardKey = ["board", org, selection] as const
   const moveKey = ["move", ...boardKey] as const
@@ -188,52 +142,21 @@ export const BoardPage = ({ org }: { org: string }) => {
     })
   }
 
-  const chooseRepos = (repoNames: ReadonlyArray<string>) => {
-    if (repoNames.length === 0) forgetRepos(org)
-    setParams(
-      (current) => {
-        const next = new URLSearchParams(current)
-        if (repoNames.length === 0) next.delete("repos")
-        else next.set("repos", repoNames.join(","))
-        return next
-      },
-      { replace: true },
-    )
-  }
-
   const failures = board.data?.failedRepos ?? []
   const failureId = failures.map((failure) => `${failure.repo}:${failure.message}`).join("|")
   const filtered = isFiltered(filters)
 
   return (
     <main className="py-4">
-      <div className="flex flex-wrap items-center gap-3 px-4 pb-3 sm:px-6">
-        <h1 className="text-lg font-semibold">
-          <span className="sr-only">Board for </span>
-          {org}
-        </h1>
-        <Link
-          href="/board"
-          className="text-sm text-zinc-500 underline-offset-2 hover:underline dark:text-zinc-400"
-        >
-          Change organization
-        </Link>
-        {repos.data !== undefined && (
-          <RepoPicker repos={repos.data} selected={selected} onChange={chooseRepos} />
-        )}
+      <ScopeBar org={org} view="board" repoSelection={repoSelection}>
         {board.data !== undefined && (
           <BoardFiltersBar cards={board.data.cards} filters={filters} setParams={setParams} />
         )}
         <p className="sr-only" aria-live="polite">
           {board.isFetching ? "Refreshing board" : ""}
         </p>
-      </div>
+      </ScopeBar>
 
-      {repos.isError && (
-        <Banner tone="error">
-          Could not load the repositories of {org}: {repos.error.message}
-        </Banner>
-      )}
       {moveNotice !== null && (
         <Banner tone={moveNotice.tone} onDismiss={() => setMoveNotice(null)}>
           {moveNotice.text}

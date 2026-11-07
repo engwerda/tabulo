@@ -30,6 +30,10 @@ Forgejo stays the single source of truth: Tabulo stores only what Forgejo cannot
 | Board | 2 | Columns from exclusive scoped labels across chosen repositories. A drag changes the issue's status label or closes or reopens it. |
 | Epics | 3 | Each epic with its child issues and progress. |
 
+The board, insights, and epics are views of one organization. They share its chosen
+repositories, which the address holds in `?repos=a,b`. The browser remembers each
+organization's repositories and the last organization, so switching views keeps both.
+
 ## Data rules
 
 - **Columns.** An open issue belongs to the column of its exclusive status label. The default
