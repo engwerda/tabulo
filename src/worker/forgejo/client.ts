@@ -145,7 +145,6 @@ export class ForgejoClient extends Context.Service<
     readonly orgLabels: (
       token: AccessToken,
       org: string,
-      budget?: PageBudget,
     ) => Effect.Effect<ReadonlyArray<ForgejoLabel>, ForgejoError>
     readonly repo: (token: AccessToken, repo: RepoRef) => Effect.Effect<ForgejoRepo, ForgejoError>
     readonly repoIssues: (
@@ -508,10 +507,8 @@ export const makeForgejoClient = (
         Effect.as(true),
         Effect.catchTag("ForgejoNotFound", () => Effect.succeed(false)),
       ),
-    orgLabels: (token, org, budget = { remaining: MAX_PAGES }) =>
-      listing(token, `/orgs/${encodeURIComponent(org)}/labels`, {}, ForgejoLabel, budget).pipe(
-        Effect.map(({ items }) => items),
-      ),
+    orgLabels: (token, org) =>
+      all(token, `/orgs/${encodeURIComponent(org)}/labels`, {}, ForgejoLabel),
     repo: (token, repo) =>
       api(token, repoPath(repo), {}, ForgejoRepo).pipe(Effect.map(({ body }) => body)),
     repoIssues: (token, repo, issues) =>

@@ -89,7 +89,7 @@ const fixtures = (): Partial<FakeForgejoFixtures> => ({
 })
 
 // Requests that take a page from the budget: organization labels, listings, and child lookups.
-const PAGE_READ = /\/labels$|\/issues(\/\d+)?$/
+const PAGE_READ = /\/issues(\/\d+)?$/
 
 /** Twenty repositories of `open` and `closed` issues; r0#1 is an epic with 200 external children. */
 const crowdedOrg = (open: number, closed: number) => {
@@ -352,7 +352,7 @@ describe("GET /api/epics", () => {
     const data = Schema.decodeUnknownSync(Epics)(await response.json())
     const reads = forgejo.requests.slice(before)
     expect(reads.length).toBeLessThan(1000)
-    // Labels, listings, and child lookups share 800 pages; each repository also reads itself.
+    // Listings and child lookups share 800 pages; labels and each repository's own read do not.
     expect(reads.filter(({ path }) => PAGE_READ.test(path))).toHaveLength(800)
     // Each repository needs 60 listing pages, more than its share of 800.
     expect(data.incomplete.listings).toHaveLength(40)

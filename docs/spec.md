@@ -240,8 +240,9 @@ organization and repository selection. It shows open epics and epics closed with
   request. Failed
   repositories enter `failedRepos`; an authentication failure still ends the request. This
   endpoint writes no Forgejo data or card ranks.
-- **Page budget.** The organization labels, repository listings, and child lookups of one
-  request share the 800-page budget that Insights uses, in that order. As on Insights, a retry
+- **Page budget.** The repository listings and child lookups of one request share the
+  800-page budget that Insights uses, in that order. The organization labels are read in full
+  first and outside the budget, because the columns depend on them. As on Insights, a retry
   after a token refresh reads only the pages the first attempt left. A repository takes an
   equal share of the pages left when it starts and gives back what it does not use. Each child
   lookup takes one page when it starts. A listing that runs out of pages is named in `incomplete.listings`,
