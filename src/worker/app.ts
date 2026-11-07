@@ -4,14 +4,24 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie"
 import type { Dashboard } from "../shared/api.ts"
 import { beginLogin, completeLogin } from "./auth/oauth.ts"
 import { currentSession, withAccessToken } from "./auth/session.ts"
+import {
+  BoardConfig,
+  listOrgRepos,
+  listOrgs,
+  loadBoard,
+  parseBoardQuery,
+  parseName,
+} from "./board.ts"
 import { loadConfig } from "./config.ts"
 import { loadDashboardSections } from "./dashboard.ts"
 import type {
+  BoardRequestInvalid,
   ConfigInvalid,
   ForgejoError,
   OAuthCallbackInvalid,
   OAuthGrantRejected,
   OAuthStateInvalid,
+  RepoWriteForbidden,
   SessionNotFound,
 } from "./errors.ts"
 import { ForgejoClient, type HttpFetch, makeForgejoClient } from "./forgejo/client.ts"
@@ -31,11 +41,13 @@ export type Dependencies = {
 }
 
 type AppError =
+  | BoardRequestInvalid
   | ConfigInvalid
   | ForgejoError
   | OAuthCallbackInvalid
   | OAuthGrantRejected
   | OAuthStateInvalid
+  | RepoWriteForbidden
   | SessionNotFound
 
 type AppContext = Context<{ Bindings: Env }>
@@ -72,6 +84,14 @@ const errorResponse = (c: AppContext, error: AppError): Response => {
       return c.text(`Invalid sign-in callback: ${error.message}`, 400)
     case "OAuthGrantRejected":
       return c.text("Forgejo rejected the sign-in. Sign in again.", 400)
+    case "ForgejoForbidden":
+      return c.json({ error: "Forgejo did not allow this" }, 403)
+    case "ForgejoNotFound":
+      return c.json({ error: "Not found in Forgejo, or you cannot see it" }, 404)
+    case "RepoWriteForbidden":
+      return c.json({ error: `You cannot change issues in ${error.repo}` }, 403)
+    case "BoardRequestInvalid":
+      return c.json({ error: error.message }, 400)
     case "ForgejoRequestFailed":
       return c.json({ error: `Forgejo returned HTTP ${error.status}` }, 502)
     case "ForgejoUnreachable":
@@ -87,7 +107,7 @@ const errorResponse = (c: AppContext, error: AppError): Response => {
 export const createApp = (dependencies: Dependencies) => {
   const run = async (
     c: AppContext,
-    program: Effect.Effect<Response, AppError, ForgejoClient | SessionStore>,
+    program: Effect.Effect<Response, AppError, BoardConfig | ForgejoClient | SessionStore>,
   ): Promise<Response> => {
     const exit = await Effect.runPromiseExit(
       Effect.gen(function* () {
@@ -98,6 +118,7 @@ export const createApp = (dependencies: Dependencies) => {
             makeForgejoClient(config.forgejo, dependencies.fetch),
           ),
           Effect.provideService(SessionStore, makeSessionStore(c.env.DB, config.tokenKey)),
+          Effect.provideService(BoardConfig, config.board),
         )
       }).pipe(Effect.provideService(Clock.Clock, dependencies.clock ?? Clock.Clock.defaultValue())),
     )
@@ -187,6 +208,37 @@ export const createApp = (dependencies: Dependencies) => {
       withAccessToken(getCookie(c, SESSION_COOKIE), (token, session) =>
         loadDashboardSections(token).pipe(
           Effect.map((sections) => c.json({ user: session.user, ...sections } satisfies Dashboard)),
+        ),
+      ),
+    ),
+  )
+
+  app.get("/api/orgs", (c) =>
+    run(
+      c,
+      withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
+        listOrgs(token).pipe(Effect.map((orgs) => c.json(orgs))),
+      ),
+    ),
+  )
+
+  app.get("/api/orgs/:org/repos", (c) =>
+    run(
+      c,
+      Effect.flatMap(parseName("org", c.req.param("org")), (org) =>
+        withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
+          listOrgRepos(token, org).pipe(Effect.map((repos) => c.json(repos))),
+        ),
+      ),
+    ),
+  )
+
+  app.get("/api/board", (c) =>
+    run(
+      c,
+      Effect.flatMap(parseBoardQuery(c.req.query("org"), c.req.query("repos")), (query) =>
+        withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
+          loadBoard(token, query).pipe(Effect.map((board) => c.json(board))),
         ),
       ),
     ),

@@ -50,13 +50,17 @@ export const callback = (call: Call, query: Record<string, string>, browserState
     headers: { cookie: `${OAUTH_STATE_COOKIE}=${browserState}` },
   })
 
-/** Runs the whole sign-in against `forgejo` and returns the session cookie header. */
+/**
+ * Runs the whole sign-in against `forgejo`, as `user` or the fake's default user, and returns
+ * the session cookie header.
+ */
 export const signIn = async (
   call: Call,
-  forgejo: { approve: (codeChallenge: string) => string },
+  forgejo: { approve: (codeChallenge: string, user?: string) => string },
+  user?: string,
 ) => {
   const login = await startLogin(call)
-  const code = forgejo.approve(login.codeChallenge)
+  const code = forgejo.approve(login.codeChallenge, user)
   const response = await callback(call, { code, state: login.state }, login.browserState)
   const session = setCookies(response).get(SESSION_COOKIE)
   if (session === undefined) throw new Error(`sign-in failed with HTTP ${response.status}`)

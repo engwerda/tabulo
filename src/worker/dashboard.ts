@@ -1,8 +1,13 @@
 import { Effect } from "effect"
 import type { Dashboard, DashboardItem, NotificationItem, Section } from "../shared/api.ts"
-import { describeForgejoError, type ForgejoError, type ForgejoUnauthorized } from "./errors.ts"
+import {
+  describeForgejoError,
+  FORGEJO_READ_ERRORS,
+  type ForgejoError,
+  type ForgejoUnauthorized,
+} from "./errors.ts"
 import { type AccessToken, ForgejoClient, type IssueSearch, type Page } from "./forgejo/client.ts"
-import type { ForgejoIssue, ForgejoNotification } from "./forgejo/schemas.ts"
+import { type ForgejoIssue, type ForgejoNotification, labelHexColor } from "./forgejo/schemas.ts"
 
 const SECTION_LIMIT = 30
 const FORGEJO_CONCURRENCY = 3
@@ -14,10 +19,7 @@ export const toDashboardItem = (issue: ForgejoIssue): DashboardItem => ({
   title: issue.title,
   url: issue.html_url,
   state: issue.state,
-  labels: issue.labels.map(({ name, color }) => ({
-    name,
-    color: color.startsWith("#") ? color : `#${color}`,
-  })),
+  labels: issue.labels.map(({ name, color }) => ({ name, color: labelHexColor(color) })),
   author: issue.user.login,
   updatedAt: issue.updated_at,
   comments: issue.comments,
@@ -46,13 +48,11 @@ const section = <A, B>(
         total,
       }),
     ),
-    Effect.catchTag(
-      ["ForgejoRequestFailed", "ForgejoUnreachable", "ForgejoDecodeFailed"],
-      (error) =>
-        Effect.sync((): Section<B> => {
-          console.warn(`Dashboard section ${name} failed`, error)
-          return { _tag: "Failed", message: describeForgejoError(error) }
-        }),
+    Effect.catchTag(FORGEJO_READ_ERRORS, (error) =>
+      Effect.sync((): Section<B> => {
+        console.warn(`Dashboard section ${name} failed`, error)
+        return { _tag: "Failed", message: describeForgejoError(error) }
+      }),
     ),
   )
 

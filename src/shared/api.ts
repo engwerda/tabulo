@@ -52,3 +52,84 @@ export const Dashboard = Schema.Struct({
   notifications: Section(NotificationItem),
 })
 export type Dashboard = typeof Dashboard.Type
+
+export const Org = Schema.Struct({
+  name: Schema.String,
+  fullName: Schema.String,
+  avatarUrl: Schema.String,
+})
+export type Org = typeof Org.Type
+
+export const OrgRepo = Schema.Struct({
+  name: Schema.String,
+  fullName: Schema.String,
+  private: Schema.Boolean,
+  canWrite: Schema.Boolean,
+})
+export type OrgRepo = typeof OrgRepo.Type
+
+export const BoardLabel = Schema.Struct({
+  id: Schema.Number,
+  name: Schema.String,
+  color: Schema.String,
+})
+export type BoardLabel = typeof BoardLabel.Type
+
+/**
+ * Todo holds open issues without a status label, a Status column the open issues with its
+ * label, and Done the issues closed within the configured window.
+ */
+export const BoardColumn = Schema.Union([
+  Schema.TaggedStruct("Todo", { key: Schema.Literal("todo"), title: Schema.Literal("Todo") }),
+  Schema.TaggedStruct("Status", {
+    /** The label's full name. */
+    key: Schema.String,
+    /** The label's name without the status scope. */
+    title: Schema.String,
+    label: BoardLabel,
+  }),
+  Schema.TaggedStruct("Done", { key: Schema.Literal("done"), title: Schema.Literal("Done") }),
+])
+export type BoardColumn = typeof BoardColumn.Type
+
+export const BoardCard = Schema.Struct({
+  /** `owner/repo#number`. */
+  key: Schema.String,
+  /** The repository name, without the organization. */
+  repo: Schema.String,
+  number: Schema.Number,
+  title: Schema.String,
+  url: Schema.String,
+  state: Schema.Literals(["open", "closed"]),
+  /** Every label except status labels. */
+  labels: Schema.Array(BoardLabel),
+  assignees: Schema.Array(Schema.Struct({ login: Schema.String, avatarUrl: Schema.String })),
+  milestone: Schema.NullOr(Schema.String),
+  updatedAt: Schema.String,
+  closedAt: Schema.NullOr(Schema.String),
+  /** The key of the column the card is in. */
+  column: Schema.String,
+  /** Position within the column; compare ranks by code unit, not by locale. */
+  rank: Schema.NullOr(Schema.String),
+  canWrite: Schema.Boolean,
+})
+export type BoardCard = typeof BoardCard.Type
+
+export const Board = Schema.Struct({
+  org: Schema.String,
+  repos: Schema.Array(Schema.String),
+  columns: Schema.Array(BoardColumn),
+  cards: Schema.Array(BoardCard),
+  failedRepos: Schema.Array(Schema.Struct({ repo: Schema.String, message: Schema.String })),
+})
+export type Board = typeof Board.Type
+
+export const MoveCardRequest = Schema.Struct({
+  org: Schema.String,
+  repo: Schema.String,
+  number: Schema.Int.check(Schema.isGreaterThan(0)),
+  toColumn: Schema.String,
+  /** Every card of the destination column, in order, after the move. */
+  orderedKeys: Schema.Array(Schema.String).check(Schema.isMaxLength(2000)),
+})
+export type MoveCardRequest = typeof MoveCardRequest.Type
