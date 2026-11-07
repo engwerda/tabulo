@@ -54,6 +54,32 @@ const iconTone = (item: PaletteItem) =>
       ? "text-sky-600 dark:text-sky-400"
       : "text-zinc-500 group-data-active:text-indigo-600 dark:text-zinc-400 dark:group-data-active:text-indigo-300"
 
+/** An issue's number stays visible when its long repository name is cut short. */
+const Subtitle = ({ item, indices }: { item: PaletteItem; indices: ReadonlyArray<number> }) => {
+  const text = item.subtitle ?? ""
+  const split = item.icon === "issue" || item.icon === "pull" ? text.lastIndexOf("#") : -1
+  if (split < 0) {
+    return (
+      <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">
+        <Highlight text={text} indices={indices} />
+      </span>
+    )
+  }
+  return (
+    <span className="flex font-mono text-xs text-zinc-500 dark:text-zinc-400">
+      <span className="truncate">
+        <Highlight text={text.slice(0, split)} indices={indices.filter((index) => index < split)} />
+      </span>
+      <span className="shrink-0">
+        <Highlight
+          text={text.slice(split)}
+          indices={indices.filter((index) => index >= split).map((index) => index - split)}
+        />
+      </span>
+    </span>
+  )
+}
+
 type OptionProps = {
   readonly id: string
   readonly item: PaletteItem
@@ -97,13 +123,7 @@ const Option = ({
         <Highlight text={item.title} indices={titleIndices} />
       </span>
       {item.subtitle !== undefined && item.subtitle !== "" && (
-        <span
-          className={`block truncate text-xs text-zinc-500 dark:text-zinc-400 ${
-            item.icon === "issue" || item.icon === "pull" ? "font-mono" : ""
-          }`}
-        >
-          <Highlight text={item.subtitle} indices={subtitleIndices} />
-        </span>
+        <Subtitle item={item} indices={subtitleIndices} />
       )}
     </span>
     <span className="flex shrink-0 items-center gap-2">
