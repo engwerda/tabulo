@@ -56,7 +56,7 @@ describe("epic task-list references", () => {
   it("ignores backtick and tilde fences, including longer fences and unfinished fences", () => {
     expect(
       parse(
-        "````md\n- [ ] #1\n```\n- [ ] #2\n````\n- [ ] #3\n  ~~~\n- [ ] #4\n  ~~~~\n- [ ] #5\n```\n- [ ] #6",
+        "````md\n- [ ] #1\n```\n- [ ] #2\n````\n- [ ] #3\n\nNotes\n  ~~~\n- [ ] #4\n  ~~~~\n- [ ] #5\n```\n- [ ] #6",
       ),
     ).toEqual(["acme/api#3", "acme/api#5"])
   })
@@ -83,6 +83,15 @@ describe("epic task-list references", () => {
         ].join("\n"),
       ),
     ).toEqual(["acme/api#2", "acme/api#4", "acme/api#5", "acme/api#9"])
+  })
+
+  it("ignores a fence opened right after a list marker, until it closes or its item ends", () => {
+    expect(parse("- ```md\n  - [ ] #99\n  ```\n- [ ] #12")).toEqual(["acme/api#12"])
+    expect(parse("- [ ] #1\n  ```\n  - [ ] #2\n- [ ] #3")).toEqual(["acme/api#1", "acme/api#3"])
+  })
+
+  it("hides everything after an unclosed HTML comment", () => {
+    expect(parse("- [ ] #1\n<!-- draft\n- [ ] #2\n- [ ] #3")).toEqual(["acme/api#1"])
   })
 
   it("handles CRLF and blank bodies", () => {

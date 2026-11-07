@@ -36,11 +36,15 @@ export const parseEpicChildren = (
   // Content columns of the enclosing list items, innermost last. Code and fences are indented
   // relative to the innermost one.
   const items: Array<number> = []
-  let blank = false
+  // Only paragraph text continues a list item from a line indented less than the item.
+  let paragraph = false
   let fence: { marker: string; length: number; indent: number } | undefined
-  for (const line of body.replace(/<!--[\s\S]*?-->/g, " ").split(/\r?\n/)) {
+  // Forgejo hides an unclosed comment to the end of the body.
+  for (const line of body.replace(/<!--[\s\S]*?(?:-->|$)/g, " ").split(/\r?\n/)) {
     const indent = indentOf(line)
     const text = line.trimStart()
+    // A fence inside a list item ends with the item.
+    if (fence !== undefined && text !== "" && indent < fence.indent) fence = undefined
     if (fence !== undefined) {
       const close = FENCE.exec(text)
       if (
@@ -53,22 +57,24 @@ export const parseEpicChildren = (
       continue
     }
     if (text === "") {
-      blank = true
+      paragraph = false
       continue
     }
     const item = LIST_ITEM.exec(text)
-    if (item !== null || blank) while ((items.at(-1) ?? 0) > indent) items.pop()
-    blank = false
-    const container = items.at(-1) ?? 0
-    if (indent - container > 3) continue
-    const marker = FENCE.exec(text)?.[1]
+    const content = item === null ? text : text.slice(item[0].length)
+    const marker = FENCE.exec(content)?.[1]
+    if (item !== null || marker !== undefined || !paragraph)
+      while ((items.at(-1) ?? 0) > indent) items.pop()
+    paragraph = false
+    if (indent - (items.at(-1) ?? 0) > 3) continue
+    if (item !== null) items.push(indent + item[0].length)
     if (marker !== undefined) {
-      fence = { marker: marker[0] ?? "", length: marker.length, indent: container }
+      fence = { marker: marker[0] ?? "", length: marker.length, indent: items.at(-1) ?? 0 }
       continue
     }
+    paragraph = true
     if (item === null) continue
-    items.push(indent + item[0].length)
-    const token = CHECKBOX.exec(text.slice(item[0].length))?.[1]
+    const token = CHECKBOX.exec(content)?.[1]
     if (token === undefined) continue
     const target = token.replace(/^[(<[*_]+/, "")
     let owner = repository.owner
