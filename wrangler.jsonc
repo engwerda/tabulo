@@ -21,7 +21,10 @@
   "vars": {
     "APP_URL": "http://localhost:5173",
     "FORGEJO_URL": "https://forgejo.example",
-    "FORGEJO_CLIENT_ID": "replace-with-your-oauth-client-id"
+    "FORGEJO_CLIENT_ID": "replace-with-your-oauth-client-id",
+    "BOARD_STATUS_SCOPE": "Status/",
+    "BOARD_COLUMNS": "",
+    "BOARD_DONE_DAYS": "14"
   },
   "secrets": {
     "required": ["FORGEJO_CLIENT_SECRET", "SESSION_ENCRYPTION_KEY"]

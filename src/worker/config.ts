@@ -3,10 +3,26 @@ import { ConfigInvalid } from "./errors.ts"
 import type { ForgejoConfig } from "./forgejo/client.ts"
 import { importTokenKey } from "./token-crypto.ts"
 
+/** A column as configured: the reserved Todo or Done, or a status label by its full name. */
+export type ColumnRef =
+  | { readonly _tag: "Todo" }
+  | { readonly _tag: "Done" }
+  | { readonly _tag: "Status"; readonly name: string }
+
+export type BoardSettings = {
+  /** Exclusive labels whose name starts with this are status labels, for example `Status/`. */
+  readonly statusScope: string
+  /** The configured column order. Status labels it leaves out are placed before Done. */
+  readonly columnOrder: ReadonlyArray<ColumnRef>
+  /** Issues closed within this many days are in Done. */
+  readonly doneDays: number
+}
+
 export type AppConfig = {
   readonly appOrigin: string
   readonly forgejo: ForgejoConfig
   readonly tokenKey: CryptoKey
+  readonly board: BoardSettings
 }
 
 const parseUrl = (name: string, value: string) =>
@@ -33,6 +49,44 @@ const required = (name: string, value: string | undefined) =>
     ? Effect.fail(new ConfigInvalid({ message: `${name} is not set` }))
     : Effect.succeed(value)
 
+const MAX_DONE_DAYS = 365
+
+const parseBoardSettings = (env: Env) =>
+  Effect.gen(function* () {
+    const statusScope = env.BOARD_STATUS_SCOPE || "Status/"
+    if (!statusScope.endsWith("/")) {
+      return yield* new ConfigInvalid({ message: "BOARD_STATUS_SCOPE must end with /" })
+    }
+
+    const doneDaysText = env.BOARD_DONE_DAYS || "14"
+    const doneDays = Number(doneDaysText)
+    if (!/^\d+$/.test(doneDaysText) || doneDays < 1 || doneDays > MAX_DONE_DAYS) {
+      return yield* new ConfigInvalid({
+        message: `BOARD_DONE_DAYS must be a whole number from 1 to ${MAX_DONE_DAYS}`,
+      })
+    }
+
+    const entries = (env.BOARD_COLUMNS ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry !== "")
+    if (new Set(entries).size !== entries.length) {
+      return yield* new ConfigInvalid({ message: "BOARD_COLUMNS lists a column twice" })
+    }
+    const columnOrder: Array<ColumnRef> = []
+    for (const entry of entries) {
+      if (entry === "Todo" || entry === "Done") columnOrder.push({ _tag: entry })
+      else if (entry.startsWith(statusScope) && entry.length > statusScope.length) {
+        columnOrder.push({ _tag: "Status", name: entry })
+      } else {
+        return yield* new ConfigInvalid({
+          message: `BOARD_COLUMNS entry "${entry}" is not Todo, Done, or a label starting with ${statusScope}`,
+        })
+      }
+    }
+    return { statusScope, columnOrder, doneDays } satisfies BoardSettings
+  })
+
 export const loadConfig = (env: Env) =>
   Effect.gen(function* () {
     const appUrl = yield* parseAppUrl(env.APP_URL)
@@ -49,5 +103,6 @@ export const loadConfig = (env: Env) =>
         redirectUri: new URL("/auth/callback", appUrl).href,
       },
       tokenKey: yield* importTokenKey(encryptionKey),
+      board: yield* parseBoardSettings(env),
     } satisfies AppConfig
   })

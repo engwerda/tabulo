@@ -5,3 +5,7 @@ FORGEJO_CLIENT_ID=replace-with-your-oauth-client-id
 FORGEJO_CLIENT_SECRET=replace-with-your-oauth-client-secret
 # 32 random bytes, base64: openssl rand -base64 32
 SESSION_ENCRYPTION_KEY=replace-with-openssl-rand-base64-32
+# Optional board settings; the defaults are in wrangler.jsonc.
+# BOARD_STATUS_SCOPE=Status/
+# BOARD_COLUMNS=Todo,Status/In Progress,Status/Review,Done
+# BOARD_DONE_DAYS=14
