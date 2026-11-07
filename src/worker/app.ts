@@ -53,7 +53,9 @@ const cookieOptions = (maxAgeMs: number) =>
   }) as const
 
 const unauthenticated = (c: AppContext) => {
-  deleteCookie(c, SESSION_COOKIE, { path: "/", secure: true })
+  if (getCookie(c, SESSION_COOKIE) !== undefined) {
+    deleteCookie(c, SESSION_COOKIE, { path: "/", secure: true })
+  }
   return c.json({ error: "unauthenticated" }, 401)
 }
 
