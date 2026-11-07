@@ -1,18 +1,24 @@
 import { Clock, Context, Effect, Exit } from "effect"
 import type {
-  AssignSelfRequest,
-  AssignSelfResult,
+  AddCommentRequest,
+  AddCommentResult,
   Board,
   BoardCard,
   BoardColumn,
   BoardLabel,
+  CardComment,
   CardDetail,
+  CardUpdateResult,
   CreateCardRequest,
   CreateCardResult,
+  IssueOptions,
   MoveCardRequest,
   MoveCardResult,
   Org,
   OrgRepo,
+  SetAssigneeRequest,
+  SetLabelRequest,
+  SetMilestoneRequest,
 } from "../shared/api.ts"
 import { rankForDrop } from "../shared/card-order.ts"
 import { CardRanks, rankCards, rankOf, topRank } from "./card-ranks.ts"
@@ -30,6 +36,7 @@ import {
 } from "./errors.ts"
 import { type AccessToken, ForgejoClient, type RepoRef } from "./forgejo/client.ts"
 import {
+  type ForgejoComment,
   type ForgejoLabel,
   type ForgejoRepo,
   type ForgejoRepoIssue,
@@ -185,7 +192,19 @@ export const parseName = (what: string, value: string | undefined) =>
     ? Effect.succeed(value.toLowerCase())
     : Effect.fail(new BoardRequestInvalid({ message: `${what} is not a valid name` }))
 
+/** A Forgejo login, kept in the case the request gives. */
+const parseLogin = (value: string) =>
+  NAME.test(value)
+    ? Effect.succeed(value)
+    : Effect.fail(new BoardRequestInvalid({ message: "login is not a valid login" }))
+
 const ISSUE_NUMBER = /^[1-9][0-9]{0,9}$/
+
+/** The repository a request names. */
+export const parseRepoQuery = (org: string | undefined, repo: string | undefined) =>
+  Effect.gen(function* () {
+    return { owner: yield* parseName("org", org), name: yield* parseName("repository", repo) }
+  })
 
 /** The issue a card detail request names. */
 export const parseCardQuery = (
@@ -194,7 +213,7 @@ export const parseCardQuery = (
   number: string | undefined,
 ) =>
   Effect.gen(function* () {
-    const ref = { owner: yield* parseName("org", org), name: yield* parseName("repository", repo) }
+    const ref = yield* parseRepoQuery(org, repo)
     if (number === undefined || !ISSUE_NUMBER.test(number)) {
       return yield* new BoardRequestInvalid({ message: "number is not an issue number" })
     }
@@ -550,25 +569,17 @@ export const createCard = (token: AccessToken, login: string, request: CreateCar
 
 const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 
+type IssueRequest = { readonly org: string; readonly repo: string; readonly number: number }
+
 /**
- * Adds or removes the user who owns `token` as an assignee of the issue and keeps the other
- * assignees. Forgejo has no endpoint that adds one assignee, so this reads the assignees and
- * writes the whole list. A change made by someone else in between is lost. Forgejo decides
- * whether the user may assign; it ignores the write without an error when not, which answers
- * ForgejoForbidden here.
+ * Reads the repository and issue a card edit names. Refuses a pull request and an issue of an
+ * archived repository before anything is written.
  */
-export const assignSelf = (token: AccessToken, login: string, request: AssignSelfRequest) =>
+const editableIssue = (token: AccessToken, repoRef: RepoRef, number: number) =>
   Effect.gen(function* () {
-    const org = yield* parseName("org", request.org)
-    const repoRef = { owner: org, name: yield* parseName("repository", request.repo) }
-    const settings = yield* BoardConfig
     const forgejo = yield* ForgejoClient
-    const [repo, issue, orgLabels] = yield* Effect.all(
-      [
-        forgejo.repo(token, repoRef),
-        forgejo.issue(token, repoRef, request.number),
-        forgejo.orgLabels(token, org),
-      ],
+    const [repo, issue] = yield* Effect.all(
+      [forgejo.repo(token, repoRef), forgejo.issue(token, repoRef, number)],
       { concurrency: "unbounded" },
     )
     if (issue.pull_request != null) {
@@ -576,34 +587,167 @@ export const assignSelf = (token: AccessToken, login: string, request: AssignSel
     }
     if (repo.archived) {
       return yield* new BoardWriteForbidden({
-        message: `${repo.full_name} is archived, so its issues cannot be assigned`,
+        message: `${repo.full_name} is archived, so its issues cannot be changed`,
       })
     }
-    const isAssigned = (candidate: typeof issue) =>
-      (candidate.assignees ?? []).some((assignee) => sameLogin(assignee.login, login))
-    const updated =
-      isAssigned(issue) === request.assigned
-        ? issue
-        : yield* forgejo.setIssueAssignees(
-            token,
-            repoRef,
-            request.number,
-            request.assigned
-              ? [...(issue.assignees ?? []).map((assignee) => assignee.login), login]
-              : (issue.assignees ?? [])
-                  .map((assignee) => assignee.login)
-                  .filter((assignee) => !sameLogin(assignee, login)),
-          )
-    if (isAssigned(updated) !== request.assigned) return yield* new ForgejoForbidden()
+    return { repo, issue }
+  })
 
-    const card = toBoardCard(boardLayout(settings, orgLabels), org, repo, updated)
+/** One change to an issue's labels, milestone, or assignees. */
+type CardEdit = {
+  /** Whether the issue is as the request asks. */
+  readonly isApplied: (issue: ForgejoRepoIssue) => boolean
+  /** The Forgejo write that makes it so; it answers with the issue after the write. */
+  readonly write: (
+    issue: ForgejoRepoIssue,
+  ) => Effect.Effect<ForgejoRepoIssue, ForgejoError, ForgejoClient>
+}
+
+/**
+ * Applies one card edit as the user who owns `token` and answers with the card as the board
+ * shows it. Nothing is written when the issue is already as the request asks. Forgejo decides
+ * whether the user may make the change, and ignores some writes without an error when not;
+ * an issue that is still not as asked after the write answers ForgejoForbidden.
+ */
+const editCard = <E>(
+  token: AccessToken,
+  request: IssueRequest,
+  plan: (context: {
+    readonly repoRef: RepoRef
+    readonly issue: ForgejoRepoIssue
+    readonly layout: BoardLayout
+    readonly orgLabels: ReadonlyArray<ForgejoLabel>
+  }) => Effect.Effect<CardEdit, E, ForgejoClient>,
+) =>
+  Effect.gen(function* () {
+    const repoRef = yield* parseRepoQuery(request.org, request.repo)
+    const org = repoRef.owner
+    const settings = yield* BoardConfig
+    const forgejo = yield* ForgejoClient
+    const [{ repo, issue }, orgLabels] = yield* Effect.all(
+      [editableIssue(token, repoRef, request.number), forgejo.orgLabels(token, org)],
+      { concurrency: "unbounded" },
+    )
+    const layout = boardLayout(settings, orgLabels)
+    const edit = yield* plan({ repoRef, issue, layout, orgLabels })
+    const updated = edit.isApplied(issue) ? issue : yield* edit.write(issue)
+    if (!edit.isApplied(updated)) return yield* new ForgejoForbidden()
+
+    const card = toBoardCard(layout, org, repo, updated)
     const stored = yield* (yield* CardRanks).forOrg(org)
-    return { card: { ...card, rank: rankOf(stored, card) } } satisfies AssignSelfResult
+    return { card: { ...card, rank: rankOf(stored, card) } } satisfies CardUpdateResult
   })
 
 /**
- * The issue's description rendered by Forgejo, as the user who owns `token` can read it. The
- * HTML comes from Forgejo's sanitizing renderer; Tabulo passes it on without reading it.
+ * Adds or removes one assignee and keeps the others. Forgejo has no endpoint that adds one
+ * assignee, so this reads the assignees and writes the whole list. A change made by someone
+ * else in between is lost. Forgejo ignores the list without an error when the user cannot
+ * write the repository's issues.
+ */
+export const setAssignee = (token: AccessToken, _login: string, request: SetAssigneeRequest) =>
+  Effect.flatMap(parseLogin(request.login), (login) =>
+    editCard(token, request, ({ repoRef }) => {
+      const logins = (issue: ForgejoRepoIssue) =>
+        (issue.assignees ?? []).map((assignee) => assignee.login)
+      return Effect.succeed({
+        isApplied: (issue) =>
+          logins(issue).some((other) => sameLogin(other, login)) === request.assigned,
+        write: (issue) =>
+          ForgejoClient.use((forgejo) =>
+            forgejo.setIssueAssignees(
+              token,
+              repoRef,
+              request.number,
+              request.assigned
+                ? [...logins(issue), login]
+                : logins(issue).filter((other) => !sameLogin(other, login)),
+            ),
+          ),
+      } satisfies CardEdit)
+    }),
+  )
+
+/**
+ * Adds or removes one label and leaves the others alone. A status column label is refused:
+ * the card's column changes only through a move. A label id Forgejo does not know is left to
+ * Forgejo, which ignores it without an error.
+ */
+export const setLabel = (token: AccessToken, _login: string, request: SetLabelRequest) =>
+  editCard(token, request, ({ repoRef, issue, layout, orgLabels }) =>
+    Effect.gen(function* () {
+      const forgejo = yield* ForgejoClient
+      const byId = (label: ForgejoLabel) => label.id === request.labelId
+      const label =
+        orgLabels.find(byId) ??
+        issue.labels.find(byId) ??
+        (yield* forgejo.repoLabels(token, repoRef)).find(byId)
+      if (label !== undefined && layout.isColumnLabel(label)) {
+        return yield* new BoardRequestInvalid({
+          message: `${label.name} is a board column; move the card to change its column`,
+        })
+      }
+      return {
+        isApplied: (current) => current.labels.some(byId) === request.present,
+        write: (current) => {
+          if (request.present) {
+            return forgejo
+              .addIssueLabels(token, repoRef, request.number, [request.labelId])
+              .pipe(Effect.map((labels) => ({ ...current, labels })))
+          }
+          const present = current.labels.find(byId)
+          if (present === undefined) return Effect.succeed(current)
+          return forgejo
+            .removeIssueLabel(token, repoRef, request.number, labelIdentifier(orgLabels, present))
+            .pipe(Effect.andThen(forgejo.issue(token, repoRef, request.number)))
+        },
+      } satisfies CardEdit
+    }),
+  )
+
+/** Sets or clears the milestone. Forgejo 17 refuses this with 403 when the user cannot write issues. */
+export const setMilestone = (token: AccessToken, _login: string, request: SetMilestoneRequest) =>
+  editCard(token, request, ({ repoRef }) =>
+    Effect.succeed({
+      isApplied: (issue) => (issue.milestone?.id ?? null) === request.milestoneId,
+      write: () =>
+        ForgejoClient.use((forgejo) =>
+          forgejo.setIssueMilestone(token, repoRef, request.number, request.milestoneId),
+        ),
+    } satisfies CardEdit),
+  )
+
+/** Markdown rendered by Forgejo as it shows an issue; empty text renders as "" without a request. */
+const renderIssueMarkdown = (token: AccessToken, repo: RepoRef, text: string) =>
+  text === ""
+    ? Effect.succeed("")
+    : ForgejoClient.use((forgejo) => forgejo.renderMarkdown(token, repo, text))
+
+const toCardComment = (comment: ForgejoComment, bodyHtml: string): CardComment => ({
+  id: comment.id,
+  author: { login: comment.user.login, avatarUrl: comment.user.avatar_url },
+  createdAt: comment.created_at,
+  bodyHtml,
+})
+
+/** Comments as the user who owns `token`; Forgejo decides who may comment. */
+export const addComment = (token: AccessToken, _login: string, request: AddCommentRequest) =>
+  Effect.gen(function* () {
+    const repoRef = yield* parseRepoQuery(request.org, request.repo)
+    yield* editableIssue(token, repoRef, request.number)
+    const forgejo = yield* ForgejoClient
+    const comment = yield* forgejo.createComment(token, repoRef, request.number, request.body)
+    const bodyHtml = yield* renderIssueMarkdown(token, repoRef, comment.body)
+    return { comment: toCardComment(comment, bodyHtml) } satisfies AddCommentResult
+  })
+
+const MAX_DETAIL_COMMENTS = 50
+// Workers allow six open connections; renders leave two free.
+const RENDER_CONCURRENCY = 4
+
+/**
+ * The issue's description and latest comments rendered by Forgejo, as the user who owns
+ * `token` can read them. The HTML comes from Forgejo's sanitizing renderer; Tabulo passes it on
+ * without reading it. Forgejo does not page an issue's comments, so this reads them all.
  */
 export const cardDetail = (
   token: AccessToken,
@@ -611,9 +755,61 @@ export const cardDetail = (
 ) =>
   Effect.gen(function* () {
     const forgejo = yield* ForgejoClient
-    const body = yield* forgejo.issueBody(token, query.repo, query.number)
+    const [body, comments] = yield* Effect.all(
+      [
+        forgejo.issueBody(token, query.repo, query.number),
+        forgejo.issueComments(token, query.repo, query.number),
+      ],
+      { concurrency: "unbounded" },
+    )
+    const latest = comments.slice(-MAX_DETAIL_COMMENTS)
+    const [bodyHtml, cardComments] = yield* Effect.all(
+      [
+        renderIssueMarkdown(token, query.repo, body),
+        Effect.forEach(
+          latest,
+          (comment) =>
+            renderIssueMarkdown(token, query.repo, comment.body).pipe(
+              Effect.map((html) => toCardComment(comment, html)),
+            ),
+          { concurrency: RENDER_CONCURRENCY - 1 },
+        ),
+      ],
+      { concurrency: "unbounded" },
+    )
     return {
       key: cardKey(query.repo.owner, query.repo.name, query.number),
-      bodyHtml: body === "" ? "" : yield* forgejo.renderMarkdown(token, query.repo, body),
+      bodyHtml,
+      comments: cardComments,
+      commentCount: comments.length,
     } satisfies CardDetail
+  })
+
+/**
+ * What a card's labels, milestone, and assignees can be set to in the repository: its labels
+ * and the organization's except status column labels and archived labels, its open
+ * milestones, and the users Forgejo lets be assigned.
+ */
+export const issueOptions = (token: AccessToken, repo: RepoRef) =>
+  Effect.gen(function* () {
+    const settings = yield* BoardConfig
+    const forgejo = yield* ForgejoClient
+    const [orgLabels, repoLabels, milestones, assignees] = yield* Effect.all(
+      [
+        forgejo.orgLabels(token, repo.owner),
+        forgejo.repoLabels(token, repo),
+        forgejo.openMilestones(token, repo),
+        forgejo.repoAssignees(token, repo),
+      ],
+      { concurrency: "unbounded" },
+    )
+    const layout = boardLayout(settings, orgLabels)
+    return {
+      labels: [...orgLabels, ...repoLabels]
+        .filter((label) => label.is_archived !== true && !layout.isColumnLabel(label))
+        .map(toBoardLabel)
+        .toSorted((a, b) => byName(a.name, b.name)),
+      milestones,
+      assignees: assignees.map(({ login, avatar_url }) => ({ login, avatarUrl: avatar_url })),
+    } satisfies IssueOptions
   })

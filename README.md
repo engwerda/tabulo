@@ -157,10 +157,12 @@ issue, so a triage member who can write issues but not code can move cards too. 
 
 When you add a card with the **+** in a column header or **New issue**, Tabulo creates the
 issue in Forgejo as you, with the column's status label, and puts the card first in the column.
-Click a card to open its details beside the board: the description as Forgejo renders it, its
-labels, milestone, and assignees, and **Assign me**. The address names the open card, so you
-can share it. Tabulo writes the whole assignee list, so an assignee change someone makes at the
-same moment can be lost.
+Click a card to open its details beside the board: the description and the latest 50 comments
+as Forgejo renders them, and its labels, milestone, and assignees, which you can change there.
+You can also add a comment. Tabulo makes each change in Forgejo as you, and Forgejo decides
+whether you may. A status label is not offered there; move the card instead. The address names
+the open card, so you can share it. Tabulo writes the whole assignee list, so an assignee
+change someone makes at the same moment can be lost.
 
 The filters narrow the board by text or `#number`, assignee, label, and milestone. **Assigned
 to me** puts `assignee=@me` in the address, so a shared link shows each person their own cards.

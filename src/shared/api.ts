@@ -173,22 +173,76 @@ export const CreateCardResult = Schema.Struct({
 })
 export type CreateCardResult = typeof CreateCardResult.Type
 
+/** A comment on an issue, rendered by Forgejo. */
+export const CardComment = Schema.Struct({
+  id: Schema.Number,
+  author: Schema.Struct({ login: Schema.String, avatarUrl: Schema.String }),
+  createdAt: Schema.String,
+  bodyHtml: Schema.String,
+})
+export type CardComment = typeof CardComment.Type
+
 /** What a card's detail panel shows beyond the card itself. */
 export const CardDetail = Schema.Struct({
   key: Schema.String,
   /** The description as Forgejo renders it; empty when the issue has none. */
   bodyHtml: Schema.String,
+  /** The latest comments, oldest first; at most 50. */
+  comments: Schema.Array(CardComment),
+  /** How many comments the issue has, which can exceed `comments.length`. */
+  commentCount: Schema.Number,
 })
 export type CardDetail = typeof CardDetail.Type
 
-/** Adds or removes the signed-in user as an assignee, keeping the other assignees. */
-export const AssignSelfRequest = Schema.Struct({
+/** What a card's labels, milestone, and assignees can be set to in one repository. */
+export const IssueOptions = Schema.Struct({
+  /** Organization and repository labels, without status column labels or archived labels. */
+  labels: Schema.Array(BoardLabel),
+  /** The repository's open milestones. */
+  milestones: Schema.Array(Schema.Struct({ id: Schema.Number, title: Schema.String })),
+  /** Users Forgejo lets be assigned to the repository's issues. */
+  assignees: Schema.Array(Schema.Struct({ login: Schema.String, avatarUrl: Schema.String })),
+})
+export type IssueOptions = typeof IssueOptions.Type
+
+const IssueRef = {
   org: Schema.String,
   repo: Schema.String,
   number: Schema.Int.check(Schema.isGreaterThan(0)),
+}
+
+/** Adds or removes one assignee, keeping the others. */
+export const SetAssigneeRequest = Schema.Struct({
+  ...IssueRef,
+  login: Schema.String,
   assigned: Schema.Boolean,
 })
-export type AssignSelfRequest = typeof AssignSelfRequest.Type
+export type SetAssigneeRequest = typeof SetAssigneeRequest.Type
 
-export const AssignSelfResult = Schema.Struct({ card: BoardCard })
-export type AssignSelfResult = typeof AssignSelfResult.Type
+/** Adds or removes one label that is not a status column label, keeping the others. */
+export const SetLabelRequest = Schema.Struct({
+  ...IssueRef,
+  labelId: Schema.Int.check(Schema.isGreaterThan(0)),
+  present: Schema.Boolean,
+})
+export type SetLabelRequest = typeof SetLabelRequest.Type
+
+/** Sets the milestone, or clears it with null. */
+export const SetMilestoneRequest = Schema.Struct({
+  ...IssueRef,
+  milestoneId: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
+})
+export type SetMilestoneRequest = typeof SetMilestoneRequest.Type
+
+/** The card after a label, milestone, or assignee change, as the board shows it. */
+export const CardUpdateResult = Schema.Struct({ card: BoardCard })
+export type CardUpdateResult = typeof CardUpdateResult.Type
+
+export const AddCommentRequest = Schema.Struct({
+  ...IssueRef,
+  body: Schema.String.check(Schema.isTrimmed(), Schema.isNonEmpty(), Schema.isMaxLength(65_535)),
+})
+export type AddCommentRequest = typeof AddCommentRequest.Type
+
+export const AddCommentResult = Schema.Struct({ comment: CardComment })
+export type AddCommentResult = typeof AddCommentResult.Type
