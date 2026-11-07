@@ -2,6 +2,8 @@ import { Clock, Context, Effect, Redacted, Schema } from "effect"
 import {
   ForgejoDecodeFailed,
   type ForgejoError,
+  ForgejoForbidden,
+  ForgejoNotFound,
   ForgejoRequestFailed,
   ForgejoUnauthorized,
   ForgejoUnreachable,
@@ -9,7 +11,11 @@ import {
 } from "../errors.ts"
 import {
   ForgejoIssue,
+  ForgejoLabel,
   ForgejoNotification,
+  ForgejoOrg,
+  ForgejoRepo,
+  ForgejoRepoIssue,
   ForgejoUser,
   OAuthErrorResponse,
   TokenResponse,
@@ -38,6 +44,14 @@ export type Page<A> = { readonly items: ReadonlyArray<A>; readonly total: number
 
 export type IssueSearch = "review_requested" | "assigned" | "mentioned" | "created"
 
+/** A repository by owner and name, both already validated as path segments. */
+export type RepoRef = { readonly owner: string; readonly name: string }
+
+/** Which issues of a repository to list. Pull requests are never included. */
+export type IssueListing =
+  | { readonly state: "open" }
+  | { readonly state: "closed"; readonly updatedSince: string }
+
 export class ForgejoClient extends Context.Service<
   ForgejoClient,
   {
@@ -59,6 +73,41 @@ export class ForgejoClient extends Context.Service<
       token: AccessToken,
       limit: number,
     ) => Effect.Effect<Page<ForgejoNotification>, ForgejoError>
+    readonly userOrgs: (
+      token: AccessToken,
+    ) => Effect.Effect<ReadonlyArray<ForgejoOrg>, ForgejoError>
+    readonly orgRepos: (
+      token: AccessToken,
+      org: string,
+    ) => Effect.Effect<ReadonlyArray<ForgejoRepo>, ForgejoError>
+    readonly orgLabels: (
+      token: AccessToken,
+      org: string,
+    ) => Effect.Effect<ReadonlyArray<ForgejoLabel>, ForgejoError>
+    readonly repo: (token: AccessToken, repo: RepoRef) => Effect.Effect<ForgejoRepo, ForgejoError>
+    readonly repoIssues: (
+      token: AccessToken,
+      repo: RepoRef,
+      listing: IssueListing,
+    ) => Effect.Effect<ReadonlyArray<ForgejoRepoIssue>, ForgejoError>
+    readonly issue: (
+      token: AccessToken,
+      repo: RepoRef,
+      number: number,
+    ) => Effect.Effect<ForgejoRepoIssue, ForgejoError>
+    readonly setIssueState: (
+      token: AccessToken,
+      repo: RepoRef,
+      number: number,
+      state: "open" | "closed",
+    ) => Effect.Effect<ForgejoRepoIssue, ForgejoError>
+    /** Replaces the issue's whole label set. */
+    readonly replaceIssueLabels: (
+      token: AccessToken,
+      repo: RepoRef,
+      number: number,
+      labelIds: ReadonlyArray<number>,
+    ) => Effect.Effect<ReadonlyArray<ForgejoLabel>, ForgejoError>
   }
 >()("tabulo/ForgejoClient") {}
 
@@ -86,6 +135,13 @@ const totalCount = (response: Response, fallback: number) => {
   return Number.isNaN(total) ? fallback : total
 }
 
+// Forgejo caps every page at MAX_RESPONSE_ITEMS (50 by default), whatever `limit` asks for.
+const PAGE_SIZE = 50
+const MAX_PAGES = 100
+
+const repoPath = (repo: RepoRef) =>
+  `/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`
+
 export const makeForgejoClient = (
   config: ForgejoConfig,
   fetch: HttpFetch,
@@ -95,19 +151,25 @@ export const makeForgejoClient = (
     path: string,
     query: Record<string, string>,
     schema: Schema.Decoder<A>,
+    write?: { readonly method: "PATCH" | "PUT"; readonly body: unknown },
   ) =>
     Effect.gen(function* () {
       const url = `${config.baseUrl}/api/v1${path}?${new URLSearchParams(query)}`
       const response = yield* send(
         fetch,
         new Request(url, {
+          method: write?.method ?? "GET",
           headers: {
             accept: "application/json",
             authorization: `Bearer ${Redacted.value(token)}`,
+            ...(write === undefined ? {} : { "content-type": "application/json" }),
           },
+          ...(write === undefined ? {} : { body: JSON.stringify(write.body) }),
         }),
       )
       if (response.status === 401) return yield* new ForgejoUnauthorized()
+      if (response.status === 403) return yield* new ForgejoForbidden()
+      if (response.status === 404) return yield* new ForgejoNotFound()
       if (!response.ok) return yield* new ForgejoRequestFailed({ status: response.status })
       const body = yield* readJson(response, schema)
       return { body, response }
@@ -125,6 +187,28 @@ export const makeForgejoClient = (
         total: totalCount(response, body.length),
       })),
     )
+
+  /** Every item of a paginated list. */
+  const all = <A>(
+    token: AccessToken,
+    path: string,
+    query: Record<string, string>,
+    item: Schema.Decoder<A>,
+  ) =>
+    Effect.gen(function* () {
+      const items: Array<A> = []
+      for (let number = 1; number <= MAX_PAGES; number++) {
+        const { items: batch, total } = yield* page(
+          token,
+          path,
+          { ...query, limit: String(PAGE_SIZE), page: String(number) },
+          item,
+        )
+        items.push(...batch)
+        if (batch.length === 0 || items.length >= total) break
+      }
+      return items as ReadonlyArray<A>
+    })
 
   const tokenRequest = (grant: Record<string, string>) =>
     Effect.gen(function* () {
@@ -204,5 +288,34 @@ export const makeForgejoClient = (
       ),
     unreadNotifications: (token, limit) =>
       page(token, "/notifications", { limit: String(limit) }, ForgejoNotification),
+    userOrgs: (token) => all(token, "/user/orgs", {}, ForgejoOrg),
+    orgRepos: (token, org) => all(token, `/orgs/${encodeURIComponent(org)}/repos`, {}, ForgejoRepo),
+    orgLabels: (token, org) =>
+      all(token, `/orgs/${encodeURIComponent(org)}/labels`, {}, ForgejoLabel),
+    repo: (token, repo) =>
+      api(token, repoPath(repo), {}, ForgejoRepo).pipe(Effect.map(({ body }) => body)),
+    repoIssues: (token, repo, listing) =>
+      all(
+        token,
+        `${repoPath(repo)}/issues`,
+        listing.state === "open"
+          ? { type: "issues", state: "open" }
+          : { type: "issues", state: "closed", since: listing.updatedSince },
+        ForgejoRepoIssue,
+      ),
+    issue: (token, repo, number) =>
+      api(token, `${repoPath(repo)}/issues/${number}`, {}, ForgejoRepoIssue).pipe(
+        Effect.map(({ body }) => body),
+      ),
+    setIssueState: (token, repo, number, state) =>
+      api(token, `${repoPath(repo)}/issues/${number}`, {}, ForgejoRepoIssue, {
+        method: "PATCH",
+        body: { state },
+      }).pipe(Effect.map(({ body }) => body)),
+    replaceIssueLabels: (token, repo, number, labelIds) =>
+      api(token, `${repoPath(repo)}/issues/${number}/labels`, {}, Schema.Array(ForgejoLabel), {
+        method: "PUT",
+        body: { labels: labelIds },
+      }).pipe(Effect.map(({ body }) => body)),
   }
 }

@@ -43,3 +43,47 @@ export const TokenResponse = Schema.Struct({
 })
 
 export const OAuthErrorResponse = Schema.Struct({ error: Schema.String })
+
+/** Forgejo sends label colors with or without the leading `#`. */
+export const labelHexColor = (color: string) => (color.startsWith("#") ? color : `#${color}`)
+
+export const ForgejoLabel = Schema.Struct({
+  id: Schema.Number,
+  name: Schema.String,
+  color: Schema.String,
+  exclusive: Schema.Boolean,
+})
+export type ForgejoLabel = typeof ForgejoLabel.Type
+
+/** An issue as the repository issue endpoints return it. */
+export const ForgejoRepoIssue = Schema.Struct({
+  number: Schema.Number,
+  title: Schema.String,
+  html_url: Schema.String,
+  state: Schema.Literals(["open", "closed"]),
+  labels: Schema.Array(ForgejoLabel),
+  assignees: Schema.NullOr(
+    Schema.Array(Schema.Struct({ login: Schema.String, avatar_url: Schema.String })),
+  ),
+  milestone: Schema.NullOr(Schema.Struct({ title: Schema.String })),
+  updated_at: Schema.String,
+  closed_at: Schema.NullOr(Schema.String),
+  pull_request: Schema.optionalKey(Schema.NullOr(Schema.Struct({}))),
+})
+export type ForgejoRepoIssue = typeof ForgejoRepoIssue.Type
+
+export const ForgejoOrg = Schema.Struct({
+  name: Schema.String,
+  full_name: Schema.String,
+  avatar_url: Schema.String,
+})
+export type ForgejoOrg = typeof ForgejoOrg.Type
+
+export const ForgejoRepo = Schema.Struct({
+  name: Schema.String,
+  full_name: Schema.String,
+  private: Schema.Boolean,
+  // Present whenever the request is authenticated.
+  permissions: Schema.optionalKey(Schema.Struct({ admin: Schema.Boolean, push: Schema.Boolean })),
+})
+export type ForgejoRepo = typeof ForgejoRepo.Type
