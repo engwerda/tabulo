@@ -109,8 +109,8 @@ export const BoardCard = Schema.Struct({
   closedAt: Schema.NullOr(Schema.String),
   /** The key of the column the card is in. */
   column: Schema.String,
-  /** Position within the column; compare ranks by code unit, not by locale. */
-  rank: Schema.NullOr(Schema.String),
+  /** Position within the column; sort with compareCardOrder in card-order.ts. */
+  rank: Schema.String,
   /** Why nobody can move the card, whoever is viewing; null when it can be moved. */
   readOnlyReason: Schema.NullOr(Schema.Literal("archived")),
 })
@@ -135,7 +135,16 @@ export const MoveCardRequest = Schema.Struct({
   repo: Schema.String,
   number: Schema.Int.check(Schema.isGreaterThan(0)),
   toColumn: Schema.String,
-  /** Every card of the destination column, in order, after the move. */
-  orderedKeys: Schema.Array(Schema.String).check(Schema.isMaxLength(2000)),
+  /** The key of the card shown directly above the drop, or null at the top of the column. */
+  afterKey: Schema.NullOr(Schema.String),
+  /** The key of the card shown directly below the drop, or null at the bottom. */
+  beforeKey: Schema.NullOr(Schema.String),
 })
 export type MoveCardRequest = typeof MoveCardRequest.Type
+
+export const MoveCardResult = Schema.Struct({
+  card: BoardCard,
+  /** False when Forgejo applied the move but Tabulo could not store the card's rank. */
+  orderSaved: Schema.Boolean,
+})
+export type MoveCardResult = typeof MoveCardResult.Type

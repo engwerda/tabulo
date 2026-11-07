@@ -1,48 +1,63 @@
 import { Array as Arr, Clock, Context, Effect } from "effect"
-import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing"
+import { generateNKeysBetween } from "fractional-indexing"
+import type { CardPlace } from "../shared/card-order.ts"
 
-export type StoredRank = { readonly column: string; readonly rank: string }
-export type RankUpdate = { readonly key: string; readonly rank: string }
+export type RankedCard = CardPlace & { readonly key: string }
 
 /** Card order within board columns, shared by everyone who sees the organization's board. */
 export class CardRanks extends Context.Service<
   CardRanks,
   {
     /** Every stored rank of the organization, by card key. */
-    readonly forOrg: (org: string) => Effect.Effect<ReadonlyMap<string, StoredRank>>
-    readonly write: (
+    readonly forOrg: (org: string) => Effect.Effect<ReadonlyMap<string, CardPlace>>
+    /**
+     * In one batch, stores `ranked` for cards that have no row or a row for another column,
+     * and deletes the rows of `removed`. A row that already names the card's column is kept,
+     * so a concurrent reader or mover is not overwritten.
+     */
+    readonly materialize: (
       org: string,
-      column: string,
-      updates: ReadonlyArray<RankUpdate>,
+      ranked: ReadonlyArray<RankedCard>,
+      removed: ReadonlyArray<string>,
       updatedBy: string,
     ) => Effect.Effect<void>
+    readonly place: (org: string, card: RankedCard, updatedBy: string) => Effect.Effect<void>
   }
 >()("tabulo/CardRanks") {}
 
 /**
- * The rank rows to write so that `orderedKeys` sorts in that order once `movedKey` is placed.
- * When the moved card's neighbours are ranked, only the moved card gets a new rank between
- * them; otherwise the whole column is ranked afresh. `ranked` holds the column's stored ranks.
+ * Every card with its rank. `kept` are the cards whose stored rank is for their column. `fresh`
+ * are the others, ranked after the largest stored rank of their column, most recently updated
+ * first; they still need storing.
  */
-export const planRanks = (
-  orderedKeys: ReadonlyArray<string>,
-  movedKey: string,
-  ranked: ReadonlyMap<string, string>,
-): ReadonlyArray<RankUpdate> => {
-  const index = orderedKeys.indexOf(movedKey)
-  const neighbourRank = (key: string | undefined) => (key === undefined ? null : ranked.get(key))
-  const lower = neighbourRank(orderedKeys[index - 1])
-  const upper = neighbourRank(orderedKeys[index + 1])
-  if (
-    lower !== undefined &&
-    upper !== undefined &&
-    (lower === null || upper === null || lower < upper)
-  ) {
-    return [{ key: movedKey, rank: generateKeyBetween(lower, upper) }]
+export const rankCards = <
+  C extends { readonly key: string; readonly column: string; readonly updatedAt: string },
+>(
+  stored: ReadonlyMap<string, CardPlace>,
+  cards: ReadonlyArray<C>,
+) => {
+  const kept: Array<C & { readonly rank: string }> = []
+  const unranked: Array<C> = []
+  for (const card of cards) {
+    const place = stored.get(card.key)
+    if (place?.column === card.column) kept.push({ ...card, rank: place.rank })
+    else unranked.push(card)
   }
-  return Arr.zip(orderedKeys, generateNKeysBetween(null, null, orderedKeys.length)).map(
-    ([key, rank]) => ({ key, rank }),
+  const fresh = Object.entries(Arr.groupBy(unranked, (card) => card.column)).flatMap(
+    ([column, group]) => {
+      let last: string | null = null
+      for (const place of stored.values()) {
+        if (place.column === column && (last === null || place.rank > last)) last = place.rank
+      }
+      const newestFirst = group.toSorted(
+        (a, b) => b.updatedAt.localeCompare(a.updatedAt) || (a.key < b.key ? -1 : 1),
+      )
+      return Arr.zip(newestFirst, generateNKeysBetween(last, null, newestFirst.length)).map(
+        ([card, rank]) => ({ ...card, rank }),
+      )
+    },
   )
+  return { kept, fresh }
 }
 
 type RankRow = { issue_key: string; column_key: string; rank: string }
@@ -66,20 +81,54 @@ export const makeCardRanks = (db: D1Database): CardRanks["Service"] => ({
       ),
     ),
 
-  write: (org, column, updates, updatedBy) =>
+  // One JSON parameter per statement keeps a board of any size within D1's limits on bound
+  // parameters and statements per invocation.
+  materialize: (org, ranked, removed, updatedBy) =>
     Effect.gen(function* () {
-      if (updates.length === 0) return
+      const statements: Array<D1PreparedStatement> = []
+      if (ranked.length > 0) {
+        const now = yield* Clock.currentTimeMillis
+        statements.push(
+          db
+            .prepare(
+              `INSERT INTO card_ranks (org, issue_key, column_key, rank, updated_at, updated_by)
+               SELECT ?1, json_extract(value, '$.key'), json_extract(value, '$.column'),
+                 json_extract(value, '$.rank'), ?2, ?3
+               FROM json_each(?4) WHERE true
+               ON CONFLICT (org, issue_key) DO UPDATE SET column_key = excluded.column_key,
+                 rank = excluded.rank, updated_at = excluded.updated_at,
+                 updated_by = excluded.updated_by
+               WHERE card_ranks.column_key <> excluded.column_key`,
+            )
+            .bind(org, now, updatedBy, JSON.stringify(ranked)),
+        )
+      }
+      if (removed.length > 0) {
+        statements.push(
+          db
+            .prepare(
+              "DELETE FROM card_ranks WHERE org = ?1 AND issue_key IN (SELECT value FROM json_each(?2))",
+            )
+            .bind(org, JSON.stringify(removed)),
+        )
+      }
+      if (statements.length > 0) yield* query(() => db.batch(statements))
+    }),
+
+  place: (org, card, updatedBy) =>
+    Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis
-      const upsert = db.prepare(
-        `INSERT INTO card_ranks (org, issue_key, column_key, rank, updated_at, updated_by)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT (org, issue_key) DO UPDATE SET column_key = excluded.column_key,
-           rank = excluded.rank, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
-      )
       yield* query(() =>
-        db.batch(
-          updates.map(({ key, rank }) => upsert.bind(org, key, column, rank, now, updatedBy)),
-        ),
+        db
+          .prepare(
+            `INSERT INTO card_ranks (org, issue_key, column_key, rank, updated_at, updated_by)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT (org, issue_key) DO UPDATE SET column_key = excluded.column_key,
+               rank = excluded.rank, updated_at = excluded.updated_at,
+               updated_by = excluded.updated_by`,
+          )
+          .bind(org, card.key, card.column, card.rank, now, updatedBy)
+          .run(),
       )
     }),
 })

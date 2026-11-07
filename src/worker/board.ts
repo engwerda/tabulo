@@ -1,16 +1,19 @@
-import { Clock, Context, Effect } from "effect"
+import { Clock, Context, Effect, Exit } from "effect"
 import type {
   Board,
   BoardCard,
   BoardColumn,
   BoardLabel,
   MoveCardRequest,
+  MoveCardResult,
   Org,
   OrgRepo,
 } from "../shared/api.ts"
-import { CardRanks, planRanks } from "./card-ranks.ts"
+import { rankForDrop } from "../shared/card-order.ts"
+import { CardRanks, rankCards } from "./card-ranks.ts"
 import type { BoardSettings } from "./config.ts"
 import {
+  BoardChanged,
   BoardRequestInvalid,
   describeForgejoError,
   FORGEJO_READ_ERRORS,
@@ -128,13 +131,14 @@ export const boardLayout = (
 export const cardKey = (org: string, repo: string, number: number) =>
   `${org}/${repo}#${number}`.toLowerCase()
 
+type UnrankedCard = Omit<BoardCard, "rank">
+
 export const toBoardCard = (
   layout: BoardLayout,
   org: string,
   repo: ForgejoRepo,
   issue: ForgejoRepoIssue,
-  rank: string | null,
-): BoardCard => ({
+): UnrankedCard => ({
   key: cardKey(org, repo.name, issue.number),
   repo: repo.name,
   number: issue.number,
@@ -150,11 +154,21 @@ export const toBoardCard = (
   updatedAt: issue.updated_at,
   closedAt: issue.closed_at,
   column: layout.columnOf(issue),
-  rank,
   readOnlyReason: repo.archived ? "archived" : null,
 })
 
 const NAME = /^[A-Za-z0-9_.-]+$/
+const CARD_KEY = /^[a-z0-9_.-]+\/[a-z0-9_.-]+#[1-9][0-9]*$/
+const MAX_CARD_KEY_LENGTH = 200
+
+/** A card key of `org` from a request, lowercased, or null when the request names none. */
+export const parseCardKey = (org: string, what: string, value: string | null) => {
+  if (value === null) return Effect.succeed(null)
+  const key = value.toLowerCase()
+  return key.length <= MAX_CARD_KEY_LENGTH && CARD_KEY.test(key) && key.startsWith(`${org}/`)
+    ? Effect.succeed(key)
+    : Effect.fail(new BoardRequestInvalid({ message: `${what} is not a card of ${org}` }))
+}
 
 /** An organization or repository name that is safe to put in a Forgejo API path. */
 export const parseName = (what: string, value: string | undefined) =>
@@ -206,7 +220,7 @@ export const listOrgRepos = (token: AccessToken, org: string) =>
   )
 
 type RepoCards =
-  | { readonly _tag: "Loaded"; readonly cards: ReadonlyArray<BoardCard> }
+  | { readonly _tag: "Loaded"; readonly repo: string; readonly cards: ReadonlyArray<UnrankedCard> }
   | { readonly _tag: "Failed"; readonly repo: string; readonly message: string }
 
 /**
@@ -245,8 +259,9 @@ export const loadBoard = (
         Effect.map(
           ([repo, open, closed]): RepoCards => ({
             _tag: "Loaded",
+            repo: name,
             cards: [...open, ...closed.filter(closedInWindow)].map((issue) =>
-              toBoardCard(layout, query.org, repo, issue, null),
+              toBoardCard(layout, query.org, repo, issue),
             ),
           }),
         ),
@@ -262,21 +277,33 @@ export const loadBoard = (
     const results = yield* Effect.forEach(query.repos, repoCards, {
       concurrency: REPO_CONCURRENCY,
     })
-    const ranks = yield* CardRanks.use((store) => store.forOrg(query.org))
-    const rankOf = (card: BoardCard) => {
-      const stored = ranks.get(card.key)
-      return stored?.column === card.column ? stored.rank : null
-    }
+    const loaded = results.flatMap((result) => (result._tag === "Loaded" ? [result] : []))
+    const ranks = yield* CardRanks
+    const stored = yield* ranks.forOrg(query.org)
+    const { kept, fresh } = rankCards(
+      stored,
+      loaded.flatMap((result) => result.cards),
+    )
+    // Rows of issues that a loaded repository no longer lists: closed before the Done window,
+    // deleted, or transferred. Rows of other repositories belong to other boards.
+    const listed = new Set([...kept, ...fresh].map((card) => card.key))
+    const loadedRepos = new Set(loaded.map((result) => result.repo))
+    const removed = [...stored.keys()].filter(
+      (key) =>
+        !listed.has(key) && loadedRepos.has(key.slice(query.org.length + 1, key.lastIndexOf("#"))),
+    )
+    yield* ranks.materialize(
+      query.org,
+      fresh.map(({ key, column, rank }) => ({ key, column, rank })),
+      removed,
+      login,
+    )
     return {
       org: query.org,
       repos: query.repos,
       viewerCanArrange,
       columns: layout.columns,
-      cards: results.flatMap((result) =>
-        result._tag === "Loaded"
-          ? result.cards.map((card) => ({ ...card, rank: rankOf(card) }))
-          : [],
-      ),
+      cards: [...kept, ...fresh],
       failedRepos: results.flatMap((result) =>
         result._tag === "Failed" ? [{ repo: result.repo, message: result.message }] : [],
       ),
@@ -359,14 +386,15 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
     const org = yield* parseName("org", request.org)
     const repoRef = { owner: org, name: yield* parseName("repository", request.repo) }
     const movedKey = cardKey(org, repoRef.name, request.number)
-    const { orderedKeys } = request
+    const afterKey = yield* parseCardKey(org, "afterKey", request.afterKey)
+    const beforeKey = yield* parseCardKey(org, "beforeKey", request.beforeKey)
     if (
-      !orderedKeys.includes(movedKey) ||
-      new Set(orderedKeys).size !== orderedKeys.length ||
-      !orderedKeys.every((key) => key.startsWith(`${org}/`))
+      afterKey === movedKey ||
+      beforeKey === movedKey ||
+      (afterKey !== null && afterKey === beforeKey)
     ) {
       return yield* new BoardRequestInvalid({
-        message: "orderedKeys must list the moved card and each card of the column once",
+        message: "afterKey and beforeKey must name two other cards",
       })
     }
 
@@ -397,21 +425,26 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
       return yield* new BoardRequestInvalid({ message: `There is no column ${request.toColumn}` })
     }
 
+    const ranks = yield* CardRanks
+    const rank = rankForDrop(yield* ranks.forOrg(org), {
+      movedKey,
+      column: target.key,
+      afterKey,
+      beforeKey,
+    })
+    if (rank === undefined) return yield* new BoardChanged()
+
     const moved =
       layout.columnOf(issue) === target.key
         ? issue
         : yield* applyWrites(issue, columnWrites(token, layout, repoRef, issue, target))
 
-    const ranks = yield* CardRanks
-    const stored = yield* ranks.forOrg(org)
-    const ranked = new Map(
-      orderedKeys.flatMap((key) => {
-        const row = stored.get(key)
-        return row?.column === target.key ? [[key, row.rank] as const] : []
-      }),
+    const saved = yield* Effect.exit(
+      ranks.place(org, { key: movedKey, column: target.key, rank }, login),
     )
-    const updates = planRanks(orderedKeys, movedKey, ranked)
-    yield* ranks.write(org, target.key, updates, login)
-    const rank = updates.find((update) => update.key === movedKey)?.rank ?? null
-    return toBoardCard(layout, org, repo, moved, rank)
+    if (Exit.isFailure(saved)) console.error(`Storing the rank of ${movedKey} failed`, saved.cause)
+    return {
+      card: { ...toBoardCard(layout, org, repo, moved), rank },
+      orderSaved: Exit.isSuccess(saved),
+    } satisfies MoveCardResult
   })

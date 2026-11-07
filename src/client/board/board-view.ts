@@ -1,17 +1,9 @@
-import { generateNKeysBetween } from "fractional-indexing"
 import type { Board, BoardCard } from "../../shared/api.ts"
+import { compareCardOrder, rankForDrop } from "../../shared/card-order.ts"
 
-// Ranks are fractional-indexing keys, which sort by code unit. localeCompare would misorder them.
-const byRankThenRecent = (a: BoardCard, b: BoardCard) => {
-  if (a.rank !== null && b.rank !== null) return a.rank < b.rank ? -1 : a.rank > b.rank ? 1 : 0
-  if (a.rank !== null) return -1
-  if (b.rank !== null) return 1
-  return b.updatedAt.localeCompare(a.updatedAt)
-}
-
-/** Every card of a column in board order: ranked cards by rank, then the rest newest first. */
+/** Every card of a column in board order. */
 export const columnCards = (cards: ReadonlyArray<BoardCard>, column: string) =>
-  cards.filter((card) => card.column === column).sort(byRankThenRecent)
+  cards.filter((card) => card.column === column).sort(compareCardOrder)
 
 export type BoardFilters = {
   readonly assignee: string | null
@@ -65,44 +57,43 @@ export const filterChoices = (cards: ReadonlyArray<BoardCard>) => ({
   labels: sortedUnique(cards.flatMap((card) => card.labels.map(({ name }) => name))),
 })
 
-/** Where a card goes: a column, and its index among that column's other cards. */
-export type CardMove = { readonly key: string; readonly toColumn: string; readonly index: number }
-
-/** The destination column's full order after `move`, ignoring any filters. */
-export const orderAfterMove = (board: Board, move: CardMove) => {
-  const others = columnCards(board.cards, move.toColumn)
-    .map((card) => card.key)
-    .filter((key) => key !== move.key)
-  return [...others.slice(0, move.index), move.key, ...others.slice(move.index)]
+/** Where a card goes: a column, and the cards shown directly above and below it there. */
+export type CardMove = {
+  readonly key: string
+  readonly toColumn: string
+  readonly afterKey: string | null
+  readonly beforeKey: string | null
 }
 
-/** The board as it will look once the server has applied `move`. */
-export const applyMove = (
-  board: Board,
-  move: CardMove,
-  orderedKeys: ReadonlyArray<string>,
-  now: string,
-): Board => {
-  const ranks = new Map(
-    generateNKeysBetween(null, null, orderedKeys.length).map((rank, index) => [
-      orderedKeys[index],
-      rank,
-    ]),
-  )
-  return {
-    ...board,
-    cards: board.cards.map((card) => {
-      if (card.key === move.key) {
-        const closed = move.toColumn === "done"
-        return {
-          ...card,
-          column: move.toColumn,
-          rank: ranks.get(card.key) ?? null,
-          state: closed ? "closed" : "open",
-          closedAt: closed ? (card.closedAt ?? now) : null,
-        }
-      }
-      return ranks.has(card.key) ? { ...card, rank: ranks.get(card.key) ?? null } : card
-    }),
-  }
+/** The neighbours of a card dropped at `index` among the other cards shown in a column. */
+export const dropNeighbours = (shownKeys: ReadonlyArray<string>, key: string, index: number) => {
+  const others = shownKeys.filter((other) => other !== key)
+  return { afterKey: others[index - 1] ?? null, beforeKey: others[index] ?? null }
 }
+
+/**
+ * The board as it will look once the server has applied `move`, ranked by the server's rule.
+ * Unchanged when the move does not fit the board.
+ */
+export const applyMove = (board: Board, move: CardMove, now: string): Board => {
+  const rank = rankForDrop(new Map(board.cards.map((card) => [card.key, card] as const)), {
+    movedKey: move.key,
+    column: move.toColumn,
+    afterKey: move.afterKey,
+    beforeKey: move.beforeKey,
+  })
+  if (rank === undefined) return board
+  const closed = move.toColumn === "done"
+  return replaceCard(board, move.key, (card) => ({
+    ...card,
+    column: move.toColumn,
+    rank,
+    state: closed ? "closed" : "open",
+    closedAt: closed ? (card.closedAt ?? now) : null,
+  }))
+}
+
+export const replaceCard = (board: Board, key: string, change: (card: BoardCard) => BoardCard) => ({
+  ...board,
+  cards: board.cards.map((card) => (card.key === key ? change(card) : card)),
+})

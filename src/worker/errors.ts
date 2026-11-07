@@ -57,6 +57,9 @@ export class MoveForbidden extends Schema.TaggedError<MoveForbidden>()("MoveForb
   message: Schema.String,
 }) {}
 
+/** The neighbours of a move do not match the stored order: the mover's board is out of date. */
+export class BoardChanged extends Schema.TaggedError<BoardChanged>()("BoardChanged", {}) {}
+
 /** A move needed several Forgejo writes, and one failed after an earlier one succeeded. */
 export class ForgejoMovePartlyApplied extends Schema.TaggedError<ForgejoMovePartlyApplied>()(
   "ForgejoMovePartlyApplied",

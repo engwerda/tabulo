@@ -2,7 +2,7 @@ import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/
 import { type ReactNode, useEffect, useState } from "react"
 import { Link, useSearchParams } from "wouter"
 import type { Board, MoveCardRequest } from "../../shared/api.ts"
-import { fetchBoard, fetchOrgRepos, moveCard } from "../api.ts"
+import { fetchBoard, fetchOrgRepos, moveCard, RequestFailed } from "../api.ts"
 import { BoardColumns } from "./BoardColumns.tsx"
 import { BoardFiltersBar } from "./BoardFiltersBar.tsx"
 import {
@@ -10,8 +10,8 @@ import {
   type CardMove,
   isFiltered,
   matchesFilters,
-  orderAfterMove,
   readFilters,
+  replaceCard,
 } from "./board-view.ts"
 import { RepoPicker } from "./RepoPicker.tsx"
 
@@ -70,7 +70,10 @@ export const BoardPage = ({ org }: { org: string }) => {
   const selected = (params.get("repos") ?? "").split(",").filter((name) => name !== "")
   const filters = readFilters(params)
   const [dragging, setDragging] = useState(false)
-  const [moveError, setMoveError] = useState<string | null>(null)
+  const [moveNotice, setMoveNotice] = useState<{
+    tone: "error" | "warning"
+    text: string
+  } | null>(null)
   const [dismissedFailures, setDismissedFailures] = useState<string | null>(null)
 
   const repos = useQuery({ queryKey: ["org-repos", org], queryFn: () => fetchOrgRepos(org) })
@@ -111,21 +114,48 @@ export const BoardPage = ({ org }: { org: string }) => {
   const move = useMutation({
     mutationKey: moveKey,
     mutationFn: ({ request }: { move: CardMove; request: MoveCardRequest }) => moveCard(request),
-    onMutate: async ({ move, request: { orderedKeys } }) => {
-      setMoveError(null)
+    onMutate: async ({ move }) => {
+      setMoveNotice(null)
       await queryClient.cancelQueries({ queryKey: boardKey })
       const previous = queryClient.getQueryData<Board>(boardKey)
       if (previous !== undefined) {
         queryClient.setQueryData<Board>(
           boardKey,
-          applyMove(previous, move, orderedKeys, new Date().toISOString()),
+          applyMove(previous, move, new Date().toISOString()),
         )
       }
       return { previous }
     },
+    onSuccess: ({ card, orderSaved }) => {
+      queryClient.setQueryData<Board>(boardKey, (current) =>
+        current === undefined ? current : replaceCard(current, card.key, () => card),
+      )
+      if (!orderSaved) {
+        setMoveNotice({
+          tone: "warning",
+          text: "The card moved in Forgejo, but Tabulo could not save its place in the column. Others may see it elsewhere in the column.",
+        })
+      }
+    },
     onError: (error, _, context) => {
+      // A partly applied move changed Forgejo, so the refetch below shows the truth; restoring
+      // the board from before the move would show a state that no longer exists.
+      if (error instanceof RequestFailed && error.code === "move_partly_applied") {
+        setMoveNotice({
+          tone: "error",
+          text: `${error.message}. The board shows the issue as it is now.`,
+        })
+        return
+      }
       if (context?.previous !== undefined) queryClient.setQueryData(boardKey, context.previous)
-      setMoveError(`The card was not moved: ${error.message}`)
+      if (error instanceof RequestFailed && error.code === "board_changed") {
+        setMoveNotice({
+          tone: "warning",
+          text: "Someone changed the board while you were moving the card, so it did not move. The board has been reloaded; try again.",
+        })
+        return
+      }
+      setMoveNotice({ tone: "error", text: `The card was not moved: ${error.message}` })
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: boardKey }),
   })
@@ -140,7 +170,8 @@ export const BoardPage = ({ org }: { org: string }) => {
         repo: card.repo,
         number: card.number,
         toColumn: cardMove.toColumn,
-        orderedKeys: orderAfterMove(board.data, cardMove),
+        afterKey: cardMove.afterKey,
+        beforeKey: cardMove.beforeKey,
       },
     })
   }
@@ -195,9 +226,9 @@ export const BoardPage = ({ org }: { org: string }) => {
           Could not load the repositories of {org}: {repos.error.message}
         </Banner>
       )}
-      {moveError !== null && (
-        <Banner tone="error" onDismiss={() => setMoveError(null)}>
-          {moveError}
+      {moveNotice !== null && (
+        <Banner tone={moveNotice.tone} onDismiss={() => setMoveNotice(null)}>
+          {moveNotice.text}
         </Banner>
       )}
       {failures.length > 0 && dismissedFailures !== failureId && (
@@ -236,7 +267,7 @@ export const BoardPage = ({ org }: { org: string }) => {
           )}
           {filtered && (
             <p className="px-4 pb-2 text-xs text-zinc-500 sm:px-6 dark:text-zinc-400">
-              Filters hide some cards. A moved card keeps its place among the hidden ones.
+              Filters hide some cards. A moved card lands directly below the card shown above it.
             </p>
           )}
           <BoardColumns
