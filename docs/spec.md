@@ -41,7 +41,7 @@ organization's repositories and the last organization, so switching views keeps 
   scope is `Status/`, so `Status/In Progress` maps to the "In Progress" column. An open issue
   without a status label is in "Todo". An issue closed within the last 14 days is in "Done".
 - **Epics.** An epic is an issue with the configured epic label (default `Type/Epic`). Its
-  children are the issues its body references in task-list lines (`- [ ] #12`, `repo#12`, or an
+  children are the issues its body references in task-list items (`- [ ] #12`, `repo#12`, or an
   issue URL). Forgejo dependencies are not epic links, because teams already use them for
   ordering.
 - **Card order.** Forgejo has no rank field, so Tabulo stores the order of cards within a column.
@@ -211,18 +211,18 @@ An epic is an issue bearing the full `EPIC_LABEL` name. The Epics view shares th
 organization and repository selection. It shows open epics and epics closed within
 `BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
 
-- **Children.** Task-list lines begin with `- [ ]`, `- [x]`, the equivalent `*` or `+`
-  marker, or an ordered marker such as `1. [ ]` or `1) [ ]`. The first word after the checkbox
-  is `#12`, `repo#12`, `owner/repo#12`, or an issue or pull request URL on `FORGEJO_URL`. It
-  may be wrapped in `(`, `<`, `[`, `*`, or `_` and followed by punctuation, so `#12: Login`,
-  `(#12)`, `**#12**`, and `[#12](…)` count. Only the first reference on a line counts. A bare
-  number refers to the epic's repository, a repo-only reference to its organization. The pure
-  `parseEpicChildren` function in `src/worker/epics.ts` ignores fenced and indented code
-  (indentation counts from the enclosing list item) and HTML comments, preserves body order,
-  deduplicates case-insensitively, and caps each epic at 200 children. As in CommonMark, a
-  fence may open right after a list marker and ends with its list item. An unclosed HTML
-  comment hides the rest of the body, as Forgejo renders it. Forgejo dependencies do
-  not create epic links.
+- **Children.** `parseEpicChildren` in `src/worker/epics.ts` parses the body as CommonMark
+  with the reference parser, as Forgejo renders it, and reads its task-list items. A task-list
+  item is a bullet (`-`, `*`, `+`) or ordered (`1.`, `1)`) list item, at any nesting depth,
+  whose first paragraph starts with `[ ]`, `[x]`, or `[X]` and whitespace. The first word after
+  the checkbox on that line is `#12`, `repo#12`, `owner/repo#12`, or an issue or pull request
+  URL on `FORGEJO_URL`, as text, an autolink, or a link destination. It may be wrapped in `(`,
+  `<`, `[`, `*`, or `_` and followed by punctuation, so `#12: Login`, `(#12)`, `**#12**`, and
+  `[#12](…)` count. Only the first reference of an item counts. A bare number refers to the
+  epic's repository, a repo-only reference to its organization. Text inside code blocks, HTML
+  blocks, and HTML comments forms no list items, so it adds no children. A word in a code span
+  is not a reference, and inline HTML is skipped. The parser preserves body order, deduplicates case-insensitively, and caps each
+  epic at 200 children. Forgejo dependencies do not create epic links.
 - **Progress.** Checkbox state is ignored. The child's real issue state and labels determine
   its column through `boardLayout`, including repository status labels matching an organization
   column. Every closed child is Done, however old. Pull request children are marked as pull

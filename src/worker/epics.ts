@@ -1,3 +1,4 @@
+import { type Node, Parser } from "commonmark"
 import { Clock, Context, Effect } from "effect"
 import type { Epic, EpicChild, Epics, IncompleteEpicListing } from "../shared/api.ts"
 import { BoardConfig, boardLayout, cardKey, toBoardCard } from "./board.ts"
@@ -18,20 +19,64 @@ const MAX_CHILDREN = 200
 const NAME = "[A-Za-z0-9_.-]+"
 const SHORT_REF = new RegExp(`^(?:(?:(${NAME})/)?(${NAME}))?#([1-9][0-9]*)(?![A-Za-z0-9])`)
 const ISSUE_PATH = new RegExp(`^/(${NAME})/(${NAME})/(?:issues|pulls)/([1-9][0-9]*)/?$`)
-const LIST_ITEM = /^(?:[-*+]|[0-9]{1,9}[.)])(?:[\t ]+|$)/
-const CHECKBOX = /^\[[ xX]\][\t ]+(\S+)/
-const FENCE = /^(`{3,}|~{3,})(.*)$/
+const TASK = /^\[[ xX]\][\t ]+(\S+)/
 
-const indentOf = (line: string) => {
-  let column = 0
-  for (const char of line) {
-    if (char === " ") column++
-    else if (char === "\t") column += 4 - (column % 4)
-    else break
+/**
+ * The first line of a paragraph as text. Emphasis and inline HTML are dropped, code keeps its
+ * backticks, and a link or image keeps its destination after its text, as in `[#12](url)`.
+ */
+const firstLine = (paragraph: Node) => {
+  let line = ""
+  const walker = paragraph.walker()
+  for (let step = walker.next(); step !== null; step = walker.next()) {
+    const { node, entering } = step
+    if (node.type === "softbreak" || node.type === "linebreak") break
+    if (node.type === "text") line += node.literal ?? ""
+    else if (node.type === "code") line += `\`${node.literal ?? ""}\``
+    else if (node.type === "link" || node.type === "image")
+      line += entering ? (node.type === "image" ? "![" : "[") : `](${node.destination ?? ""})`
   }
-  return column
+  return line
 }
 
+/** The issue that `token`, the first word after a checkbox, names, if Tabulo accepts the form. */
+const referenceOf = (
+  token: string,
+  repository: RepoRef,
+  base: URL,
+  prefix: string,
+): EpicReference | undefined => {
+  const target = token.replace(/^[(<[*_]+/, "")
+  let owner = repository.owner
+  let name = repository.name
+  let number: number
+  const short = SHORT_REF.exec(target)
+  if (short !== null) {
+    owner = short[1] ?? owner
+    name = short[2] ?? name
+    number = Number(short[3])
+  } else {
+    const link = /^[^<>()[\]]+/.exec(target)?.[0].replace(/[.,:;!?*_]+$/, "") ?? ""
+    if (!URL.canParse(link)) return undefined
+    const url = new URL(link)
+    if (url.origin !== base.origin || !url.pathname.startsWith(`${prefix}/`)) return undefined
+    const issue = ISSUE_PATH.exec(url.pathname.slice(prefix.length))
+    if (issue === null) return undefined
+    owner = issue[1] ?? owner
+    name = issue[2] ?? name
+    number = Number(issue[3])
+  }
+  if (!Number.isSafeInteger(number) || [owner, name].some((part) => part === "." || part === ".."))
+    return undefined
+  owner = owner.toLowerCase()
+  name = name.toLowerCase()
+  return { owner, name, number, ref: `${owner}/${name}#${number}` }
+}
+
+/**
+ * The issues that the task-list items of an epic's body reference, in body order. The body is
+ * parsed as CommonMark, as Forgejo renders it, so code and HTML never hold task items.
+ */
 export const parseEpicChildren = (
   body: string,
   repository: RepoRef,
@@ -40,78 +85,14 @@ export const parseEpicChildren = (
   const base = new URL(forgejoUrl)
   const prefix = base.pathname.replace(/\/$/, "")
   const children = new Map<string, EpicReference>()
-  // Content columns of the enclosing list items, innermost last. Code and fences are indented
-  // relative to the innermost one.
-  const items: Array<number> = []
-  // Only paragraph text continues a list item from a line indented less than the item.
-  let paragraph = false
-  let fence: { marker: string; length: number; indent: number } | undefined
-  // Forgejo hides an unclosed comment to the end of the body.
-  for (const line of body.replace(/<!--[\s\S]*?(?:-->|$)/g, " ").split(/\r?\n/)) {
-    const indent = indentOf(line)
-    const text = line.trimStart()
-    // A fence inside a list item ends with the item.
-    if (fence !== undefined && text !== "" && indent < fence.indent) fence = undefined
-    if (fence !== undefined) {
-      const close = FENCE.exec(text)
-      if (
-        close?.[1]?.[0] === fence.marker &&
-        close[1].length >= fence.length &&
-        close[2]?.trim() === "" &&
-        indent - fence.indent <= 3
-      )
-        fence = undefined
-      continue
-    }
-    if (text === "") {
-      paragraph = false
-      continue
-    }
-    const item = LIST_ITEM.exec(text)
-    const content = item === null ? text : text.slice(item[0].length)
-    const marker = FENCE.exec(content)?.[1]
-    if (item !== null || marker !== undefined || !paragraph)
-      while ((items.at(-1) ?? 0) > indent) items.pop()
-    paragraph = false
-    if (indent - (items.at(-1) ?? 0) > 3) continue
-    if (item !== null) items.push(indent + item[0].length)
-    if (marker !== undefined) {
-      fence = { marker: marker[0] ?? "", length: marker.length, indent: items.at(-1) ?? 0 }
-      continue
-    }
-    paragraph = true
-    if (item === null) continue
-    const token = CHECKBOX.exec(content)?.[1]
-    if (token === undefined) continue
-    const target = token.replace(/^[(<[*_]+/, "")
-    let owner = repository.owner
-    let name = repository.name
-    let number: number
-    const short = SHORT_REF.exec(target)
-    if (short !== null) {
-      owner = short[1] ?? owner
-      name = short[2] ?? name
-      number = Number(short[3])
-    } else {
-      const link = /^[^<>()[\]]+/.exec(target)?.[0].replace(/[.,:;!?*_]+$/, "") ?? ""
-      if (!URL.canParse(link)) continue
-      const url = new URL(link)
-      if (url.origin !== base.origin || !url.pathname.startsWith(`${prefix}/`)) continue
-      const issue = ISSUE_PATH.exec(url.pathname.slice(prefix.length))
-      if (issue === null) continue
-      owner = issue[1] ?? owner
-      name = issue[2] ?? name
-      number = Number(issue[3])
-    }
-    if (
-      !Number.isSafeInteger(number) ||
-      [owner, name].some((part) => part === "." || part === "..")
-    )
-      continue
-    owner = owner.toLowerCase()
-    name = name.toLowerCase()
-    const ref = `${owner}/${name}#${number}`
-    children.set(ref, { owner, name, number, ref })
+  const walker = new Parser().parse(body).walker()
+  for (let step = walker.next(); step !== null; step = walker.next()) {
+    const paragraph = step.node.firstChild
+    if (!step.entering || step.node.type !== "item" || paragraph?.type !== "paragraph") continue
+    const token = TASK.exec(firstLine(paragraph))?.[1]
+    const reference = token === undefined ? undefined : referenceOf(token, repository, base, prefix)
+    if (reference === undefined) continue
+    children.set(reference.ref, reference)
     if (children.size === MAX_CHILDREN) break
   }
   return [...children.values()]

@@ -94,6 +94,28 @@ describe("epic task-list references", () => {
     expect(parse("- [ ] #1\n<!-- draft\n- [ ] #2\n- [ ] #3")).toEqual(["acme/api#1"])
   })
 
+  it("reads children after a fence that holds a comment opener", () => {
+    expect(parse("```\n<!--\n```\n- [ ] #12")).toEqual(["acme/api#12"])
+    expect(parse("- [ ] #1\n  ~~~html\n  <p>draft</p> <!-- start\n  ~~~\n- [ ] #2")).toEqual([
+      "acme/api#1",
+      "acme/api#2",
+    ])
+  })
+
+  it("does not open a backtick fence whose info string has a backtick", () => {
+    expect(parse("- ```echo `pwd` ```\n  - [ ] #12")).toEqual(["acme/api#12"])
+    expect(parse("```echo `pwd` ```\n- [ ] #13")).toEqual(["acme/api#13"])
+  })
+
+  it("reads nested task lists under a task item in body order", () => {
+    expect(parse("- [ ] #1\n  - [x] #2\n    1. [ ] web#3\n- [ ] #4")).toEqual([
+      "acme/api#1",
+      "acme/api#2",
+      "acme/web#3",
+      "acme/api#4",
+    ])
+  })
+
   it("handles CRLF and blank bodies", () => {
     expect(parse("- [ ] #1\r\n\r\n- [x] #2")).toEqual(["acme/api#1", "acme/api#2"])
     expect(parse("")).toEqual([])
