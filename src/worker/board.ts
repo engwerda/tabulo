@@ -188,7 +188,7 @@ export const parseBoardQuery = (org: string | undefined, repos: string | undefin
     }
     if (names.length > MAX_BOARD_REPOS) {
       return yield* new BoardRequestInvalid({
-        message: `A board shows at most ${MAX_BOARD_REPOS} repositories`,
+        message: `Choose at most ${MAX_BOARD_REPOS} repositories`,
       })
     }
     return { org: yield* parseName("org", org), repos: names }

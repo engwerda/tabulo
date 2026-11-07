@@ -136,7 +136,7 @@ export const boardIssue = (
   html_url: `https://forgejo.example/acme/${repo}/issues/${number}`,
   state: "open",
   labels: [],
-  user: { id: 7, login: "ada" },
+  user: { id: 7, login: "ada", avatar_url: "https://forgejo.example/avatars/ada" },
   assignees: null,
   milestone: null,
   created_at: "2026-10-01T08:00:00Z",

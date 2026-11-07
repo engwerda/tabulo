@@ -33,14 +33,19 @@ export type FakeIssue = {
   html_url: string
   state: "open" | "closed"
   labels: Array<FakeLabel>
-  user: { id: number; login: string }
+  user: { id: number; login: string; avatar_url: string }
   assignees: Array<{ id: number; login: string; full_name: string; avatar_url: string }> | null
   milestone: { id: number; title: string; state: string } | null
   created_at: string
   updated_at: string
   closed_at: string | null
   comments: number
-  pull_request: { merged: boolean; draft: boolean; html_url: string } | null
+  pull_request: {
+    merged: boolean
+    merged_at?: string | null
+    draft: boolean
+    html_url: string
+  } | null
   repository: { id: number; name: string; owner: string; full_name: string }
   [field: string]: unknown
 }
@@ -58,6 +63,43 @@ export type FakeRepo = {
   issues: Array<FakeIssue>
   /** Issue listings answer HTTP 500. */
   failIssueListing: boolean
+  // Insights reads.
+  updated_at?: string
+  default_branch?: string
+  /** Workflow runs, newest first. Without them `/actions/runs` answers 404, as with Actions off. */
+  actionRuns?: ReadonlyArray<FakeActionRun>
+  languages?: Record<string, number>
+  milestones?: ReadonlyArray<FakeMilestone>
+}
+
+/** A workflow run as Forgejo 17 lists it, without the large `event_payload` and `repository`. */
+export type FakeActionRun = {
+  id: number
+  title: string
+  status: string
+  workflow_id: string
+  index_in_repo: number
+  prettyref: string
+  event: string
+  html_url: string
+  created: string
+  updated: string
+  started: string
+  stopped: string
+  duration: number
+}
+
+export type FakeMilestone = {
+  id: number
+  title: string
+  description: string
+  state: "open" | "closed"
+  open_issues: number
+  closed_issues: number
+  created_at: string
+  updated_at: string
+  closed_at: string | null
+  due_on: string | null
 }
 
 export type FakeOrg = {
@@ -97,6 +139,8 @@ export type FakeForgejoFixtures = {
    * the fake, so a test can fail one step or change data between Tabulo's read and write.
    */
   readonly intercept: (method: string, path: string) => Response | undefined
+  /** The signed-in user's contribution heatmap, in 15-minute slots. */
+  readonly heatmap: ReadonlyArray<{ readonly timestamp: number; readonly contributions: number }>
 }
 
 /** Forgejo's Label.ExclusiveScope: the name up to its last `/`, for exclusive labels only. */
@@ -147,6 +191,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     maxPageSize: 50,
     omitTotalCount: false,
     now: "2026-11-07T09:00:00Z",
+    heatmap: [],
     ...overrides,
   }
   const users = [fixtures.user, ...fixtures.otherUsers]
@@ -238,6 +283,9 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     owner: { id: 1, login: owner },
     private: repo.private,
     archived: repo.archived,
+    html_url: `${FORGEJO_URL}/${owner}/${repo.name}`,
+    default_branch: repo.default_branch ?? "main",
+    updated_at: repo.updated_at ?? fixtures.now,
     // Forgejo derives push from the code unit; issue-unit write is not exposed here.
     permissions: { admin: false, push: repo.writers.includes(login), pull: true },
   })
@@ -321,6 +369,33 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     return json(issue.labels)
   }
 
+  /** The reads only the insights page and the activity calendar make. */
+  const insightsApi = (path: string, query: URLSearchParams, login: string) => {
+    const heatmapPath = /^\/api\/v1\/users\/([^/]+)\/heatmap$/.exec(path)
+    if (heatmapPath !== null) return heatmapPath[1] === login ? json(fixtures.heatmap) : json([])
+    const repoRead =
+      /^\/api\/v1\/repos\/([^/]+)\/([^/]+)\/(actions\/runs|languages|milestones)$/.exec(path)
+    if (repoRead === null) return undefined
+    const [, owner = "", name = "", what] = repoRead
+    const repo = findRepo(owner, name)
+    if (repo === undefined) return notFound()
+    if (what === "languages") return json(repo.languages ?? {})
+    if (what === "milestones") {
+      const state = query.get("state") ?? "open"
+      return paged(
+        (repo.milestones ?? []).filter((milestone) => state === "all" || milestone.state === state),
+        query,
+      )
+    }
+    if (repo.actionRuns === undefined) return notFound()
+    const limit = Math.min(Number(query.get("limit") ?? 30) || 30, fixtures.maxPageSize)
+    const page = Math.max(Number(query.get("page") ?? 1) || 1, 1)
+    return json({
+      workflow_runs: repo.actionRuns.slice((page - 1) * limit, page * limit),
+      total_count: repo.actionRuns.length,
+    })
+  }
+
   const api = (
     method: string,
     path: string,
@@ -386,6 +461,8 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
             query,
           )
     }
+    const insightsResponse = insightsApi(path, query, login)
+    if (insightsResponse !== undefined) return insightsResponse
     const repoPath =
       /^\/api\/v1\/repos\/([^/]+)\/([^/]+)(?:\/issues(?:\/(\d+)(\/labels(?:\/(\d+))?)?)?)?$/.exec(
         path,

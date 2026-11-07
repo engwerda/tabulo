@@ -29,6 +29,7 @@ import {
   type SessionNotFound,
 } from "./errors.ts"
 import { ForgejoClient, type HttpFetch, makeForgejoClient } from "./forgejo/client.ts"
+import { loadActivity, loadInsights, parseInsightsQuery, parseTimeZone } from "./load-insights.ts"
 import {
   makeSessionStore,
   OAUTH_STATE_LIFETIME_MS,
@@ -282,6 +283,37 @@ export const createApp = (dependencies: Dependencies) => {
             moveCard(token, session.user.login, request).pipe(
               Effect.map((result) => c.json(result)),
             ),
+          ),
+        ),
+      ),
+    ),
+  )
+
+  app.get("/api/insights", (c) =>
+    run(
+      c,
+      Effect.flatMap(
+        parseInsightsQuery({
+          org: c.req.query("org"),
+          repos: c.req.query("repos"),
+          days: c.req.query("days"),
+          tz: c.req.query("tz"),
+        }),
+        (query) =>
+          withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
+            loadInsights(token, query).pipe(Effect.map((insights) => c.json(insights))),
+          ),
+      ),
+    ),
+  )
+
+  app.get("/api/activity", (c) =>
+    run(
+      c,
+      Effect.flatMap(parseTimeZone(c.req.query("tz")), (tz) =>
+        withAccessToken(getCookie(c, SESSION_COOKIE), (token, session) =>
+          loadActivity(token, session.user.login, tz).pipe(
+            Effect.map((activity) => c.json(activity)),
           ),
         ),
       ),

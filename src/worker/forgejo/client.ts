@@ -10,8 +10,15 @@ import {
   OAuthGrantRejected,
 } from "../errors.ts"
 import {
+  type ForgejoActionRun,
+  ForgejoActionRunPage,
+  ForgejoHeatmapEntry,
+  ForgejoInsightIssue,
+  ForgejoInsightRepo,
   ForgejoIssue,
   ForgejoLabel,
+  ForgejoLanguages,
+  ForgejoMilestone,
   ForgejoNotification,
   ForgejoOrg,
   ForgejoRepo,
@@ -123,6 +130,40 @@ export class ForgejoClient extends Context.Service<
       number: number,
       labelId: number,
     ) => Effect.Effect<void, ForgejoError>
+
+    // Insights and activity reads.
+    readonly insightRepo: (
+      token: AccessToken,
+      repo: RepoRef,
+    ) => Effect.Effect<ForgejoInsightRepo, ForgejoError>
+    /** Issues and pull requests together. */
+    readonly repoIssuesAndPulls: (
+      token: AccessToken,
+      repo: RepoRef,
+      listing: IssueListing,
+    ) => Effect.Effect<ReadonlyArray<ForgejoInsightIssue>, ForgejoError>
+    /**
+     * Workflow runs created at or after `since` (epoch milliseconds), newest first. `null` when
+     * the repository has no Actions data: Actions are turned off, or the user cannot see them.
+     */
+    readonly actionRuns: (
+      token: AccessToken,
+      repo: RepoRef,
+      since: number,
+    ) => Effect.Effect<ReadonlyArray<ForgejoActionRun> | null, ForgejoError>
+    readonly repoLanguages: (
+      token: AccessToken,
+      repo: RepoRef,
+    ) => Effect.Effect<ForgejoLanguages, ForgejoError>
+    readonly openMilestones: (
+      token: AccessToken,
+      repo: RepoRef,
+    ) => Effect.Effect<ReadonlyArray<ForgejoMilestone>, ForgejoError>
+    /** The user's contributions in 15-minute slots over about the last year. */
+    readonly userHeatmap: (
+      token: AccessToken,
+      login: string,
+    ) => Effect.Effect<ReadonlyArray<ForgejoHeatmapEntry>, ForgejoError>
   }
 >()("tabulo/ForgejoClient") {}
 
@@ -158,6 +199,8 @@ const knownTotal = <A>(page: {
 
 const PAGE_SIZE = 50
 const MAX_PAGES = 100
+// 1,000 runs: more than a year of CI for a busy repository.
+const MAX_ACTION_RUN_PAGES = 20
 
 const repoPath = (repo: RepoRef) =>
   `/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`
@@ -376,5 +419,47 @@ export const makeForgejoClient = (
           method: "DELETE",
         },
       ).pipe(Effect.asVoid),
+
+    insightRepo: (token, repo) =>
+      api(token, repoPath(repo), {}, ForgejoInsightRepo).pipe(Effect.map(({ body }) => body)),
+    repoIssuesAndPulls: (token, repo, listing) =>
+      all(
+        token,
+        `${repoPath(repo)}/issues`,
+        listing.state === "open"
+          ? { state: "open" }
+          : { state: "closed", since: listing.updatedSince },
+        ForgejoInsightIssue,
+      ),
+    actionRuns: (token, repo, since) =>
+      Effect.gen(function* () {
+        const runs: Array<ForgejoActionRun> = []
+        for (let number = 1; number <= MAX_ACTION_RUN_PAGES; number++) {
+          const { body } = yield* api(
+            token,
+            `${repoPath(repo)}/actions/runs`,
+            { limit: String(PAGE_SIZE), page: String(number) },
+            ForgejoActionRunPage,
+          )
+          const batch = body.workflow_runs
+          runs.push(...batch.filter((run) => Date.parse(run.created) >= since))
+          // Newest first: a run older than `since` means the later pages are older still.
+          if (batch.length === 0 || batch.some((run) => Date.parse(run.created) < since)) break
+        }
+        return runs as ReadonlyArray<ForgejoActionRun> | null
+      }).pipe(Effect.catchTag(["ForgejoNotFound", "ForgejoForbidden"], () => Effect.succeed(null))),
+    repoLanguages: (token, repo) =>
+      api(token, `${repoPath(repo)}/languages`, {}, ForgejoLanguages).pipe(
+        Effect.map(({ body }) => body),
+      ),
+    openMilestones: (token, repo) =>
+      all(token, `${repoPath(repo)}/milestones`, { state: "open" }, ForgejoMilestone),
+    userHeatmap: (token, login) =>
+      api(
+        token,
+        `/users/${encodeURIComponent(login)}/heatmap`,
+        {},
+        Schema.Array(ForgejoHeatmapEntry),
+      ).pipe(Effect.map(({ body }) => body)),
   }
 }
