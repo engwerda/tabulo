@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    "lib": ["es2023", "dom"],
+    "types": ["node"]
+  },
+  "include": [
+    "vite.config.ts",
+    "vitest.config.ts",
+    "scripts",
+    "src/shared",
+    "src/worker/forgejo",
+    "src/worker/dashboard.ts",
+    "src/worker/errors.ts"
+  ]
+}

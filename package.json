@@ -1,0 +1,54 @@
+{
+  "name": "tabulo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Planning companion for Forgejo: personal dashboard, board, and epics on top of Forgejo issues.",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typegen": "wrangler types --strict-vars=false",
+    "typecheck": "npm run typegen && tsc -b",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "check:forgejo": "node scripts/check-forgejo.ts",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "5.104.5",
+    "effect": "4.0.6",
+    "hono": "4.13.13",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.2",
+    "@cloudflare/vite-plugin": "1.65.0",
+    "@cloudflare/vitest-pool-workers": "0.23.0",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "vitest": "4.1.12",
+    "wrangler": "4.152.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "esbuild@0.28.2": true,
+    "workerd@1.20260815.1": true,
+    "workerd@1.20261019.1": true
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}
