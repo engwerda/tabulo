@@ -41,3 +41,5 @@ export const TokenResponse = Schema.Struct({
   refresh_token: Schema.String,
   expires_in: Schema.Number,
 })
+
+export const OAuthErrorResponse = Schema.Struct({ error: Schema.String })

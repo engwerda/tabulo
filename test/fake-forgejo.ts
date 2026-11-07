@@ -17,7 +17,8 @@ export type FakeForgejoFixtures = {
   readonly notifications: ReadonlyArray<unknown>
   readonly failingSearches: ReadonlyArray<SearchFilter>
   readonly expiresIn: number
-  readonly rejectRefresh: boolean
+  /** Answers every refresh grant with this response instead of the normal outcome. */
+  readonly refreshFailure: { readonly status: number; readonly body: string } | undefined
 }
 
 const json = (body: unknown, init?: ResponseInit) =>
@@ -51,7 +52,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     notifications: [],
     failingSearches: [],
     expiresIn: 3600,
-    rejectRefresh: false,
+    refreshFailure: undefined,
     ...overrides,
   }
   const requests: Array<RecordedRequest> = []
@@ -94,8 +95,13 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
       )
     }
     if (form.get("grant_type") === "refresh_token") {
+      if (fixtures.refreshFailure !== undefined) {
+        return new Response(fixtures.refreshFailure.body, {
+          status: fixtures.refreshFailure.status,
+        })
+      }
       const refresh = form.get("refresh_token") ?? ""
-      if (fixtures.rejectRefresh || !validRefreshTokens.has(refresh)) {
+      if (!validRefreshTokens.has(refresh)) {
         return json({ error: "invalid_grant" }, { status: 400 })
       }
       validRefreshTokens.delete(refresh)

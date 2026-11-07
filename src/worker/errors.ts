@@ -20,10 +20,10 @@ export class ForgejoDecodeFailed extends Schema.TaggedError<ForgejoDecodeFailed>
   { message: Schema.String },
 ) {}
 
-/** The OAuth token endpoint refused a code or refresh token. */
+/** The OAuth token endpoint answered `invalid_grant`: the code or refresh token is dead. */
 export class OAuthGrantRejected extends Schema.TaggedError<OAuthGrantRejected>()(
   "OAuthGrantRejected",
-  { status: Schema.Number },
+  {},
 ) {}
 
 export class OAuthStateInvalid extends Schema.TaggedError<OAuthStateInvalid>()(

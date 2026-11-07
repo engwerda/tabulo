@@ -7,7 +7,13 @@ import {
   ForgejoUnreachable,
   OAuthGrantRejected,
 } from "../errors.ts"
-import { ForgejoIssue, ForgejoNotification, ForgejoUser, TokenResponse } from "./schemas.ts"
+import {
+  ForgejoIssue,
+  ForgejoNotification,
+  ForgejoUser,
+  OAuthErrorResponse,
+  TokenResponse,
+} from "./schemas.ts"
 
 export type HttpFetch = (request: Request) => Promise<Response>
 
@@ -137,10 +143,18 @@ export const makeForgejoClient = (
           }),
         }),
       )
-      if (response.status >= 400 && response.status < 500) {
-        return yield* new OAuthGrantRejected({ status: response.status })
+      if (!response.ok) {
+        // Only invalid_grant means the code or refresh token itself is dead. A rate limiter,
+        // a WAF, or a rotated client secret also answer 4xx, and must not end sessions.
+        const error = yield* readJson(response, OAuthErrorResponse).pipe(
+          Effect.map((body) => body.error),
+          Effect.orElseSucceed(() => undefined),
+        )
+        if (response.status === 400 && error === "invalid_grant") {
+          return yield* new OAuthGrantRejected()
+        }
+        return yield* new ForgejoRequestFailed({ status: response.status })
       }
-      if (!response.ok) return yield* new ForgejoRequestFailed({ status: response.status })
       const tokens = yield* readJson(response, TokenResponse)
       const now = yield* Clock.currentTimeMillis
       return {

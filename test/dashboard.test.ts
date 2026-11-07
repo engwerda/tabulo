@@ -4,6 +4,9 @@ import { createFakeForgejo } from "./fake-forgejo.ts"
 import { assignedIssue, createdIssue, reviewRequestPull, unreadNotification } from "./fixtures.ts"
 import { signIn, tabulo } from "./harness.ts"
 
+const sessionCount = async () =>
+  (await env.DB.prepare("SELECT count(*) AS n FROM sessions").first<{ n: number }>())?.n
+
 beforeEach(async () => {
   await env.DB.batch([
     env.DB.prepare("DELETE FROM sessions"),
@@ -156,18 +159,38 @@ describe("access token refresh", () => {
     expect(lastSearch?.authorization).toBe("Bearer access-2")
   })
 
-  it("deletes the session and returns 401 when the refresh is rejected", async () => {
-    const forgejo = createFakeForgejo({ expiresIn: 30, rejectRefresh: true })
+  it("deletes the session and returns 401 when Forgejo answers invalid_grant", async () => {
+    const forgejo = createFakeForgejo({
+      expiresIn: 30,
+      refreshFailure: { status: 400, body: JSON.stringify({ error: "invalid_grant" }) },
+    })
     const call = tabulo(forgejo.fetch)
     const cookie = await signIn(call, forgejo)
 
     const response = await call("/api/dashboard", { headers: { cookie } })
 
     expect(response.status).toBe(401)
-    const remaining = await env.DB.prepare("SELECT count(*) AS n FROM sessions").first<{
-      n: number
-    }>()
-    expect(remaining?.n).toBe(0)
+    expect(await sessionCount()).toBe(0)
     expect((await call("/api/me", { headers: { cookie } })).status).toBe(401)
   })
+
+  it.each([
+    ["429 from a rate limiter", 429, "Too Many Requests"],
+    ["401 invalid_client after a client secret rotation", 401, '{"error":"invalid_client"}'],
+    ["400 unauthorized_client", 400, '{"error":"unauthorized_client"}'],
+    ["400 with a body that is not JSON", 400, "<html>Bad Request</html>"],
+  ])(
+    "keeps the session and returns 502 when the refresh fails with %s",
+    async (_, status, body) => {
+      const forgejo = createFakeForgejo({ expiresIn: 30, refreshFailure: { status, body } })
+      const call = tabulo(forgejo.fetch)
+      const cookie = await signIn(call, forgejo)
+
+      const response = await call("/api/dashboard", { headers: { cookie } })
+
+      expect(response.status).toBe(502)
+      expect(await sessionCount()).toBe(1)
+      expect((await call("/api/me", { headers: { cookie } })).status).toBe(200)
+    },
+  )
 })
