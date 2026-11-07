@@ -285,6 +285,24 @@ const repos = [
   ),
 ]
 
+// DEMO_EXTRA=300 adds that many issues to a "load" repository, to try a large board.
+const extra = Number(process.env.DEMO_EXTRA ?? 0)
+if (extra > 0) {
+  const statuses = [[], [L.progress], [L.review], [L.blocked]]
+  repos.push(
+    repo(
+      "load",
+      Array.from({ length: extra }, (_, index) => ({
+        title: `Generated issue ${index + 1} for a large board`,
+        labels: [...(statuses[index % statuses.length] ?? []), index % 3 === 0 ? L.bug : L.feature],
+        assignees: index % 2 === 0 ? [people[index % people.length] ?? ada] : [],
+        comments: index % 7,
+        updated: (index % 30) + 0.5,
+      })),
+    ),
+  )
+}
+
 const openIssues = repos
   .filter((candidate) => !candidate.archived)
   .flatMap((candidate) => candidate.issues.filter((issue) => issue.state === "open"))
