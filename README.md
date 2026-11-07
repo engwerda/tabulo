@@ -55,10 +55,10 @@ You need Node.js 22.18 or later and an account on a Forgejo instance.
 
 Press `Cmd+K` (`Ctrl+K` on Windows and Linux), or choose **Search…** in the header, to open the
 command menu. Type to find a view of an organization, a repository of the organization you used
-last, an item on your dashboard, or an action such as switching the theme. From two characters
-on, it also searches the issues and pull requests of every repository you can access, open ones
-first. Press `Enter` to run the highlighted result and `Esc` to close the menu. It lists the
-commands you used last when the query is empty.
+last (or your first organization), an item on your dashboard, or an action such as switching the
+theme. From two characters on, it also searches the issues and pull requests of every repository
+you can access, open ones first. Press `Enter` to run the highlighted result and `Esc` to close
+the menu. It lists the commands you used last when the query is empty.
 
 | Key | Action |
 |---|---|
