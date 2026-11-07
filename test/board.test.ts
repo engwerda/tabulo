@@ -619,6 +619,22 @@ describe("POST /api/board/move", () => {
     expect(labelNames(forgejo.issue("acme", "api", 7))).toEqual(["Kind/Bug"])
   })
 
+  it("refuses a move to Todo that Forgejo did not apply because a repository label shadows the status label", async () => {
+    const org = boardOrg()
+    const api = org.repos[0]
+    if (api === undefined) throw new Error("fixture has no api repository")
+    api.labels = [repoLabel("api", 30, "Status/In Progress", "00aabb", true)]
+    const { forgejo, move, board } = await boardSession({ orgs: [org] })
+
+    const response = await move({ repo: "api", number: 2, toColumn: "todo" })
+
+    expect(response.status).toBe(403)
+    expect(labelNames(forgejo.issue("acme", "api", 2))).toContain("Status/In Progress")
+    expect((await board()).cards.find((card) => card.key === "acme/api#2")?.column).toBe(
+      "Status/In Progress",
+    )
+  })
+
   it("lets a member without push access move a card when Forgejo allows the issue write", async () => {
     const org = boardOrg()
     const web = org.repos[1]

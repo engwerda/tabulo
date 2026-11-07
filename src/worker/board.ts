@@ -399,18 +399,20 @@ const columnWrites = (
         : issue.labels.filter(layout.isColumnLabel).map(
             (label): IssueWrite =>
               (current) =>
-                ForgejoClient.use((forgejo) =>
-                  forgejo.removeIssueLabel(
-                    token,
-                    repo,
-                    current.number,
-                    labelIdentifier(orgLabels, label),
-                  ),
+                ForgejoClient.use(
+                  (forgejo) =>
+                    forgejo.removeIssueLabel(
+                      token,
+                      repo,
+                      current.number,
+                      labelIdentifier(orgLabels, label),
+                    ),
+                  // Forgejo answers 204 even when a repository label of the same name shadows the
+                  // organization's and nothing is removed, so the issue is read back.
                 ).pipe(
-                  Effect.as({
-                    ...current,
-                    labels: current.labels.filter((other) => other.id !== label.id),
-                  }),
+                  Effect.andThen(
+                    ForgejoClient.use((forgejo) => forgejo.issue(token, repo, current.number)),
+                  ),
                 ),
           )
   return issue.state === "closed" ? [...labelWrites, setState("open")] : labelWrites
@@ -504,6 +506,20 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
       layout.columnOf(issue) === target.key
         ? issue
         : yield* applyWrites(issue, columnWrites(token, layout, orgLabels, repoRef, issue, target))
+    // Forgejo can leave a label in place without an error; storing a rank for a column the
+    // issue is not in would show the card there until the next board read.
+    if (layout.columnOf(moved) !== target.key) {
+      const labelsOf = (candidate: ForgejoRepoIssue) =>
+        candidate.labels
+          .map((label) => label.id)
+          .sort()
+          .join(",")
+      return yield* moved.state === issue.state && labelsOf(moved) === labelsOf(issue)
+        ? new ForgejoForbidden()
+        : new ForgejoMovePartlyApplied({
+            reason: `the issue is still in ${layout.column(layout.columnOf(moved))?.title ?? "another column"}`,
+          })
+    }
 
     const saved = yield* Effect.exit(
       ranks.place(org, { key: movedKey, column: target.key, rank }, login),
