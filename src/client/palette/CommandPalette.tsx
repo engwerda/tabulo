@@ -109,7 +109,7 @@ const Option = ({
     <span className="flex shrink-0 items-center gap-2">
       {item.badge !== undefined && (
         <span
-          className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-medium ${BADGE_TONES[item.badge.tone]}`}
+          className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-medium ${BADGE_TONES[item.badge.tone]} ${item.badge.tone === "open" ? "hidden sm:block" : ""}`}
         >
           {item.badge.text}
         </span>
