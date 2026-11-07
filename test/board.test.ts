@@ -10,11 +10,18 @@ import {
   grace,
   highPriority,
   inProgress,
+  repoLabel,
+  retired,
   review,
 } from "./fixtures.ts"
 import { signIn, tabulo } from "./harness.ts"
 
-type Card = { key: string; column: string; rank: string | null }
+type Card = {
+  key: string
+  column: string
+  rank: string | null
+  labels: Array<{ name: string }>
+}
 type BoardBody = {
   columns: Array<{ key: string }>
   cards: Array<Card>
@@ -223,6 +230,49 @@ describe("GET /api/board", () => {
     )
     expect(closedListing?.query.get("since")).toBe("2026-11-05T09:00:00.000Z")
     expect(closedListing?.query.get("type")).toBe("issues")
+  })
+
+  it("treats any label named like a status column as that column, and other scope labels as chips", async () => {
+    const repoReview = repoLabel("api", 30, "Status/Review", "00aabb", true)
+    const abandoned = repoLabel("api", 31, "Status/Abandoned", "999999", true)
+    const org = boardOrg()
+    org.labels = [...org.labels, retired]
+    org.repos = [
+      boardRepo("api", {
+        labels: [repoReview, abandoned],
+        issues: [
+          boardIssue("api", 7, { labels: [repoReview, bug] }),
+          boardIssue("api", 8, { labels: [abandoned] }),
+          boardIssue("api", 9, { labels: [retired] }),
+        ],
+      }),
+    ]
+    const forgejo = createFakeForgejo({ orgs: [org] })
+    const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
+    const cookie = await signIn(call, forgejo)
+
+    const response = await call("/api/board?org=acme&repos=api", { headers: { cookie } })
+
+    const board = (await response.json()) as BoardBody
+    expect(board.columns.map((column) => column.key)).toEqual([
+      "todo",
+      "Status/Backlog",
+      "Status/In Progress",
+      "Status/Review",
+      "done",
+    ])
+    const summary = board.cards
+      .map((card) => ({
+        key: card.key,
+        column: card.column,
+        labels: card.labels.map((label) => label.name),
+      }))
+      .sort((a, b) => (a.key < b.key ? -1 : 1))
+    expect(summary).toEqual([
+      { key: "acme/api#7", column: "Status/Review", labels: ["Kind/Bug"] },
+      { key: "acme/api#8", column: "todo", labels: ["Status/Abandoned"] },
+      { key: "acme/api#9", column: "todo", labels: ["Status/Retired"] },
+    ])
   })
 
   it("reports a repository whose issues fail to load and still shows the others", async () => {

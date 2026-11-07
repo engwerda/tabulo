@@ -52,6 +52,7 @@ export const ForgejoLabel = Schema.Struct({
   name: Schema.String,
   color: Schema.String,
   exclusive: Schema.Boolean,
+  is_archived: Schema.optionalKey(Schema.Boolean),
 })
 export type ForgejoLabel = typeof ForgejoLabel.Type
 
