@@ -1,7 +1,10 @@
 import { Schema } from "effect"
 import {
+  Activity,
   Board,
   Dashboard,
+  type InsightDays,
+  Insights,
   type MoveCardRequest,
   MoveCardResult,
   Org,
@@ -95,3 +98,26 @@ export const signOut = async (): Promise<void> => {
     )
   }
 }
+
+// Insights and activity.
+
+const decodeInsights = Schema.decodeUnknownPromise(Insights)
+const decodeActivity = Schema.decodeUnknownPromise(Activity)
+
+/** The browser's IANA time zone, which buckets weeks and hours on the server. */
+export const browserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
+
+export const fetchInsights = async (
+  org: string,
+  repos: ReadonlyArray<string>,
+  days: InsightDays,
+  tz: string,
+): Promise<Insights> =>
+  decodeInsights(
+    await requestJson(
+      `/api/insights?${new URLSearchParams({ org, repos: repos.join(","), days: String(days), tz })}`,
+    ),
+  )
+
+export const fetchActivity = async (tz: string): Promise<Activity> =>
+  decodeActivity(await requestJson(`/api/activity?${new URLSearchParams({ tz })}`))
