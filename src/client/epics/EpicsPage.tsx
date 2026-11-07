@@ -77,7 +77,7 @@ export const EpicsPage = ({ org }: { org: string }) => {
   return (
     <main className="pb-4">
       <ScopeBar org={org} view="epics" repoSelection={repoSelection}>
-        {epics.data !== undefined && hasSelection && (
+        {all.length > 0 && hasSelection && (
           <search
             aria-label="Filter epics"
             className="flex w-full min-w-0 flex-wrap items-center gap-2 lg:w-auto lg:flex-1"
@@ -139,7 +139,7 @@ export const EpicsPage = ({ org }: { org: string }) => {
               Track progress across your repositories.
             </p>
           </div>
-          {epics.data !== undefined && hasSelection && (
+          {all.length > 0 && hasSelection && (
             <label className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
               Sort by
               <select
@@ -200,53 +200,57 @@ export const EpicsPage = ({ org }: { org: string }) => {
           )
         ) : (
           <>
-            <dl
-              aria-label="Epic summary for chosen repositories"
-              className="mb-7 grid grid-cols-3 divide-x divide-zinc-200 rounded-xl border border-zinc-200 bg-white py-5 dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900"
-            >
-              <div className="px-3 sm:px-5">
-                <dt className="min-h-8 text-xs text-zinc-500 sm:min-h-0 dark:text-zinc-400">
-                  Epics
-                </dt>
-                <dd className="mt-1 text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">
-                  {all.length}
-                </dd>
-                <dd className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-                  Across your repositories
-                </dd>
-              </div>
-              <div className="px-3 sm:px-5">
-                <dt className="min-h-8 text-xs text-zinc-500 sm:min-h-0 dark:text-zinc-400">
-                  Overall completion
-                </dt>
-                <dd className="mt-1 text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">
-                  {summary.percent}
-                  <span className="text-lg text-zinc-400">%</span>
-                </dd>
-                <dd className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-                  {summary.done} of {summary.total} children done
-                </dd>
-              </div>
-              <div className="px-3 sm:px-5">
-                <dt className="min-h-8 text-xs text-zinc-500 sm:min-h-0 dark:text-zinc-400">
-                  At risk
-                </dt>
-                <dd
-                  className={`mt-1 text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl ${summary.atRisk > 0 ? "text-amber-700 dark:text-amber-400" : ""}`}
+            {all.length > 0 && (
+              <>
+                <dl
+                  aria-label="Epic summary for chosen repositories"
+                  className="mb-7 grid grid-cols-3 divide-x divide-zinc-200 rounded-xl border border-zinc-200 bg-white py-5 dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900"
                 >
-                  {summary.atRisk}
-                </dd>
-                <dd className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-                  Open, with no children done
-                </dd>
-              </div>
-            </dl>
-            <p aria-live="polite" className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-              {filtered
-                ? `${shown.length} of ${all.length} epics`
-                : `${all.length} ${all.length === 1 ? "epic" : "epics"}`}
-              <span className="sr-only">{epics.isFetching ? ", refreshing" : ""}</span>
-            </p>
+                  <div className="px-3 sm:px-5">
+                    <dt className="min-h-8 text-xs text-zinc-500 sm:min-h-0 dark:text-zinc-400">
+                      Epics
+                    </dt>
+                    <dd className="mt-1 text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">
+                      {all.length}
+                    </dd>
+                    <dd className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                      Across your repositories
+                    </dd>
+                  </div>
+                  <div className="px-3 sm:px-5">
+                    <dt className="min-h-8 text-xs text-zinc-500 sm:min-h-0 dark:text-zinc-400">
+                      Overall completion
+                    </dt>
+                    <dd className="mt-1 text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">
+                      {summary.percent}
+                      <span className="text-lg text-zinc-400">%</span>
+                    </dd>
+                    <dd className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                      {summary.done} of {summary.total} children done
+                    </dd>
+                  </div>
+                  <div className="px-3 sm:px-5">
+                    <dt className="min-h-8 text-xs text-zinc-500 sm:min-h-0 dark:text-zinc-400">
+                      At risk
+                    </dt>
+                    <dd
+                      className={`mt-1 text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl ${summary.atRisk > 0 ? "text-amber-700 dark:text-amber-400" : ""}`}
+                    >
+                      {summary.atRisk}
+                    </dd>
+                    <dd className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                      Open, with no children done
+                    </dd>
+                  </div>
+                </dl>
+                <p aria-live="polite" className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+                  {filtered
+                    ? `${shown.length} of ${all.length} epics`
+                    : `${all.length} ${all.length === 1 ? "epic" : "epics"}`}
+                  <span className="sr-only">{epics.isFetching ? ", refreshing" : ""}</span>
+                </p>
+              </>
+            )}
             {shown.length > 0 ? (
               <div className="grid items-start gap-4 lg:grid-cols-2 xl:grid-cols-3">
                 {shown.map((epic) => (
