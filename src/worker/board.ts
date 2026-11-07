@@ -529,6 +529,26 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
     })
     if (rank === undefined) return yield* new BoardChanged()
 
+    // Forgejo removes a label by name, and a repository label of the same name wins over the
+    // organization's, so removing the organization's status label would remove nothing, or the
+    // repository's label instead. Such a move to Todo is refused before anything is written.
+    if (target._tag === "Todo" && layout.columnOf(issue) !== target.key) {
+      const orgColumnLabels = issue.labels.filter(
+        (label) => layout.isColumnLabel(label) && orgLabels.some((org) => org.id === label.id),
+      )
+      if (orgColumnLabels.length > 0) {
+        const repoLabels = yield* forgejo.repoLabels(token, repoRef)
+        const shadowed = orgColumnLabels.find((label) =>
+          repoLabels.some((own) => own.name === label.name),
+        )
+        if (shadowed !== undefined) {
+          return yield* new BoardWriteForbidden({
+            message: `${repo.full_name} has its own label named ${shadowed.name}, which hides the organization's, so Tabulo cannot remove it. Rename one of them in Forgejo`,
+          })
+        }
+      }
+    }
+
     const moved =
       layout.columnOf(issue) === target.key
         ? issue

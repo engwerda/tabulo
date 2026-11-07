@@ -637,6 +637,26 @@ describe("POST /api/board/move", () => {
     )
   })
 
+  it("refuses a move to Todo before any write when the issue also carries the repository's label of that name", async () => {
+    const own = repoLabel("api", 40, "Status/In Progress", "00aabb", false)
+    const org = boardOrg()
+    const api = org.repos[0]
+    if (api === undefined) throw new Error("fixture has no api repository")
+    api.labels = [own]
+    api.issues.push(boardIssue("api", 7, { labels: [inProgress, own, bug] }))
+    const { forgejo, move } = await boardSession({ orgs: [org] })
+
+    const response = await move({ repo: "api", number: 7, toColumn: "todo" })
+
+    expect(response.status).toBe(403)
+    expect(writes(forgejo)).toEqual([])
+    expect(labelNames(forgejo.issue("acme", "api", 7))?.sort()).toEqual([
+      "Kind/Bug",
+      "Status/In Progress",
+      "Status/In Progress",
+    ])
+  })
+
   it("refuses a move of a closed issue to Todo before reopening it when Forgejo keeps the status label", async () => {
     const org = boardOrg()
     const api = org.repos[0]
