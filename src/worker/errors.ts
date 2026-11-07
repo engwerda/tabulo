@@ -52,11 +52,10 @@ export class BoardRequestInvalid extends Schema.TaggedError<BoardRequestInvalid>
   { message: Schema.String },
 ) {}
 
-/** The user's repository permissions do not allow changing its issues. */
-export class RepoWriteForbidden extends Schema.TaggedError<RepoWriteForbidden>()(
-  "RepoWriteForbidden",
-  { repo: Schema.String },
-) {}
+/** Tabulo refuses the move before writing anything: the viewer may not arrange this card. */
+export class MoveForbidden extends Schema.TaggedError<MoveForbidden>()("MoveForbidden", {
+  message: Schema.String,
+}) {}
 
 /** A move needed several Forgejo writes, and one failed after an earlier one succeeded. */
 export class ForgejoMovePartlyApplied extends Schema.TaggedError<ForgejoMovePartlyApplied>()(

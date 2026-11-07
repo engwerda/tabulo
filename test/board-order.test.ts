@@ -21,7 +21,7 @@ const card = (
   closedAt: null,
   column,
   rank,
-  canWrite: true,
+  readOnlyReason: null,
 })
 
 // "Zz" is the key fractional-indexing generates before "a0", so it sorts first by code unit
@@ -33,7 +33,14 @@ const cards = [
   card(4, "todo", null, "2026-11-06T00:00:00Z"),
   card(5, "done", null, "2026-11-06T00:00:00Z"),
 ]
-const board: Board = { org: "acme", repos: ["api"], columns: [], cards, failedRepos: [] }
+const board: Board = {
+  org: "acme",
+  repos: ["api"],
+  viewerCanArrange: true,
+  columns: [],
+  cards,
+  failedRepos: [],
+}
 const keys = (numbers: ReadonlyArray<number>) => numbers.map((number) => `acme/api#${number}`)
 
 describe("board column order", () => {

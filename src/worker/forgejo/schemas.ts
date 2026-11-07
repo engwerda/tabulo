@@ -84,7 +84,6 @@ export const ForgejoRepo = Schema.Struct({
   name: Schema.String,
   full_name: Schema.String,
   private: Schema.Boolean,
-  // Present whenever the request is authenticated.
-  permissions: Schema.optionalKey(Schema.Struct({ admin: Schema.Boolean, push: Schema.Boolean })),
+  archived: Schema.Boolean,
 })
 export type ForgejoRepo = typeof ForgejoRepo.Type

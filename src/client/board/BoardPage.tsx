@@ -228,6 +228,12 @@ export const BoardPage = ({ org }: { org: string }) => {
         )
       ) : (
         <>
+          {!board.data.viewerCanArrange && (
+            <p className="px-4 pb-2 text-xs text-zinc-500 sm:px-6 dark:text-zinc-400">
+              You can view this board. Only members of {board.data.org} can move and reorder its
+              cards.
+            </p>
+          )}
           {filtered && (
             <p className="px-4 pb-2 text-xs text-zinc-500 sm:px-6 dark:text-zinc-400">
               Filters hide some cards. A moved card keeps its place among the hidden ones.
