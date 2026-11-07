@@ -56,6 +56,34 @@ export type Page<A> = { readonly items: ReadonlyArray<A>; readonly total: number
  */
 export type PageBudget = { remaining: number }
 
+// Workers allow 1,000 subrequests per request. Listing pages share this budget, which leaves
+// room for the reads besides them: each of at most 20 repositories reads itself (and, for
+// Insights, its languages), and the session may refresh its token.
+export const PAGE_BUDGET = 800
+
+/**
+ * Shares `pool` between `readers` reads: each takes an equal share of the pages left when it
+ * starts and gives back what it does not use.
+ */
+export const sharePages = (pool: PageBudget, readers: number) => {
+  let left = readers
+  return <A, E, R>(read: (budget: PageBudget) => Effect.Effect<A, E, R>) => {
+    const budget: PageBudget = { remaining: 0 }
+    return Effect.suspend(() => {
+      budget.remaining = Math.floor(pool.remaining / left)
+      pool.remaining -= budget.remaining
+      left -= 1
+      return read(budget)
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          pool.remaining += budget.remaining
+        }),
+      ),
+    )
+  }
+}
+
 /** A listing, and whether Tabulo read it to its end. */
 export type Listing<A> = { readonly items: ReadonlyArray<A>; readonly complete: boolean }
 

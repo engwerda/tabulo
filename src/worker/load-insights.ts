@@ -14,7 +14,7 @@ import {
   FORGEJO_READ_ERRORS,
   type ForgejoUnauthorized,
 } from "./errors.ts"
-import { type AccessToken, ForgejoClient, type PageBudget } from "./forgejo/client.ts"
+import { type AccessToken, ForgejoClient, PAGE_BUDGET, sharePages } from "./forgejo/client.ts"
 import { buildInsights, insightPeriods, type RepoActivity } from "./insights.ts"
 import { isTimeZone } from "./time-zone.ts"
 
@@ -22,9 +22,6 @@ import { isTimeZone } from "./time-zone.ts"
 const REPO_CONCURRENCY = 2
 const READS_PER_REPO = 3
 const MAX_TIME_ZONE_LENGTH = 64
-// Workers allow 1,000 subrequests per request. Listing pages share this budget; besides them,
-// each repository reads itself and its languages, and the session may refresh its token.
-const PAGE_BUDGET = 800
 const LISTINGS = ["open", "closed", "runs", "milestones"] as const
 
 /** An IANA time zone from a request; UTC when the request names none. */
@@ -84,33 +81,28 @@ export const loadInsights = (token: AccessToken, query: InsightsQuery) =>
     const since = insightPeriods(now, query.days, query.tz).previous.start
     const updatedSince = new Date(since).toISOString()
 
-    const pool: PageBudget = { remaining: PAGE_BUDGET }
-    let reposLeft = query.repos.length
+    const share = sharePages({ remaining: PAGE_BUDGET }, query.repos.length)
 
     const readRepo = (name: string): Effect.Effect<RepoResult, ForgejoUnauthorized> => {
       const ref = { owner: query.org, name }
-      // A fair share of the pages left. What a repository does not use goes back to the pool.
-      const budget: PageBudget = { remaining: 0 }
-      const reserve = Effect.sync(() => {
-        budget.remaining = Math.floor(pool.remaining / reposLeft)
-        pool.remaining -= budget.remaining
-        reposLeft -= 1
-      })
-      const release = Effect.sync(() => {
-        pool.remaining += budget.remaining
-      })
-      const read = Effect.all(
-        {
-          repo: forgejo.insightRepo(token, ref),
-          languages: forgejo.repoLanguages(token, ref),
-          milestones: forgejo.openMilestones(token, ref, budget),
-          open: forgejo.repoIssuesAndPulls(token, ref, { state: "open" }, budget),
-          closed: forgejo.repoIssuesAndPulls(token, ref, { state: "closed", updatedSince }, budget),
-          runs: forgejo.actionRuns(token, ref, since, budget),
-        },
-        { concurrency: READS_PER_REPO },
-      )
-      return Effect.andThen(reserve, read).pipe(
+      return share((budget) =>
+        Effect.all(
+          {
+            repo: forgejo.insightRepo(token, ref),
+            languages: forgejo.repoLanguages(token, ref),
+            milestones: forgejo.openMilestones(token, ref, budget),
+            open: forgejo.repoIssuesAndPulls(token, ref, { state: "open" }, budget),
+            closed: forgejo.repoIssuesAndPulls(
+              token,
+              ref,
+              { state: "closed", updatedSince },
+              budget,
+            ),
+            runs: forgejo.actionRuns(token, ref, since, budget),
+          },
+          { concurrency: READS_PER_REPO },
+        ),
+      ).pipe(
         Effect.map(
           (lists): RepoResult => ({
             _tag: "Loaded",
@@ -125,7 +117,6 @@ export const loadInsights = (token: AccessToken, query: InsightsQuery) =>
             incomplete: LISTINGS.filter((listing) => lists[listing]?.complete === false),
           }),
         ),
-        Effect.ensuring(release),
         Effect.catchTag(FORGEJO_READ_ERRORS, (error) =>
           Effect.sync((): RepoResult => {
             console.warn(`Insights repository ${query.org}/${name} failed`, error)
