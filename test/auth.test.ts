@@ -5,6 +5,7 @@ import { createFakeForgejo, FORGEJO_URL } from "./fake-forgejo.ts"
 import {
   APP_URL,
   callback,
+  OAUTH_STATE_COOKIE,
   SESSION_COOKIE,
   setCookies,
   signIn,
@@ -155,6 +156,30 @@ describe("GET /auth/callback", () => {
       name: "Ada Lovelace",
       avatarUrl: "https://forgejo.example/avatars/ada",
     })
+  })
+})
+
+describe("signing in again", () => {
+  it("deletes the session the browser already had", async () => {
+    const forgejo = createFakeForgejo()
+    const call = tabulo(forgejo.fetch)
+    const previous = await signIn(call, forgejo)
+    const login = await startLogin(call)
+
+    const response = await call(
+      `/auth/callback?${new URLSearchParams({
+        code: forgejo.approve(login.codeChallenge),
+        state: login.state,
+      })}`,
+      { headers: { cookie: `${OAUTH_STATE_COOKIE}=${login.browserState}; ${previous}` } },
+    )
+
+    expect(response.status).toBe(302)
+    const next = `${SESSION_COOKIE}=${setCookies(response).get(SESSION_COOKIE)?.value}`
+    expect(next).not.toBe(previous)
+    expect(await sessionCount()).toBe(1)
+    expect((await call("/api/me", { headers: { cookie: previous } })).status).toBe(401)
+    expect((await call("/api/me", { headers: { cookie: next } })).status).toBe(200)
   })
 })
 

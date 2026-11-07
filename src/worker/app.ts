@@ -137,7 +137,12 @@ export const createApp = (dependencies: Dependencies) => {
     return run(
       c,
       Effect.map(
-        completeLogin({ code: c.req.query("code"), state: c.req.query("state"), browserState }),
+        completeLogin({
+          code: c.req.query("code"),
+          state: c.req.query("state"),
+          browserState,
+          previousSession: getCookie(c, SESSION_COOKIE),
+        }),
         (cookieValue) => {
           setCookie(c, SESSION_COOKIE, cookieValue, cookieOptions(SESSION_LIFETIME_MS))
           return c.redirect("/", 302)
