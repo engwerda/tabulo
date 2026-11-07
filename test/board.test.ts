@@ -1601,7 +1601,7 @@ describe("GET /api/board/issue", () => {
     expect(markdownRenders(forgejo)).toEqual([])
   })
 
-  it("answers the latest 50 comments oldest first, each rendered like the description, and the full count", async () => {
+  it("answers the latest 20 comments oldest first, each rendered like the description, and the full count", async () => {
     const org = boardOrg()
     const commentRecords = Array.from({ length: 52 }, (_, index) =>
       issueComment(
@@ -1632,22 +1632,22 @@ describe("GET /api/board/issue", () => {
     }
     expect(detail.commentCount).toBe(52)
     expect(detail.comments.map((comment) => comment.id)).toEqual(
-      Array.from({ length: 50 }, (_, index) => 102 + index),
+      Array.from({ length: 20 }, (_, index) => 132 + index),
     )
     expect(detail.comments[0]).toEqual({
-      id: 102,
+      id: 132,
       author: { login: "ada", avatarUrl: "https://forgejo.example/avatars/ada" },
-      createdAt: "2026-11-01T09:02:00Z",
-      bodyHtml: "<p>Comment **2**</p>",
+      createdAt: "2026-11-04T09:32:00Z",
+      bodyHtml: "<p>Comment **32**</p>",
     })
-    expect(detail.comments[49]).toMatchObject({ id: 151, author: { login: "grace" }, bodyHtml: "" })
+    expect(detail.comments[19]).toMatchObject({ id: 151, author: { login: "grace" }, bodyHtml: "" })
     const renders = markdownRenders(forgejo) as Array<{
       Mode: string
       Context: string
       Text: string
     }>
     expect(renders.map((render) => render.Text).sort()).toEqual(
-      Array.from({ length: 49 }, (_, index) => `Comment **${index + 2}**`).sort(),
+      Array.from({ length: 19 }, (_, index) => `Comment **${index + 32}**`).sort(),
     )
     expect(new Set(renders.map((render) => `${render.Mode} ${render.Context}`))).toEqual(
       new Set(["comment https://forgejo.example/acme/api"]),
