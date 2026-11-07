@@ -1,0 +1,174 @@
+import { env } from "cloudflare:workers"
+import { beforeEach, describe, expect, it } from "vitest"
+import { createFakeForgejo, FORGEJO_URL } from "./fake-forgejo.ts"
+import {
+  APP_URL,
+  callback,
+  SESSION_COOKIE,
+  setCookies,
+  signIn,
+  startLogin,
+  tabulo,
+} from "./harness.ts"
+
+describe("GET /auth/login", () => {
+  it("redirects to the Forgejo authorize endpoint with state and an S256 PKCE challenge", async () => {
+    const response = await tabulo(createFakeForgejo().fetch)("/auth/login")
+
+    expect(response.status).toBe(302)
+    const location = new URL(response.headers.get("location") ?? "")
+    expect(`${location.origin}${location.pathname}`).toBe(`${FORGEJO_URL}/login/oauth/authorize`)
+    expect(location.searchParams.get("client_id")).toBe("test-client-id")
+    expect(location.searchParams.get("redirect_uri")).toBe(`${APP_URL}/auth/callback`)
+    expect(location.searchParams.get("response_type")).toBe("code")
+    expect(location.searchParams.get("code_challenge_method")).toBe("S256")
+    expect(location.searchParams.get("code_challenge")).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(location.searchParams.get("state")).toMatch(/^[A-Za-z0-9_-]{43}$/)
+  })
+})
+
+beforeEach(async () => {
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM sessions"),
+    env.DB.prepare("DELETE FROM oauth_states"),
+  ])
+})
+
+const sessionCount = async () =>
+  (await env.DB.prepare("SELECT count(*) AS n FROM sessions").first<{ n: number }>())?.n
+
+describe("GET /auth/callback", () => {
+  it("rejects an unknown state with 400 and creates no session", async () => {
+    const forgejo = createFakeForgejo()
+    const call = tabulo(forgejo.fetch)
+    const login = await startLogin(call)
+    const code = forgejo.approve(login.codeChallenge)
+
+    const response = await callback(call, { code, state: "forged-state" }, "forged-state")
+
+    expect(response.status).toBe(400)
+    expect(setCookies(response).has(SESSION_COOKIE)).toBe(false)
+    expect(await sessionCount()).toBe(0)
+  })
+
+  it("rejects a reused state with 400 and creates no second session", async () => {
+    const forgejo = createFakeForgejo()
+    const call = tabulo(forgejo.fetch)
+    const login = await startLogin(call)
+    const first = await callback(
+      call,
+      { code: forgejo.approve(login.codeChallenge), state: login.state },
+      login.browserState,
+    )
+    expect(first.status).toBe(302)
+
+    const replay = await callback(
+      call,
+      { code: forgejo.approve(login.codeChallenge), state: login.state },
+      login.browserState,
+    )
+
+    expect(replay.status).toBe(400)
+    expect(setCookies(replay).has(SESSION_COOKIE)).toBe(false)
+    expect(await sessionCount()).toBe(1)
+  })
+
+  it("rejects a state issued to another browser", async () => {
+    const forgejo = createFakeForgejo()
+    const call = tabulo(forgejo.fetch)
+    const attacker = await startLogin(call)
+    const victim = await startLogin(call)
+
+    const response = await callback(
+      call,
+      { code: forgejo.approve(attacker.codeChallenge), state: attacker.state },
+      victim.browserState,
+    )
+
+    expect(response.status).toBe(400)
+    expect(await sessionCount()).toBe(0)
+  })
+
+  it("creates a session with a hardened cookie and stores no plaintext token", async () => {
+    const forgejo = createFakeForgejo()
+    const call = tabulo(forgejo.fetch)
+    const login = await startLogin(call)
+
+    const response = await callback(
+      call,
+      { code: forgejo.approve(login.codeChallenge), state: login.state },
+      login.browserState,
+    )
+
+    expect(response.status).toBe(302)
+    expect(response.headers.get("location")).toBe("/")
+    const cookie = setCookies(response).get(SESSION_COOKIE)
+    expect(cookie?.value).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(cookie?.attributes).toEqual(
+      expect.arrayContaining(["HttpOnly", "Secure", "SameSite=Lax", "Path=/"]),
+    )
+
+    const tokenRequest = forgejo.requests.find((r) => r.path === "/login/oauth/access_token")
+    expect(tokenRequest?.form.get("grant_type")).toBe("authorization_code")
+    const rows = await env.DB.prepare("SELECT * FROM sessions").all()
+    expect(rows.results).toHaveLength(1)
+    const stored = JSON.stringify(rows.results)
+    expect(stored).not.toContain("access-1")
+    expect(stored).not.toContain("refresh-1")
+    expect(stored).not.toContain(cookie?.value)
+    expect(rows.results[0]).toMatchObject({
+      forgejo_user_id: 7,
+      login: "ada",
+      name: "Ada Lovelace",
+    })
+
+    const me = await call("/api/me", { headers: { cookie: `${SESSION_COOKIE}=${cookie?.value}` } })
+    expect(await me.json()).toEqual({
+      login: "ada",
+      name: "Ada Lovelace",
+      avatarUrl: "https://forgejo.example/avatars/ada",
+    })
+  })
+})
+
+describe("POST /auth/logout", () => {
+  it("refuses a foreign Origin with 403 and keeps the session", async () => {
+    const forgejo = createFakeForgejo()
+    const call = tabulo(forgejo.fetch)
+    const cookie = await signIn(call, forgejo)
+
+    const response = await call("/auth/logout", {
+      method: "POST",
+      headers: { cookie, origin: "https://attacker.example" },
+    })
+
+    expect(response.status).toBe(403)
+    expect((await call("/api/me", { headers: { cookie } })).status).toBe(200)
+  })
+
+  it("refuses a request without an Origin header", async () => {
+    const forgejo = createFakeForgejo()
+    const call = tabulo(forgejo.fetch)
+    const cookie = await signIn(call, forgejo)
+
+    const response = await call("/auth/logout", { method: "POST", headers: { cookie } })
+
+    expect(response.status).toBe(403)
+  })
+
+  it("deletes the session when the Origin is Tabulo's own", async () => {
+    const forgejo = createFakeForgejo()
+    const call = tabulo(forgejo.fetch)
+    const cookie = await signIn(call, forgejo)
+
+    const response = await call("/auth/logout", {
+      method: "POST",
+      headers: { cookie, origin: APP_URL },
+    })
+
+    expect(response.status).toBe(204)
+    expect(setCookies(response).get(SESSION_COOKIE)?.attributes).toContain("Max-Age=0")
+    expect((await call("/api/me", { headers: { cookie } })).status).toBe(401)
+    expect(await sessionCount()).toBe(0)
+  })
+})
