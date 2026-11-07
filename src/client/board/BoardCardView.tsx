@@ -1,9 +1,9 @@
 import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { type MouseEvent, memo, useMemo } from "react"
+import { type KeyboardEvent, type MouseEvent, memo, useMemo, useState } from "react"
 import type { BoardCard, BoardColumn } from "../../shared/api.ts"
 import { AvatarStack } from "../Avatar.tsx"
-import { absoluteTime, repoColor, shortAge } from "../format.ts"
+import { absoluteTime, shortAge } from "../format.ts"
 import {
   CommentIcon,
   ExternalIcon,
@@ -12,11 +12,13 @@ import {
   LinkIcon,
   LockIcon,
   MilestoneIcon,
+  PanelIcon,
   UserMinusIcon,
   UserPlusIcon,
 } from "../ui/icons.tsx"
 import { LabelList } from "../ui/LabelChip.tsx"
 import { buttonClass, Popover } from "../ui/primitives.tsx"
+import { useRepoColor } from "../ui/repo-palette.tsx"
 
 /**
  * What a card can do besides being dragged. Cards are memoized, so the board passes one object
@@ -29,16 +31,19 @@ export type CardActions = {
   readonly copyLink: (card: BoardCard) => void
 }
 
-export const RepoTag = ({ repo }: { repo: string }) => (
-  <span className="flex min-w-0 items-center gap-1.5">
-    <span
-      aria-hidden="true"
-      className="size-2 shrink-0 rounded-[3px]"
-      style={{ backgroundColor: repoColor(repo) }}
-    />
-    <span className="truncate">{repo}</span>
-  </span>
-)
+export const RepoTag = ({ repo }: { repo: string }) => {
+  const color = useRepoColor(repo)
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <span
+        aria-hidden="true"
+        className="size-2 shrink-0 rounded-[3px]"
+        style={{ backgroundColor: color }}
+      />
+      <span className="truncate">{repo}</span>
+    </span>
+  )
+}
 
 const menuItemClass =
   "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-zinc-700 transition hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none dark:text-zinc-300 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
@@ -49,19 +54,27 @@ const CardMenu = ({
   movable,
   assigned,
   actions,
+  open,
+  onOpenChange,
 }: {
   card: BoardCard
   columns: ReadonlyArray<BoardColumn>
   movable: boolean
   assigned: boolean
   actions: CardActions
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }) => (
   <Popover
     strategy="fixed"
     align="end"
     chevron={false}
+    focusFirstItem
+    open={open}
+    onOpenChange={onOpenChange}
     accessibleLabel={`Actions for ${card.repo}#${card.number}`}
     triggerClass={`${buttonClass.iconSmall} relative z-10`}
+    triggerTabIndex={-1}
     panelClass="w-56 p-1"
     label={
       <svg aria-hidden="true" viewBox="0 0 16 16" className="size-4" fill="currentColor">
@@ -73,31 +86,18 @@ const CardMenu = ({
   >
     {(close) => (
       <div role="menu" aria-label={`Actions for ${card.repo}#${card.number}`}>
-        {movable && (
-          <>
-            <p className="px-2 pt-1.5 pb-1 text-[0.6875rem] font-semibold tracking-wide text-zinc-400 uppercase">
-              Move to
-            </p>
-            {columns
-              .filter((column) => column.key !== card.column)
-              .map((column) => (
-                <button
-                  key={column.key}
-                  type="button"
-                  role="menuitem"
-                  className={menuItemClass}
-                  onClick={() => {
-                    close()
-                    actions.moveTo(card, column.key)
-                  }}
-                >
-                  <ColumnDot column={column} />
-                  <span className="truncate">{column.title}</span>
-                </button>
-              ))}
-            <div className="my-1 border-t border-zinc-100 dark:border-zinc-800" />
-          </>
-        )}
+        <button
+          type="button"
+          role="menuitem"
+          className={menuItemClass}
+          onClick={() => {
+            close()
+            actions.open(card)
+          }}
+        >
+          <PanelIcon className="size-4 text-zinc-400" />
+          Open details
+        </button>
         {card.state === "open" && card.readOnlyReason === null && (
           <button
             type="button"
@@ -139,6 +139,31 @@ const CardMenu = ({
           <ExternalIcon className="size-4 text-zinc-400" />
           Open in Forgejo
         </a>
+        {movable && (
+          <>
+            <div className="my-1 border-t border-zinc-100 dark:border-zinc-800" />
+            <p className="px-2 pt-1 pb-1 text-[0.6875rem] font-semibold tracking-wide text-zinc-400 uppercase">
+              Move to
+            </p>
+            {columns
+              .filter((column) => column.key !== card.column)
+              .map((column) => (
+                <button
+                  key={column.key}
+                  type="button"
+                  role="menuitem"
+                  className={menuItemClass}
+                  onClick={() => {
+                    close()
+                    actions.moveTo(card, column.key)
+                  }}
+                >
+                  <ColumnDot column={column} />
+                  <span className="truncate">{column.title}</span>
+                </button>
+              ))}
+          </>
+        )}
       </div>
     )}
   </Popover>
@@ -169,19 +194,45 @@ export const ColumnDot = ({ column }: { column: BoardColumn }) => {
   )
 }
 
-/** Repository and number: what names the issue on its card. */
+/** Repository and number: what names the issue on its card. The Done column says it is closed. */
 const CardReference = ({ card, showRepo }: { card: BoardCard; showRepo: boolean }) => (
   <>
-    {card.state === "closed" && (
-      <span className="text-emerald-600 dark:text-emerald-400" title="Closed">
-        <IssueClosedIcon className="size-3.5" />
-        <span className="sr-only">Closed, </span>
-      </span>
-    )}
+    {card.state === "closed" && <span className="sr-only">Closed, </span>}
     {showRepo && <RepoTag repo={card.repo} />}
     <span className="shrink-0 tabular-nums">#{card.number}</span>
   </>
 )
+
+const CARD_LINK = "a[data-card-link]"
+
+/**
+ * Arrow keys move focus between cards: up and down within a column, left and right to the card
+ * at the same height in the next column that has cards.
+ */
+const focusNeighbour = (link: HTMLElement, key: string) => {
+  const column = link.closest("section")
+  const board = column?.parentElement
+  if (column == null || board == null) return false
+  const links = [...column.querySelectorAll<HTMLElement>(CARD_LINK)]
+  const index = links.indexOf(link)
+  if (key === "ArrowDown" || key === "ArrowUp") {
+    const target = links[index + (key === "ArrowDown" ? 1 : -1)]
+    target?.focus()
+    return target !== undefined
+  }
+  const columns = [...board.querySelectorAll<HTMLElement>(":scope > section")]
+  const step = key === "ArrowRight" ? 1 : -1
+  for (let at = columns.indexOf(column) + step; at >= 0 && at < columns.length; at += step) {
+    const targets = [...(columns[at]?.querySelectorAll<HTMLElement>(CARD_LINK) ?? [])]
+    const target = targets[Math.min(index, targets.length - 1)]
+    if (target !== undefined) {
+      target.focus()
+      target.scrollIntoView({ block: "nearest", inline: "nearest" })
+      return true
+    }
+  }
+  return false
+}
 
 /** The card's face: shared by the sortable card and the drag overlay. */
 const CardFace = ({ card }: { card: BoardCard }) => {
@@ -242,7 +293,7 @@ type SortableCardProps = {
   readonly showRepo: boolean
   readonly selected: boolean
   readonly actions: CardActions
-  /** The board's query string without the search text, which the title link keeps. */
+  /** The board's query string without the search text, which the card's link keeps. */
   readonly hrefBase: string
 }
 
@@ -254,16 +305,21 @@ type CardContentsProps = {
   readonly showRepo: boolean
   readonly actions: CardActions
   readonly href: string
-  readonly handle: {
+  readonly dragging: boolean
+  /** dnd-kit's keyboard activation, which the card's link carries. */
+  readonly keyboard: {
     readonly ref: (element: HTMLElement | null) => void
-    readonly attributes: object
-    readonly listeners: object
+    readonly describedBy: string | undefined
+    readonly onKeyDown: ((event: KeyboardEvent) => void) | undefined
   }
 }
 
 /**
  * Everything inside a card. dnd-kit re-renders every sortable card on each pointer move, so
  * this part is memoized and only the outer list item follows the drag.
+ *
+ * The link is the card's one Tab stop: Enter opens the details, Space picks the card up, arrow
+ * keys move between cards, and the period or the context menu key opens the card's menu.
  */
 const CardContents = memo(function CardContents({
   card,
@@ -273,21 +329,45 @@ const CardContents = memo(function CardContents({
   showRepo,
   actions,
   href,
-  handle,
+  dragging,
+  keyboard,
 }: CardContentsProps) {
+  const [menuOpen, setMenuOpen] = useState(false)
   const openPanel = (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
     event.preventDefault()
     actions.open(card)
   }
+  const onKeyDown = (event: KeyboardEvent<HTMLAnchorElement>) => {
+    if (dragging) return
+    if (
+      event.key === "." ||
+      event.key === "ContextMenu" ||
+      (event.shiftKey && event.key === "F10")
+    ) {
+      event.preventDefault()
+      setMenuOpen(true)
+      return
+    }
+    if (event.key.startsWith("Arrow") && !event.altKey && !event.metaKey && !event.ctrlKey) {
+      if (focusNeighbour(event.currentTarget, event.key)) event.preventDefault()
+      return
+    }
+    if (movable) keyboard.onKeyDown?.(event)
+  }
   return (
     <>
       <div className="flex h-5 items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
         <a
+          ref={movable ? keyboard.ref : undefined}
           href={href}
+          data-card-link=""
           onClick={openPanel}
+          onKeyDown={onKeyDown}
           draggable={false}
-          className="flex min-w-0 items-center gap-1.5 rounded font-medium text-zinc-500 after:absolute after:inset-0 after:rounded-xl hover:text-zinc-800 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-offset-2 focus-visible:after:outline-indigo-500 dark:text-zinc-400 dark:hover:text-zinc-200"
+          aria-describedby={movable ? keyboard.describedBy : undefined}
+          aria-keyshortcuts="Enter Space ."
+          className="flex min-w-0 items-center gap-1.5 rounded font-medium text-zinc-500 hover:text-zinc-800 focus-visible:outline-none dark:text-zinc-400 dark:hover:text-zinc-200"
         >
           <span className="sr-only">{card.title}, </span>
           {!showRepo && <span className="sr-only">{card.repo}</span>}
@@ -302,26 +382,27 @@ const CardContents = memo(function CardContents({
             Archived
           </span>
         )}
-        <span className="relative z-10 -my-1 -mr-1.5 ml-auto flex items-center opacity-0 transition-opacity group-focus-within/card:opacity-100 group-hover/card:opacity-100 [@media(hover:none)]:opacity-100">
+        <span
+          className={`relative z-10 -my-1 -mr-1.5 ml-auto flex items-center transition-opacity group-focus-within/card:opacity-100 group-hover/card:opacity-100 [@media(hover:none)]:opacity-100 ${
+            menuOpen ? "opacity-100" : "opacity-0"
+          }`}
+        >
           <CardMenu
             card={card}
             columns={columns}
             movable={movable}
             assigned={assigned}
             actions={actions}
+            open={menuOpen}
+            onOpenChange={setMenuOpen}
           />
           {movable && (
-            <button
-              type="button"
-              ref={handle.ref}
-              {...handle.attributes}
-              {...handle.listeners}
-              aria-label={`Move ${card.repo}#${card.number} with the keyboard`}
-              title="Drag to move, or press Space to pick up"
-              className={`${buttonClass.iconSmall} cursor-grab touch-none`}
+            <span
+              aria-hidden="true"
+              className="grid size-7 cursor-grab place-items-center text-zinc-400"
             >
               <GripIcon />
-            </button>
+            </span>
           )}
         </span>
       </div>
@@ -331,6 +412,9 @@ const CardContents = memo(function CardContents({
     </>
   )
 })
+
+/** Clicks on these inside a card do their own thing instead of opening the details. */
+const OWN_CLICK = "a, button, input, select, textarea, [role='menu']"
 
 export const SortableCard = memo(function SortableCard({
   card,
@@ -345,21 +429,27 @@ export const SortableCard = memo(function SortableCard({
   const movable = viewerCanArrange && card.readOnlyReason === null
   const sortable = useSortable({ id: card.key, disabled: !movable })
   const { listeners, attributes, setActivatorNodeRef } = sortable
-  // The whole card drags with a mouse or a long press; only the handle starts a keyboard drag.
-  const [pointerListeners, handle] = useMemo(() => {
+  // The whole card drags with a mouse or a long press; only the link starts a keyboard drag.
+  const [pointerListeners, keyboard] = useMemo(() => {
     const entries = Object.entries(listeners ?? {})
     return [
       Object.fromEntries(entries.filter(([name]) => name !== "onKeyDown")),
       {
         ref: setActivatorNodeRef,
-        attributes,
-        listeners: Object.fromEntries(entries.filter(([name]) => name === "onKeyDown")),
+        describedBy: attributes["aria-describedby"],
+        onKeyDown: listeners?.onKeyDown as ((event: KeyboardEvent) => void) | undefined,
       },
     ] as const
   }, [listeners, attributes, setActivatorNodeRef])
   const assigned = card.assignees.some((assignee) => assignee.login === viewer)
   const href = `?${hrefBase}${hrefBase === "" ? "" : "&"}card=${encodeURIComponent(`${card.repo}#${card.number}`)}`
+  const openFromCard = (event: MouseEvent<HTMLLIElement>) => {
+    if ((event.target as HTMLElement).closest(OWN_CLICK) !== null) return
+    if (event.metaKey || event.ctrlKey) window.open(href, "_blank", "noopener")
+    else actions.open(card)
+  }
   return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the card's link is its keyboard entry point
     <li
       ref={sortable.setNodeRef}
       data-card-key={card.key}
@@ -368,13 +458,14 @@ export const SortableCard = memo(function SortableCard({
         transition: sortable.transition,
       }}
       {...(movable ? pointerListeners : {})}
-      className={`${cardBase} transition-[border-color,box-shadow,opacity] ${
+      onClick={openFromCard}
+      className={`${cardBase} cursor-pointer transition-[border-color,box-shadow,opacity] has-[a[data-card-link]:focus-visible]:outline-2 has-[a[data-card-link]:focus-visible]:outline-offset-2 has-[a[data-card-link]:focus-visible]:outline-indigo-500 ${
         sortable.isDragging
           ? "border-dashed border-zinc-300 bg-zinc-50 opacity-50 shadow-none dark:border-zinc-700 dark:bg-zinc-900/40 [&>*]:invisible"
           : selected
             ? "border-indigo-400 shadow-card ring-3 ring-indigo-500/15 dark:border-indigo-500"
             : "border-zinc-200/90 shadow-card hover:border-zinc-300 hover:shadow-md hover:shadow-zinc-900/5 dark:border-zinc-800 dark:hover:border-zinc-700"
-      } ${movable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+      }`}
     >
       <CardContents
         card={card}
@@ -384,7 +475,8 @@ export const SortableCard = memo(function SortableCard({
         showRepo={showRepo}
         actions={actions}
         href={href}
-        handle={handle}
+        dragging={sortable.isDragging}
+        keyboard={keyboard}
       />
     </li>
   )

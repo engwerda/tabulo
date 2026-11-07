@@ -24,6 +24,14 @@ export const KindIcon = ({ kind }: { kind: DashboardItem["kind"] | "notification
   </span>
 )
 
+/** Forgejo's notification subject types, in words. */
+const SUBJECT_NAMES: Partial<Record<string, string>> = {
+  Pull: "Pull request",
+  Issue: "Issue",
+  Commit: "Commit",
+  Repository: "Repository",
+}
+
 const rowClass =
   "group relative flex gap-3 px-4 py-3 transition hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
 const stretchedLink =
@@ -77,7 +85,8 @@ export const NotificationRow = ({ notification }: { notification: NotificationIt
       )}
       <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
         <span className="font-medium text-zinc-600 dark:text-zinc-300">{notification.repo}</span> ·{" "}
-        {notification.subjectType} · <Updated iso={notification.updatedAt} />
+        {SUBJECT_NAMES[notification.subjectType] ?? notification.subjectType} ·{" "}
+        <Updated iso={notification.updatedAt} />
       </p>
     </div>
   </div>

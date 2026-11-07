@@ -4,7 +4,7 @@ import { Link, Route, Switch, useLocation } from "wouter"
 import type { User } from "../shared/api.ts"
 import { Avatar } from "./Avatar.tsx"
 import { signOut } from "./api.ts"
-import { BoardPage } from "./board/BoardPage.tsx"
+import { BoardPage, LAST_BOARD_KEY } from "./board/BoardPage.tsx"
 import { OrgPicker } from "./board/OrgPicker.tsx"
 import { DashboardView } from "./Dashboard.tsx"
 import { SESSION_USER, useSession } from "./session.ts"
@@ -42,6 +42,14 @@ const SignIn = () => (
     </div>
   </main>
 )
+
+const lastBoard = () => {
+  try {
+    return window.localStorage.getItem(LAST_BOARD_KEY)
+  } catch {
+    return null
+  }
+}
 
 const NAV = [
   {
@@ -156,10 +164,12 @@ const Header = ({ user }: { user: User }) => {
           </Link>
           <nav aria-label="Main">
             <ul className="flex gap-0.5">
-              {NAV.map(({ href, label, icon, isActive }) => {
+              {NAV.map(({ href: base, label, icon, isActive }) => {
                 const active = isActive(path)
+                // Board returns to the last board shown, unless that is where you are.
+                const href = base === "/board" && !active ? (lastBoard() ?? base) : base
                 return (
-                  <li key={href}>
+                  <li key={label}>
                     <Link
                       href={href}
                       aria-current={active ? "page" : undefined}

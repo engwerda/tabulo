@@ -55,6 +55,11 @@
 }
 
 @layer base {
+  html,
+  body {
+    /* Only the board's own scrollers move sideways; a panel at the edge never shifts the page. */
+    overflow-x: clip;
+  }
   html {
     font-feature-settings: "cv11", "ss01";
     -webkit-tap-highlight-color: transparent;
@@ -92,13 +97,7 @@
 .prose-forgejo :where(h1, h2, h3, h4, h5, h6) {
   @apply mt-5 font-semibold text-zinc-900 dark:text-zinc-100;
 }
-.prose-forgejo :where(h1) {
-  @apply text-lg;
-}
-.prose-forgejo :where(h2) {
-  @apply text-base;
-}
-.prose-forgejo :where(h3, h4, h5, h6) {
+.prose-forgejo :where(h1, h2, h3, h4, h5, h6) {
   @apply text-sm;
 }
 .prose-forgejo a {
@@ -120,8 +119,17 @@
 .prose-forgejo li.task-list-item {
   @apply -ml-5 list-none;
 }
+/* Task list boxes read as status marks, not as disabled inputs. */
 .prose-forgejo input[type="checkbox"] {
-  @apply mr-1.5 align-middle accent-indigo-600;
+  @apply mr-1.5 inline-grid size-3.5 appearance-none place-content-center rounded border border-zinc-300 bg-white align-[-2px] dark:border-zinc-600 dark:bg-zinc-900;
+}
+.prose-forgejo input[type="checkbox"]:checked {
+  @apply border-indigo-600 bg-indigo-600 dark:border-indigo-500 dark:bg-indigo-500;
+}
+.prose-forgejo input[type="checkbox"]:checked::after {
+  content: "";
+  clip-path: polygon(14% 52%, 0 66%, 40% 100%, 100% 26%, 86% 12%, 40% 72%);
+  @apply size-2 bg-white;
 }
 .prose-forgejo :where(code) {
   @apply rounded bg-zinc-100 px-1 py-0.5 font-mono text-[0.8125rem] dark:bg-zinc-800;

@@ -20,13 +20,18 @@ export const relativeTime = (iso: string, now: number = Date.now()) => {
 export const absoluteTime = (iso: string) =>
   new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
 
-export const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .filter(Boolean)
+/** "Ada Lovelace" gives "AL"; a single word such as a login gives its first two letters. */
+export const initials = (name: string) => {
+  const parts = name.split(/\s+/).filter(Boolean)
+  if (parts.length === 1) {
+    const word = parts[0] ?? ""
+    return `${word.slice(0, 1).toUpperCase()}${word.slice(1, 2).toLowerCase()}`
+  }
+  return parts
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join("")
+}
 
 const SHORT_UNITS: ReadonlyArray<[string, number]> = [
   ["y", 365 * 24 * 3600],
@@ -46,18 +51,21 @@ export const shortAge = (iso: string, now: number = Date.now()) => {
   return "now"
 }
 
-const REPO_COLORS = [
+/** Distinct hues, ordered so that neighbours in the list never look alike. */
+export const REPO_COLORS = [
   "#6366f1",
-  "#0ea5e9",
-  "#10b981",
   "#f59e0b",
+  "#10b981",
   "#ec4899",
-  "#8b5cf6",
-  "#14b8a6",
+  "#0ea5e9",
   "#f97316",
+  "#8b5cf6",
+  "#84cc16",
+  "#ef4444",
+  "#14b8a6",
 ]
 
-/** A stable color per repository name, so a repository reads the same on every card. */
+/** A stable color per name, for avatars and repositories outside a board's palette. */
 export const repoColor = (name: string) => {
   let hash = 0
   for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) >>> 0

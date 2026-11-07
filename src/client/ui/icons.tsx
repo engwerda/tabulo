@@ -106,7 +106,7 @@ export const CommentIcon = ({ className }: IconProps) => (
 )
 export const MilestoneIcon = ({ className }: IconProps) => (
   <Stroke className={className}>
-    <path d="M8 1.75v12.5M3 3.75h8.25l2 2.25-2 2.25H3z" />
+    <path d="M3.5 14V2.5M3.5 3h8.25l-1.75 2.75L11.75 8.5H3.5" />
   </Stroke>
 )
 export const ClockIcon = ({ className }: IconProps) => (
@@ -210,7 +210,15 @@ export const SlidersIcon = ({ className }: IconProps) => (
 )
 export const CollapseIcon = ({ className }: IconProps) => (
   <Stroke className={className}>
-    <path d="M5 3.5 9.5 8 5 12.5M9.5 3.5 14 8l-4.5 4.5" />
+    <rect x="2.25" y="2.25" width="11.5" height="11.5" rx="2" />
+    <path d="M6.25 2.25v11.5M10.75 6.25 9 8l1.75 1.75" />
+  </Stroke>
+)
+
+export const ExpandIcon = ({ className }: IconProps) => (
+  <Stroke className={className}>
+    <rect x="2.25" y="2.25" width="11.5" height="11.5" rx="2" />
+    <path d="M6.25 2.25v11.5M9.25 6.25 11 8l-1.75 1.75" />
   </Stroke>
 )
 export const ArrowRightIcon = ({ className }: IconProps) => (
@@ -255,5 +263,12 @@ export const PullIcon = ({ className }: IconProps) => (
 export const BellIcon = ({ className }: IconProps) => (
   <Stroke className={className}>
     <path d="M4 6.5a4 4 0 0 1 8 0c0 3 1.25 4.25 1.25 4.25H2.75S4 9.5 4 6.5zM6.5 13a1.6 1.6 0 0 0 3 0" />
+  </Stroke>
+)
+
+export const PanelIcon = ({ className }: IconProps) => (
+  <Stroke className={className}>
+    <rect x="2.25" y="2.25" width="11.5" height="11.5" rx="2" />
+    <path d="M9.75 2.25v11.5" />
   </Stroke>
 )

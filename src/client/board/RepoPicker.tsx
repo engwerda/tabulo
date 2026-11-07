@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react"
 import type { OrgRepo } from "../../shared/api.ts"
-import { repoColor } from "../format.ts"
 import { LockIcon, RepoIcon, SearchIcon } from "../ui/icons.tsx"
 import { buttonClass, inputClass, Popover } from "../ui/primitives.tsx"
+import { useRepoColor } from "../ui/repo-palette.tsx"
 
 type RepoPickerProps = {
   readonly repos: ReadonlyArray<OrgRepo>
@@ -13,6 +13,17 @@ type RepoPickerProps = {
 }
 
 const checkboxClass = "size-4 shrink-0 rounded accent-indigo-600"
+
+const RepoDot = ({ repo, chosen }: { repo: string; chosen: boolean }) => {
+  const color = useRepoColor(repo)
+  return (
+    <span
+      aria-hidden="true"
+      className="size-2 shrink-0 rounded-[3px] bg-zinc-300 dark:bg-zinc-600"
+      style={chosen ? { backgroundColor: color } : undefined}
+    />
+  )
+}
 
 export const RepoPicker = ({ repos, selected, onChange, open, onOpenChange }: RepoPickerProps) => {
   const [search, setSearch] = useState("")
@@ -110,11 +121,7 @@ export const RepoPicker = ({ repos, selected, onChange, open, onOpenChange }: Re
                     onChange={() => toggle(repo.name)}
                     className={checkboxClass}
                   />
-                  <span
-                    aria-hidden="true"
-                    className="size-2 shrink-0 rounded-[3px]"
-                    style={{ backgroundColor: repoColor(repo.name) }}
-                  />
+                  <RepoDot repo={repo.name} chosen={chosen.has(repo.name)} />
                   <span className="truncate">{repo.name}</span>
                   {repo.private && (
                     <span title="Private" className="text-zinc-400">

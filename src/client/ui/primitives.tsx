@@ -1,5 +1,6 @@
 import {
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   type RefObject,
   useEffect,
@@ -79,6 +80,32 @@ type PopoverProps = {
    * column cannot clip it. It opens upward when there is no room below.
    */
   readonly strategy?: "absolute" | "fixed"
+  /** Classes of the wrapper; a trigger that should truncate needs "min-w-0" here. */
+  readonly containerClass?: string
+  /** Moves focus to the first menu item on open, as a menu button does. */
+  readonly focusFirstItem?: boolean
+  /** -1 keeps the trigger out of the Tab order when a key opens the panel instead. */
+  readonly triggerTabIndex?: number
+}
+
+const MENU_ITEMS = '[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]'
+
+/** Up and down arrows move between a panel's menu items, Home and End to the ends. */
+const moveMenuFocus = (event: ReactKeyboardEvent<HTMLElement>) => {
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return
+  const items = [...event.currentTarget.querySelectorAll<HTMLElement>(MENU_ITEMS)]
+  if (items.length === 0) return
+  event.preventDefault()
+  const current = items.indexOf(document.activeElement as HTMLElement)
+  const next =
+    event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? items.length - 1
+        : event.key === "ArrowDown"
+          ? (current + 1) % items.length
+          : (current - 1 + items.length) % items.length
+  items[next]?.focus()
 }
 
 const GAP = 6
@@ -108,6 +135,9 @@ export const Popover = ({
   open: controlledOpen,
   onOpenChange,
   strategy = "absolute",
+  containerClass = "relative",
+  focusFirstItem = false,
+  triggerTabIndex,
 }: PopoverProps) => {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
   const open = controlledOpen ?? uncontrolledOpen
@@ -120,10 +150,25 @@ export const Popover = ({
   const panel = useRef<HTMLDivElement>(null)
   const panelId = useId()
   const [fixedStyle, setFixedStyle] = useState<CSSProperties | null>(null)
+  // An absolute panel near the edge of a narrow screen shifts back inside it.
+  const [shift, setShift] = useState(0)
   const close = () => setOpen(false)
   const closeRef = useRef(close)
   closeRef.current = close
   useDismiss(open, close, container, trigger)
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setShift(0)
+      return
+    }
+    if (focusFirstItem) panel.current?.querySelector<HTMLElement>(MENU_ITEMS)?.focus()
+    if (strategy === "absolute" && panel.current !== null) {
+      const rect = panel.current.getBoundingClientRect()
+      const overflowRight = rect.right - (window.innerWidth - GAP)
+      setShift(overflowRight > 0 ? -overflowRight : rect.left < GAP ? GAP - rect.left : 0)
+    }
+  }, [open, strategy, focusFirstItem])
 
   useLayoutEffect(() => {
     if (!open || strategy !== "fixed") {
@@ -152,13 +197,14 @@ export const Popover = ({
       ? "fixed"
       : `absolute top-full mt-1.5 ${align === "end" ? "right-0 origin-top-right" : "left-0 origin-top-left"}`
   return (
-    <div ref={container} className="relative min-w-0">
+    <div ref={container} className={containerClass}>
       <button
         ref={trigger}
         type="button"
         aria-expanded={open}
         aria-controls={panelId}
         aria-label={accessibleLabel}
+        tabIndex={triggerTabIndex}
         onClick={() => setOpen(!open)}
         className={triggerClass}
       >
@@ -170,11 +216,18 @@ export const Popover = ({
         )}
       </button>
       {open && (
+        // biome-ignore lint/a11y/noStaticElementInteractions: the handlers only contain events for the controls inside
         <div
           ref={panel}
           id={panelId}
-          style={strategy === "fixed" ? (fixedStyle ?? { visibility: "hidden" }) : undefined}
-          className={`${position} z-40 animate-pop-in ${panelClass} ${extraPanelClass}`}
+          style={
+            strategy === "fixed" ? (fixedStyle ?? { visibility: "hidden" }) : { marginLeft: shift }
+          }
+          // A press inside the panel must not reach a draggable card around it.
+          onMouseDown={(event) => event.stopPropagation()}
+          onTouchStart={(event) => event.stopPropagation()}
+          onKeyDown={moveMenuFocus}
+          className={`${position} z-40 max-w-[calc(100vw-0.75rem)] animate-pop-in ${panelClass} ${extraPanelClass}`}
         >
           {children(() => {
             setOpen(false)

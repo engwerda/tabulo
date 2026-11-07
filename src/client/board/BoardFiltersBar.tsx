@@ -158,7 +158,7 @@ export const BoardFiltersBar = ({
 
   return (
     <search
-      className="scroll-thin flex items-center gap-2 overflow-x-auto px-4 pt-0.5 pb-3 sm:flex-wrap sm:overflow-visible sm:px-6"
+      className="scroll-thin flex items-center gap-2 overflow-x-auto px-4 pt-0.5 pb-3 *:shrink-0 sm:px-6 xl:flex-wrap xl:overflow-visible"
       aria-label="Filter cards"
     >
       <label className="relative w-60 shrink-0 max-sm:w-48">
@@ -176,11 +176,28 @@ export const BoardFiltersBar = ({
             }
           }}
           placeholder="Search title or #number"
-          className={`${inputClass} peer pr-8 pl-8`}
+          aria-keyshortcuts="/"
+          className={`${inputClass} peer pr-8 pl-8 [&::-webkit-search-cancel-button]:appearance-none`}
         />
-        <span className="pointer-events-none absolute top-1.5 right-2 hidden peer-placeholder-shown:sm:block">
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1.5 right-2 hidden peer-placeholder-shown:sm:block"
+        >
           <Kbd>/</Kbd>
         </span>
+        {filters.text !== "" && (
+          <button
+            type="button"
+            onClick={() => {
+              set("text", null)
+              searchInput.current?.focus()
+            }}
+            aria-label="Clear the search"
+            className="absolute top-1.5 right-1.5 grid size-5 place-items-center rounded text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+          >
+            <XIcon className="size-3.5" />
+          </button>
+        )}
       </label>
       <button
         type="button"
@@ -217,13 +234,22 @@ export const BoardFiltersBar = ({
         icon={<TagIcon />}
         value={filters.label}
         onChange={(value) => set("label", value)}
-        choices={choices.labels.map(({ name, color }) => ({
-          value: name,
-          label: name,
-          icon: (
-            <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
-          ),
-        }))}
+        choices={[
+          {
+            value: NONE,
+            label: "No label",
+            icon: (
+              <span className="size-2.5 shrink-0 rounded-full border-[1.5px] border-dashed border-zinc-300 dark:border-zinc-600" />
+            ),
+          },
+          ...choices.labels.map(({ name, color }) => ({
+            value: name,
+            label: name,
+            icon: (
+              <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+            ),
+          })),
+        ]}
       />
       <FilterMenu
         name="Milestone"
