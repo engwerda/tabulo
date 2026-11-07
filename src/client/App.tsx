@@ -8,6 +8,9 @@ import { BoardPage } from "./board/BoardPage.tsx"
 import { DashboardView } from "./Dashboard.tsx"
 import { EpicsPage } from "./epics/EpicsPage.tsx"
 import { InsightsPage } from "./insights/InsightsPage.tsx"
+import { SearchIcon } from "./palette/icons.tsx"
+import { ShortcutKeys } from "./palette/keys.tsx"
+import { PaletteProvider, usePalette } from "./palette/PaletteProvider.tsx"
 import { OrgPicker } from "./scope/OrgPicker.tsx"
 import { useLastScope } from "./scope/remembered.ts"
 import { isOrgViewPath, ORG_VIEWS, type OrgViewId, orgViewHref } from "./scope/views.ts"
@@ -51,16 +54,38 @@ const useNav = () => {
   ]
 }
 
-const Header = ({ user }: { user: User }) => {
+const useSignOut = () => {
   const queryClient = useQueryClient()
-  const nav = useNav()
-  const logout = useMutation({
+  return useMutation({
     mutationFn: signOut,
     onSuccess: () => {
       queryClient.clear()
       queryClient.setQueryData(SESSION_USER, null)
     },
   })
+}
+
+const SearchButton = () => {
+  const { openPalette } = usePalette()
+  return (
+    <button
+      type="button"
+      onClick={openPalette}
+      aria-haspopup="dialog"
+      aria-keyshortcuts="Control+K Meta+K"
+      className="flex h-8 shrink-0 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-2 text-sm text-zinc-500 shadow-[0_1px_0_rgb(0_0_0/0.03)] transition-colors hover:border-zinc-300 hover:text-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 sm:w-52 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-none dark:hover:border-zinc-600 dark:hover:text-zinc-200"
+    >
+      <SearchIcon className="size-4 shrink-0" />
+      <span className="sr-only sm:not-sr-only sm:flex-1 sm:text-left">Search…</span>
+      <span className="hidden sm:block">
+        <ShortcutKeys id="palette" />
+      </span>
+    </button>
+  )
+}
+
+const Header = ({ user, logout }: { user: User; logout: ReturnType<typeof useSignOut> }) => {
+  const nav = useNav()
   return (
     <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
@@ -88,6 +113,7 @@ const Header = ({ user }: { user: User }) => {
           </ul>
         </nav>
         <div className="ml-auto flex items-center gap-3">
+          <SearchButton />
           <ThemeControl />
           <Avatar url={user.avatarUrl} name={user.name} />
           <span className="hidden text-sm lg:inline">
@@ -119,26 +145,29 @@ const NotFound = () => (
   </main>
 )
 
-const SignedIn = ({ user }: { user: User }) => (
-  <>
-    <Header user={user} />
-    <Switch>
-      <Route path="/" component={DashboardView} />
-      {ORG_VIEWS.map(({ id, path }) => {
-        const Page = ORG_VIEW_PAGES[id]
-        return [
-          <Route key={id} path={path}>
-            <OrgPicker view={id} />
-          </Route>,
-          <Route key={`${id}/:org`} path={`${path}/:org`}>
-            {({ org }) => <Page key={org} org={org} />}
-          </Route>,
-        ]
-      })}
-      <Route component={NotFound} />
-    </Switch>
-  </>
-)
+const SignedIn = ({ user }: { user: User }) => {
+  const logout = useSignOut()
+  return (
+    <PaletteProvider signOut={() => logout.mutate()}>
+      <Header user={user} logout={logout} />
+      <Switch>
+        <Route path="/" component={DashboardView} />
+        {ORG_VIEWS.map(({ id, path }) => {
+          const Page = ORG_VIEW_PAGES[id]
+          return [
+            <Route key={id} path={path}>
+              <OrgPicker view={id} />
+            </Route>,
+            <Route key={`${id}/:org`} path={`${path}/:org`}>
+              {({ org }) => <Page key={org} org={org} />}
+            </Route>,
+          ]
+        })}
+        <Route component={NotFound} />
+      </Switch>
+    </PaletteProvider>
+  )
+}
 
 export const App = () => {
   const session = useQuery({ queryKey: SESSION_USER, queryFn: fetchSessionUser })

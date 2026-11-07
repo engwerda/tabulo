@@ -9,3 +9,4 @@ SESSION_ENCRYPTION_KEY=replace-with-openssl-rand-base64-32
 # BOARD_STATUS_SCOPE=Status/
 # BOARD_COLUMNS=Todo,Status/In Progress,Status/Review,Done
 # BOARD_DONE_DAYS=14
+# EPIC_LABEL=Type/Epic

@@ -12,6 +12,7 @@ import {
 import {
   type ForgejoActionRun,
   ForgejoActionRunPage,
+  ForgejoEpicIssue,
   ForgejoHeatmapEntry,
   ForgejoInsightIssue,
   ForgejoInsightRepo,
@@ -71,6 +72,8 @@ export type IssueListing =
 export class ForgejoClient extends Context.Service<
   ForgejoClient,
   {
+    /** The instance's base URL, without a trailing slash. */
+    readonly baseUrl: string
     readonly authorizeUrl: (state: string, codeChallenge: string) => string
     readonly exchangeCode: (
       code: string,
@@ -85,6 +88,13 @@ export class ForgejoClient extends Context.Service<
       search: IssueSearch,
       limit: number,
     ) => Effect.Effect<Page<ForgejoIssue>, ForgejoError>
+    /** Issues and pull requests of every repository the user can read whose text matches `q`. */
+    readonly searchIssueText: (
+      token: AccessToken,
+      q: string,
+      state: "open" | "closed",
+      limit: number,
+    ) => Effect.Effect<ReadonlyArray<ForgejoIssue>, ForgejoError>
     readonly unreadNotifications: (
       token: AccessToken,
       limit: number,
@@ -112,6 +122,11 @@ export class ForgejoClient extends Context.Service<
       repo: RepoRef,
       listing: IssueListing,
     ) => Effect.Effect<ReadonlyArray<ForgejoRepoIssue>, ForgejoError>
+    readonly repoEpicIssues: (
+      token: AccessToken,
+      repo: RepoRef,
+      listing: IssueListing,
+    ) => Effect.Effect<ReadonlyArray<ForgejoEpicIssue>, ForgejoError>
     readonly issue: (
       token: AccessToken,
       repo: RepoRef,
@@ -315,20 +330,52 @@ export const makeForgejoClient = (
     query: Record<string, string>,
     item: Schema.Decoder<A>,
     budget: PageBudget,
+    isLast?: (batch: ReadonlyArray<A>) => boolean,
+    pageSize = PAGE_SIZE,
   ) =>
-    paginate(budget, (number) =>
-      page(token, path, { ...query, limit: String(PAGE_SIZE), page: String(number) }, item),
+    paginate(
+      budget,
+      (number) =>
+        page(token, path, { ...query, limit: String(pageSize), page: String(number) }, item),
+      isLast,
     )
 
-  /** Every item of a paginated list, up to MAX_PAGES pages. */
+  /** Every item of a paginated list up to MAX_PAGES pages, or its first `max`. */
   const all = <A>(
     token: AccessToken,
     path: string,
     query: Record<string, string>,
     item: Schema.Decoder<A>,
+    max = Number.POSITIVE_INFINITY,
+  ) => {
+    let seen = 0
+    return listing(
+      token,
+      path,
+      query,
+      item,
+      { remaining: MAX_PAGES },
+      (batch) => {
+        seen += batch.length
+        return seen >= max
+      },
+      Math.min(PAGE_SIZE, max),
+    ).pipe(Effect.map(({ items }) => items.slice(0, max)))
+  }
+
+  const listRepoIssues = <A>(
+    token: AccessToken,
+    repo: RepoRef,
+    listing: IssueListing,
+    item: Schema.Decoder<A>,
   ) =>
-    listing(token, path, query, item, { remaining: MAX_PAGES }).pipe(
-      Effect.map(({ items }) => items),
+    all(
+      token,
+      `${repoPath(repo)}/issues`,
+      listing.state === "open"
+        ? { type: "issues", state: "open" }
+        : { type: "issues", state: "closed", since: listing.updatedSince },
+      item,
     )
 
   const tokenRequest = (grant: Record<string, string>) =>
@@ -375,6 +422,7 @@ export const makeForgejoClient = (
     })
 
   return {
+    baseUrl: config.baseUrl,
     authorizeUrl: (state, codeChallenge) =>
       `${config.baseUrl}/login/oauth/authorize?${new URLSearchParams({
         client_id: config.clientId,
@@ -407,6 +455,8 @@ export const makeForgejoClient = (
         },
         ForgejoIssue,
       ).pipe(Effect.map(knownTotal)),
+    searchIssueText: (token, q, state, limit) =>
+      all(token, "/repos/issues/search", { q, state }, ForgejoIssue, limit),
     unreadNotifications: (token, limit) =>
       page(token, "/notifications", { limit: String(limit) }, ForgejoNotification).pipe(
         Effect.map(knownTotal),
@@ -428,15 +478,9 @@ export const makeForgejoClient = (
       all(token, `/orgs/${encodeURIComponent(org)}/labels`, {}, ForgejoLabel),
     repo: (token, repo) =>
       api(token, repoPath(repo), {}, ForgejoRepo).pipe(Effect.map(({ body }) => body)),
-    repoIssues: (token, repo, listing) =>
-      all(
-        token,
-        `${repoPath(repo)}/issues`,
-        listing.state === "open"
-          ? { type: "issues", state: "open" }
-          : { type: "issues", state: "closed", since: listing.updatedSince },
-        ForgejoRepoIssue,
-      ),
+    repoIssues: (token, repo, listing) => listRepoIssues(token, repo, listing, ForgejoRepoIssue),
+    repoEpicIssues: (token, repo, listing) =>
+      listRepoIssues(token, repo, listing, ForgejoEpicIssue),
     issue: (token, repo, number) =>
       api(token, `${repoPath(repo)}/issues/${number}`, {}, ForgejoRepoIssue).pipe(
         Effect.map(({ body }) => body),

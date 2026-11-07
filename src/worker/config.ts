@@ -23,6 +23,7 @@ export type AppConfig = {
   readonly forgejo: ForgejoConfig
   readonly tokenKey: CryptoKey
   readonly board: BoardSettings
+  readonly epicLabel: string
 }
 
 const parseUrl = (name: string, value: string) =>
@@ -104,5 +105,6 @@ export const loadConfig = (env: Env) =>
       },
       tokenKey: yield* importTokenKey(encryptionKey),
       board: yield* parseBoardSettings(env),
+      epicLabel: env.EPIC_LABEL?.trim() || "Type/Epic",
     } satisfies AppConfig
   })

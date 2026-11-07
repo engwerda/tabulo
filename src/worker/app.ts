@@ -1,7 +1,7 @@
 import { Cause, Clock, Effect, Exit, Schema } from "effect"
 import { type Context, Hono } from "hono"
 import { deleteCookie, getCookie, setCookie } from "hono/cookie"
-import { type Dashboard, MoveCardRequest } from "../shared/api.ts"
+import { type Dashboard, type Instance, MoveCardRequest } from "../shared/api.ts"
 import { beginLogin, completeLogin } from "./auth/oauth.ts"
 import { currentSession, withAccessToken } from "./auth/session.ts"
 import {
@@ -16,6 +16,7 @@ import {
 import { CardRanks, makeCardRanks } from "./card-ranks.ts"
 import { loadConfig } from "./config.ts"
 import { loadDashboardSections } from "./dashboard.ts"
+import { EpicsConfig, loadEpics } from "./epics.ts"
 import {
   type BoardChanged,
   BoardRequestInvalid,
@@ -30,6 +31,7 @@ import {
 } from "./errors.ts"
 import { ForgejoClient, type HttpFetch, makeForgejoClient } from "./forgejo/client.ts"
 import { loadActivity, loadInsights, parseInsightsQuery, parseTimeZone } from "./load-insights.ts"
+import { parseSearchQuery, searchItems } from "./search.ts"
 import {
   makeSessionStore,
   OAUTH_STATE_LIFETIME_MS,
@@ -127,7 +129,7 @@ export const createApp = (dependencies: Dependencies) => {
     program: Effect.Effect<
       Response,
       AppError,
-      BoardConfig | CardRanks | ForgejoClient | SessionStore
+      BoardConfig | CardRanks | EpicsConfig | ForgejoClient | SessionStore
     >,
   ): Promise<Response> => {
     const exit = await Effect.runPromiseExit(
@@ -140,6 +142,7 @@ export const createApp = (dependencies: Dependencies) => {
           ),
           Effect.provideService(SessionStore, makeSessionStore(c.env.DB, config.tokenKey)),
           Effect.provideService(BoardConfig, config.board),
+          Effect.provideService(EpicsConfig, { label: config.epicLabel }),
           Effect.provideService(CardRanks, makeCardRanks(c.env.DB)),
         )
       }).pipe(Effect.provideService(Clock.Clock, dependencies.clock ?? Clock.Clock.defaultValue())),
@@ -235,6 +238,27 @@ export const createApp = (dependencies: Dependencies) => {
     ),
   )
 
+  app.get("/api/search", (c) =>
+    run(
+      c,
+      Effect.flatMap(parseSearchQuery(c.req.query("q"), c.req.query("limit")), (query) =>
+        withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
+          searchItems(token, query).pipe(Effect.map((results) => c.json(results))),
+        ),
+      ),
+    ),
+  )
+
+  app.get("/api/instance", (c) =>
+    run(
+      c,
+      currentSession(getCookie(c, SESSION_COOKIE)).pipe(
+        Effect.flatMap(() => ForgejoClient),
+        Effect.map((forgejo) => c.json({ forgejoUrl: forgejo.baseUrl } satisfies Instance)),
+      ),
+    ),
+  )
+
   app.get("/api/orgs", (c) =>
     run(
       c,
@@ -261,6 +285,17 @@ export const createApp = (dependencies: Dependencies) => {
       Effect.flatMap(parseBoardQuery(c.req.query("org"), c.req.query("repos")), (query) =>
         withAccessToken(getCookie(c, SESSION_COOKIE), (token, session) =>
           loadBoard(token, session.user.login, query).pipe(Effect.map((board) => c.json(board))),
+        ),
+      ),
+    ),
+  )
+
+  app.get("/api/epics", (c) =>
+    run(
+      c,
+      Effect.flatMap(parseBoardQuery(c.req.query("org"), c.req.query("repos")), (query) =>
+        withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
+          loadEpics(token, query).pipe(Effect.map((epics) => c.json(epics))),
         ),
       ),
     ),

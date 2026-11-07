@@ -3,12 +3,15 @@ import {
   Activity,
   Board,
   Dashboard,
+  Epics,
   type InsightDays,
   Insights,
+  Instance,
   type MoveCardRequest,
   MoveCardResult,
   Org,
   OrgRepo,
+  SearchResults,
   User,
 } from "../shared/api.ts"
 
@@ -36,6 +39,7 @@ const decodeDashboard = Schema.decodeUnknownPromise(Dashboard)
 const decodeOrgs = Schema.decodeUnknownPromise(Schema.Array(Org))
 const decodeOrgRepos = Schema.decodeUnknownPromise(Schema.Array(OrgRepo))
 const decodeBoard = Schema.decodeUnknownPromise(Board)
+const decodeEpics = Schema.decodeUnknownPromise(Epics)
 const decodeMoveCardResult = Schema.decodeUnknownPromise(MoveCardResult)
 
 const requestJson = async (path: string, init?: RequestInit): Promise<unknown> => {
@@ -87,6 +91,24 @@ export const moveCard = async (move: MoveCardRequest): Promise<MoveCardResult> =
       body: JSON.stringify(move),
     }),
   )
+
+export const fetchEpics = async (org: string, repos: ReadonlyArray<string>): Promise<Epics> =>
+  decodeEpics(
+    await requestJson(`/api/epics?${new URLSearchParams({ org, repos: repos.join(",") })}`),
+  )
+const decodeSearchResults = Schema.decodeUnknownPromise(SearchResults)
+const decodeInstance = Schema.decodeUnknownPromise(Instance)
+
+export const fetchSearch = async (q: string, signal?: AbortSignal): Promise<SearchResults> =>
+  decodeSearchResults(
+    await requestJson(
+      `/api/search?${new URLSearchParams({ q })}`,
+      signal === undefined ? {} : { signal },
+    ),
+  )
+
+export const fetchInstance = async (): Promise<Instance> =>
+  decodeInstance(await requestJson("/api/instance"))
 
 export const signOut = async (): Promise<void> => {
   const response = await fetch("/auth/logout", { method: "POST" })

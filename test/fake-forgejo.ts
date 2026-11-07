@@ -30,6 +30,7 @@ export type FakeIssue = {
   id: number
   number: number
   title: string
+  body: string | null
   html_url: string
   state: "open" | "closed"
   labels: Array<FakeLabel>
@@ -272,9 +273,11 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
   const notFound = () => json({ message: "not found" }, { status: 404 })
   const forbidden = () => json({ message: "permission denied" }, { status: 403 })
 
-  const findOrg = (name: string) => orgs.find((org) => org.name === name)
+  // Forgejo matches owner and repository names case-insensitively.
+  const findOrg = (name: string) =>
+    orgs.find((org) => org.name.toLowerCase() === name.toLowerCase())
   const findRepo = (owner: string, name: string) =>
-    findOrg(owner)?.repos.find((repo) => repo.name === name)
+    findOrg(owner)?.repos.find((repo) => repo.name.toLowerCase() === name.toLowerCase())
 
   const repoJson = (owner: string, repo: FakeRepo, login: string) => ({
     id: 100,
@@ -424,6 +427,20 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
       return json(fixtures.notifications, {
         headers: { "x-total-count": String(fixtures.notifications.length) },
       })
+    }
+    if (path === "/api/v1/repos/issues/search" && query.has("q")) {
+      const text = (query.get("q") ?? "").toLowerCase()
+      const state = query.get("state") ?? "all"
+      const seen = new Set<string>()
+      const matches = Object.values(fixtures.issues)
+        .flatMap(
+          (items) =>
+            (items ?? []) as ReadonlyArray<{ title: string; state: string; html_url: string }>,
+        )
+        .filter((issue) => !seen.has(issue.html_url) && seen.add(issue.html_url))
+        .filter((issue) => issue.title.toLowerCase().includes(text))
+        .filter((issue) => state === "all" || issue.state === state)
+      return paged(matches, query)
     }
     if (path === "/api/v1/repos/issues/search") {
       const filter = (["review_requested", "assigned", "mentioned", "created"] as const).find(

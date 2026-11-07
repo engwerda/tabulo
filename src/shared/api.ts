@@ -338,3 +338,56 @@ export const Activity = Schema.Struct({
   busiestDay: Schema.NullOr(ActivityDay),
 })
 export type Activity = typeof Activity.Type
+
+export const EpicChild = Schema.Union([
+  Schema.TaggedStruct("Issue", {
+    key: Schema.String,
+    repo: Schema.String,
+    number: Schema.Number,
+    title: Schema.String,
+    url: Schema.String,
+    state: Schema.Literals(["open", "closed"]),
+    kind: Schema.Literals(["issue", "pull"]),
+    column: Schema.String,
+    assignees: BoardCard.fields.assignees,
+  }),
+  Schema.TaggedStruct("Unavailable", { ref: Schema.String }),
+])
+export type EpicChild = typeof EpicChild.Type
+
+export const Epic = Schema.Struct({
+  key: Schema.String,
+  repo: Schema.String,
+  number: Schema.Number,
+  title: Schema.String,
+  url: Schema.String,
+  state: Schema.Literals(["open", "closed"]),
+  assignees: BoardCard.fields.assignees,
+  milestone: Schema.NullOr(Schema.String),
+  labels: Schema.Array(BoardLabel),
+  updatedAt: Schema.String,
+  column: Schema.String,
+  progress: Schema.Struct({
+    total: Schema.Number,
+    done: Schema.Number,
+    byColumn: Schema.Record(Schema.String, Schema.Number),
+  }),
+  children: Schema.Array(EpicChild),
+})
+export type Epic = typeof Epic.Type
+
+export const Epics = Schema.Struct({
+  org: Schema.String,
+  repos: Schema.Array(Schema.String),
+  columns: Schema.Array(BoardColumn),
+  epics: Schema.Array(Epic),
+  failedRepos: Schema.Array(Schema.Struct({ repo: Schema.String, message: Schema.String })),
+})
+export type Epics = typeof Epics.Type
+/** Issues and pull requests matching a search, open ones first. */
+export const SearchResults = Schema.Struct({ items: Schema.Array(DashboardItem) })
+export type SearchResults = typeof SearchResults.Type
+
+/** Where Forgejo lives, for links the client builds itself, such as a repository's page. */
+export const Instance = Schema.Struct({ forgejoUrl: Schema.String })
+export type Instance = typeof Instance.Type

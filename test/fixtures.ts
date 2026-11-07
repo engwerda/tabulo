@@ -110,6 +110,8 @@ export const bug = label(20, "Kind/Bug", "d73a4a", false)
 export const highPriority = label(21, "Priority/High", "b60205", true)
 export const retired = { ...label(13, "Status/Retired", "cccccc", true), is_archived: true }
 
+export const epicLabel = label(30, "Type/Epic", "615fff", false)
+
 export const grace = {
   id: 9,
   login: "grace",

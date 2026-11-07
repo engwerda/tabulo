@@ -104,6 +104,7 @@ the board.
 | `GET /api/orgs/:org/repos` | The organization's repositories the user can see, with `archived`. |
 | `GET /api/board?org=&repos=a,b` | Columns, cards, `viewerCanArrange`, and `failedRepos`. At most 20 repositories. |
 | `POST /api/board/move` | Moves one card and answers with `{ card, orderSaved }`. |
+| `GET /api/epics?org=&repos=a,b` | Epic cards, children, progress, board columns, and `failedRepos`. At most 20 repositories. |
 
 `GET /api/board` reads the organization's labels and whether the user is a member, then for each
 repository the repository, its open issues, and the issues closed since the start of the Done
@@ -204,6 +205,71 @@ streak that has no contribution yet today still counts until the day ends.
 | `GET /api/insights?org=&repos=a,b&days=90&tz=Europe/Amsterdam` | The `Insights` payload in `src/shared/api.ts`. `days` is 30, 90, 180, or 365 and defaults to 90. `tz` is an IANA time zone and defaults to UTC. Other values answer 400. At most 20 repositories. |
 | `GET /api/activity?tz=Europe/Amsterdam` | The signed-in user's days with contributions, total, current and longest streak, and busiest day. |
 
+### Epics
+
+An epic is an issue bearing the full `EPIC_LABEL` name. The Epics view shares the board's
+organization and repository selection. It shows open epics and epics closed within
+`BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
+
+- **Children.** Task-list lines begin with `- [ ]`, `- [x]`, the equivalent `*` or `+`
+  marker, or an ordered marker such as `1. [ ]` or `1) [ ]`. The first word after the checkbox
+  is `#12`, `repo#12`, `owner/repo#12`, or an issue or pull request URL on `FORGEJO_URL`. It
+  may be wrapped in `(`, `<`, `[`, `*`, or `_` and followed by punctuation, so `#12: Login`,
+  `(#12)`, `**#12**`, and `[#12](…)` count. Only the first reference on a line counts. A bare
+  number refers to the epic's repository, a repo-only reference to its organization. The pure
+  `parseEpicChildren` function in `src/worker/epics.ts` ignores fenced and indented code
+  (indentation counts from the enclosing list item) and HTML comments, preserves body order,
+  deduplicates case-insensitively, and caps each epic at 200 children. Forgejo dependencies do
+  not create epic links.
+- **Progress.** Checkbox state is ignored. The child's real issue state and labels determine
+  its column through `boardLayout`, including repository status labels matching an organization
+  column. Every closed child is Done, however old. Pull request children are marked as pull
+  requests. Progress reports `total`, `done`, and `byColumn` keyed by the board's column keys.
+  Unavailable references stay in `total` but do not enter any column or count as Done.
+- **Reads.** The endpoint reads organization labels and each repository's metadata, open issues,
+  and issues updated since the Done window that are closed. Epic bodies use a separate Forgejo
+  schema; the board's decoder and payload are unchanged. Listed issues resolve children where
+  possible. Missing children, including older closed issues and pull requests, are read
+  individually with at most four concurrent requests and 200 unique lookups per endpoint call.
+  Duplicate references across epics share that lookup. A 403, 404, or lookup beyond that cap
+  becomes `{ _tag: "Unavailable", ref }`. Other child failures fail the request. Failed
+  repositories enter `failedRepos`; an authentication failure still ends the request. This
+  endpoint writes no Forgejo data or card ranks.
+- **Display.** Each epic exposes its issue details and board column, progress segments and
+  legend, completion percentage, and an expandable child list. The response is
+  `{ org, repos, columns, epics, failedRepos }`; children are tagged `Issue` or `Unavailable`.
+  Search (`q`), epic state (`state`), assignee (`assignee`), and sort (`sort`, values `updated`,
+  `progress`, `children`) live in the URL. The default sort is most recently updated; progress
+  and child-count sorts run descending with update time and key as tie breakers. The summary
+  covers all selected epics, counts child completions across those epics, and marks open epics
+  that have children but none completed as at risk. The client refreshes every minute.
+
+### Search
+
+The command menu searches issues and pull requests, and finds repositories and views on the
+client.
+
+| Endpoint | Result |
+|---|---|
+| `GET /api/search?q=&limit=` | `{ items }`: issues and pull requests across every repository the user can read, as dashboard items. |
+| `GET /api/instance` | `{ forgejoUrl }`, so the client can link to a repository's page. |
+
+`q` is trimmed text of 1 to 100 characters, and Forgejo matches it against titles and
+descriptions. `limit` is a positive integer, default 10, and larger values answer with 20. The
+server answers 400 to a `q` or `limit` outside this. It asks Forgejo's `GET /repos/issues/search`
+as the user, first for `state=open` and then, for what is left of the limit, `state=closed`, so
+open items come first. Each state is read page by page until the limit is met or the matches
+run out, because Forgejo's page size can be below the limit. The menu does not search before two characters, and waits 200 ms after
+the last key.
+
+### Keyboard shortcuts
+
+`Cmd` or `Ctrl` with `K` opens the menu, `?` opens the shortcut list, and `g` followed within a
+second by `d`, `b`, `i`, or `e` goes to the dashboard, board, insights, or epics, using the last
+organization and its remembered repositories. Keys without `Cmd` or `Ctrl` do nothing while the
+focus is in an input, textarea, select, or editable element. The shortcuts are one list in
+`src/client/palette/shortcuts.ts`, which the key handler and the shortcut list both read.
+
 ### Configuration
 
 | Variable | Kind | Purpose |
@@ -216,6 +282,7 @@ streak that has no contribution yet today still counts until the day ends.
 | `BOARD_STATUS_SCOPE` | var | Prefix of the status labels, ending in `/`. Default `Status/`. |
 | `BOARD_COLUMNS` | var | Optional column order: full status label names and the reserved words `Todo` and `Done`, comma-separated. Unlisted status labels come before Done in name order. A missing Todo goes first and a missing Done goes last. |
 | `BOARD_DONE_DAYS` | var | Days a closed issue stays in Done, 1 to 365. Default 14. |
+| `EPIC_LABEL` | var | Full label name that marks an epic. Default `Type/Epic`. |
 
 ## Milestones
 
