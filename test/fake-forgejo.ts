@@ -33,7 +33,8 @@ export type FakeIssue = {
   html_url: string
   state: "open" | "closed"
   labels: Array<FakeLabel>
-  user: { id: number; login: string }
+  /** Forgejo always sends the poster's avatar; the fake derives one when it is left out. */
+  user: { id: number; login: string; avatar_url?: string }
   assignees: Array<{ id: number; login: string; full_name: string; avatar_url: string }> | null
   milestone: { id: number; title: string; state: string } | null
   created_at: string
@@ -42,6 +43,8 @@ export type FakeIssue = {
   comments: number
   pull_request: { merged: boolean; draft: boolean; html_url: string } | null
   repository: { id: number; name: string; owner: string; full_name: string }
+  /** The description as Markdown. Empty when left out. */
+  body?: string
   [field: string]: unknown
 }
 
@@ -151,6 +154,10 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
   }
   const users = [fixtures.user, ...fixtures.otherUsers]
   const orgs = structuredClone(fixtures.orgs) as Array<FakeOrg>
+  for (const issue of orgs.flatMap((org) => org.repos.flatMap((repo) => repo.issues))) {
+    issue.user.avatar_url ??= `${FORGEJO_URL}/avatars/${issue.user.login}`
+    issue.body ??= ""
+  }
   const requests: Array<RecordedRequest> = []
   const authorizationCodes = new Map<string, { challenge: string; login: string }>()
   /** Token to the login it was issued for. */
@@ -264,17 +271,133 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     return paged(matches, query)
   }
 
+  const userJson = (user: FakeUser) => ({
+    id: user.id,
+    login: user.login,
+    full_name: user.full_name,
+    avatar_url: user.avatar_url,
+  })
+
+  /**
+   * Forgejo's EditIssue. The poster may edit the state without write access, but Forgejo
+   * applies `assignees` only for a writer and ignores it otherwise, without an error. The list
+   * replaces the assignees; a login that does not exist or cannot be assigned (no issue write
+   * access) fails the request with HTTP 500, as UpdateAssignees does.
+   */
   const editIssue = (repo: FakeRepo, issue: FakeIssue, login: string, body: unknown) => {
     if (repo.archived) return archivedRefusal()
     const isPoster = fixtures.tokenScope === "write" && issue.user.login === login
     if (!canWriteIssues(repo, login) && !isPoster) return forbidden()
-    const { state } = body as { state?: "open" | "closed" }
+    const { state, assignees } = body as {
+      state?: "open" | "closed"
+      assignees?: ReadonlyArray<string>
+    }
+    if (assignees !== undefined && canWriteIssues(repo, login)) {
+      const assigned = assignees.map((name) =>
+        users.find(
+          (user) =>
+            user.login.toLowerCase() === name.toLowerCase() &&
+            (repo.writers.includes(user.login) || repo.triagers.includes(user.login)),
+        ),
+      )
+      if (assigned.some((user) => user === undefined)) {
+        return json({ message: "user cannot be assigned" }, { status: 500 })
+      }
+      issue.assignees = assigned.flatMap((user) => (user === undefined ? [] : [userJson(user)]))
+    }
     if (state !== undefined && state !== issue.state) {
       issue.state = state
       issue.closed_at = state === "closed" ? fixtures.now : null
     }
     issue.updated_at = fixtures.now
     return json(issue, { status: 201 })
+  }
+
+  /**
+   * Forgejo's CreateIssue. Anyone who can read the repository may create an issue, but Forgejo
+   * keeps `labels` only for a user who can write its issues and drops them otherwise. Label ids
+   * of other organizations or repositories are ignored. Issues and pull requests share numbers.
+   */
+  const createIssue = (
+    owner: string,
+    org: FakeOrg,
+    repo: FakeRepo,
+    login: string,
+    body: unknown,
+  ) => {
+    if (repo.archived) return archivedRefusal()
+    if (fixtures.tokenScope !== "write") return forbidden()
+    const {
+      title,
+      body: text,
+      labels,
+    } = body as {
+      title?: string
+      body?: string
+      labels?: ReadonlyArray<number>
+    }
+    if (title === undefined || title.trim() === "") {
+      return json({ message: "title is required" }, { status: 422 })
+    }
+    const poster = users.find((user) => user.login === login)
+    if (poster === undefined) return forbidden()
+    const allIssues = orgs.flatMap((candidate) => candidate.repos.flatMap((r) => r.issues))
+    const number = Math.max(0, ...repo.issues.map((issue) => issue.number)) + 1
+    const issue: FakeIssue = {
+      id: Math.max(0, ...allIssues.map((candidate) => candidate.id)) + 1,
+      number,
+      title,
+      html_url: `${FORGEJO_URL}/${owner}/${repo.name}/issues/${number}`,
+      state: "open",
+      labels: [],
+      user: { id: poster.id, login: poster.login, avatar_url: poster.avatar_url },
+      assignees: null,
+      milestone: null,
+      created_at: fixtures.now,
+      updated_at: fixtures.now,
+      closed_at: null,
+      comments: 0,
+      pull_request: null,
+      repository: { id: 100, name: repo.name, owner, full_name: `${owner}/${repo.name}` },
+      body: text ?? "",
+    }
+    if (canWriteIssues(repo, login)) {
+      for (const label of [...org.labels, ...repo.labels]) {
+        if (!(labels ?? []).includes(label.id)) continue
+        const scope = exclusiveScope(label)
+        issue.labels = [
+          ...issue.labels.filter((present) => scope === "" || exclusiveScope(present) !== scope),
+          label,
+        ]
+      }
+    }
+    repo.issues.push(issue)
+    return json(issue, { status: 201 })
+  }
+
+  const escapeHtml = (text: string) =>
+    text
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&#34;")
+
+  /**
+   * Forgejo's POST /markdown, with a stand-in renderer: each blank-line separated paragraph
+   * becomes a `<p>`, and in comment mode a line break becomes `<br>`. Empty text renders as
+   * an empty body, as in Forgejo.
+   */
+  const renderMarkdown = (body: unknown) => {
+    const { Text: text = "", Mode: mode } = body as { Text?: string; Mode?: string }
+    const html = text
+      .split(/\n{2,}/)
+      .filter((paragraph) => paragraph.trim() !== "")
+      .map(
+        (paragraph) =>
+          `<p>${escapeHtml(paragraph.trim()).replaceAll("\n", mode === "comment" ? "<br>\n" : "\n")}</p>`,
+      )
+      .join("\n")
+    return new Response(html, { headers: { "content-type": "text/html; charset=UTF-8" } })
   }
 
   /**
@@ -330,6 +453,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
   ) => {
     const user = users.find((candidate) => candidate.login === login)
     if (path === "/api/v1/user") return json(user)
+    if (path === "/api/v1/markdown" && method === "POST") return renderMarkdown(body)
     if (path === "/api/v1/user/orgs") {
       return paged(
         orgs
@@ -396,7 +520,11 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
       const repo = findRepo(owner, name)
       if (org === undefined || repo === undefined) return notFound()
       if (!path.includes("/issues")) return json(repoJson(owner, repo, login))
-      if (number === undefined) return listIssues(repo, query)
+      if (number === undefined) {
+        return method === "POST"
+          ? createIssue(owner, org, repo, login, body)
+          : listIssues(repo, query)
+      }
       const issue = repo.issues.find((candidate) => candidate.number === Number(number))
       if (issue === undefined) return notFound()
       if (labels !== undefined) {

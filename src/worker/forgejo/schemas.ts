@@ -67,11 +67,17 @@ export const ForgejoRepoIssue = Schema.Struct({
     Schema.Array(Schema.Struct({ login: Schema.String, avatar_url: Schema.String })),
   ),
   milestone: Schema.NullOr(Schema.Struct({ title: Schema.String })),
+  user: Schema.Struct({ login: Schema.String, avatar_url: Schema.String }),
+  comments: Schema.Number,
+  created_at: Schema.String,
   updated_at: Schema.String,
   closed_at: Schema.NullOr(Schema.String),
   pull_request: Schema.optionalKey(Schema.NullOr(Schema.Struct({}))),
 })
 export type ForgejoRepoIssue = typeof ForgejoRepoIssue.Type
+
+/** The description of an issue, which only a card's detail reads. */
+export const ForgejoIssueBody = Schema.Struct({ body: Schema.String })
 
 export const ForgejoOrg = Schema.Struct({
   name: Schema.String,

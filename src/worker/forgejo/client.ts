@@ -11,6 +11,7 @@ import {
 } from "../errors.ts"
 import {
   ForgejoIssue,
+  ForgejoIssueBody,
   ForgejoLabel,
   ForgejoNotification,
   ForgejoOrg,
@@ -101,6 +102,37 @@ export class ForgejoClient extends Context.Service<
       repo: RepoRef,
       number: number,
     ) => Effect.Effect<ForgejoRepoIssue, ForgejoError>
+    /** The issue's description as Markdown, empty when it has none. */
+    readonly issueBody: (
+      token: AccessToken,
+      repo: RepoRef,
+      number: number,
+    ) => Effect.Effect<string, ForgejoError>
+    /**
+     * Creates an issue as the token's user. Forgejo drops `labelIds` without an error when
+     * that user cannot write the repository's issues.
+     */
+    readonly createIssue: (
+      token: AccessToken,
+      repo: RepoRef,
+      issue: { readonly title: string; readonly labelIds: ReadonlyArray<number> },
+    ) => Effect.Effect<ForgejoRepoIssue, ForgejoError>
+    /**
+     * Replaces the issue's assignees with `logins`. Forgejo ignores the change without an
+     * error when the token's user cannot write the repository's issues.
+     */
+    readonly setIssueAssignees: (
+      token: AccessToken,
+      repo: RepoRef,
+      number: number,
+      logins: ReadonlyArray<string>,
+    ) => Effect.Effect<ForgejoRepoIssue, ForgejoError>
+    /** Renders an issue's Markdown as HTML, with relative links resolved in the repository. */
+    readonly renderMarkdown: (
+      token: AccessToken,
+      repo: RepoRef,
+      text: string,
+    ) => Effect.Effect<string, ForgejoError>
     readonly setIssueState: (
       token: AccessToken,
       repo: RepoRef,
@@ -130,6 +162,12 @@ const send = (fetch: HttpFetch, request: Request) =>
   Effect.tryPromise({
     try: () => fetch(request),
     catch: (cause) => new ForgejoUnreachable({ message: String(cause) }),
+  })
+
+const readText = (response: Response) =>
+  Effect.tryPromise({
+    try: () => response.text(),
+    catch: () => new ForgejoDecodeFailed({ message: "response body is not text" }),
   })
 
 const readJson = <A>(response: Response, schema: Schema.Decoder<A>) =>
@@ -357,6 +395,39 @@ export const makeForgejoClient = (
       api(token, `${repoPath(repo)}/issues/${number}`, {}, ForgejoRepoIssue).pipe(
         Effect.map(({ body }) => body),
       ),
+    issueBody: (token, repo, number) =>
+      api(token, `${repoPath(repo)}/issues/${number}`, {}, ForgejoIssueBody).pipe(
+        Effect.map(({ body }) => body.body),
+      ),
+    createIssue: (token, repo, issue) =>
+      api(token, `${repoPath(repo)}/issues`, {}, ForgejoRepoIssue, {
+        method: "POST",
+        body: {
+          title: issue.title,
+          ...(issue.labelIds.length === 0 ? {} : { labels: issue.labelIds }),
+        },
+      }).pipe(Effect.map(({ body }) => body)),
+    setIssueAssignees: (token, repo, number, logins) =>
+      api(token, `${repoPath(repo)}/issues/${number}`, {}, ForgejoRepoIssue, {
+        method: "PATCH",
+        body: { assignees: logins },
+      }).pipe(Effect.map(({ body }) => body)),
+    // "comment" renders as Forgejo shows an issue description, with hard line breaks; "gfm"
+    // renders a document, which joins the lines of a paragraph.
+    renderMarkdown: (token, repo, text) =>
+      request(
+        token,
+        "/markdown",
+        {},
+        {
+          method: "POST",
+          body: {
+            Mode: "comment",
+            Context: `${config.baseUrl}/${repo.owner}/${repo.name}`,
+            Text: text,
+          },
+        },
+      ).pipe(Effect.flatMap(readText)),
     setIssueState: (token, repo, number, state) =>
       api(token, `${repoPath(repo)}/issues/${number}`, {}, ForgejoRepoIssue, {
         method: "PATCH",

@@ -1,16 +1,25 @@
 import { Cause, Clock, Effect, Exit, Schema } from "effect"
 import { type Context, Hono } from "hono"
 import { deleteCookie, getCookie, setCookie } from "hono/cookie"
-import { type Dashboard, MoveCardRequest } from "../shared/api.ts"
+import {
+  AssignSelfRequest,
+  CreateCardRequest,
+  type Dashboard,
+  MoveCardRequest,
+} from "../shared/api.ts"
 import { beginLogin, completeLogin } from "./auth/oauth.ts"
 import { currentSession, withAccessToken } from "./auth/session.ts"
 import {
+  assignSelf,
   BoardConfig,
+  cardDetail,
+  createCard,
   listOrgRepos,
   listOrgs,
   loadBoard,
   moveCard,
   parseBoardQuery,
+  parseCardQuery,
   parseName,
 } from "./board.ts"
 import { CardRanks, makeCardRanks } from "./card-ranks.ts"
@@ -19,16 +28,21 @@ import { loadDashboardSections } from "./dashboard.ts"
 import {
   type BoardChanged,
   BoardRequestInvalid,
+  type BoardWriteForbidden,
   type ConfigInvalid,
   type ForgejoError,
   type ForgejoMovePartlyApplied,
-  type MoveForbidden,
   type OAuthCallbackInvalid,
   type OAuthGrantRejected,
   type OAuthStateInvalid,
   type SessionNotFound,
 } from "./errors.ts"
-import { ForgejoClient, type HttpFetch, makeForgejoClient } from "./forgejo/client.ts"
+import {
+  type AccessToken,
+  ForgejoClient,
+  type HttpFetch,
+  makeForgejoClient,
+} from "./forgejo/client.ts"
 import {
   makeSessionStore,
   OAUTH_STATE_LIFETIME_MS,
@@ -53,7 +67,7 @@ type AppError =
   | OAuthCallbackInvalid
   | OAuthGrantRejected
   | OAuthStateInvalid
-  | MoveForbidden
+  | BoardWriteForbidden
   | SessionNotFound
 
 type AppContext = Context<{ Bindings: Env }>
@@ -94,7 +108,7 @@ const errorResponse = (c: AppContext, error: AppError): Response => {
       return c.json({ error: "Forgejo did not allow this" }, 403)
     case "ForgejoNotFound":
       return c.json({ error: "Not found in Forgejo, or you cannot see it" }, 404)
-    case "MoveForbidden":
+    case "BoardWriteForbidden":
       return c.json({ error: error.message }, 403)
     case "BoardRequestInvalid":
       return c.json({ error: error.message }, 400)
@@ -119,6 +133,19 @@ const errorResponse = (c: AppContext, error: AppError): Response => {
       return c.json({ error: "Tabulo is misconfigured" }, 500)
   }
 }
+
+/** The request's JSON body, decoded with `schema`. */
+const requestBody = <A>(c: AppContext, schema: Schema.Decoder<A>) =>
+  Effect.tryPromise({
+    try: () => c.req.json<unknown>(),
+    catch: () => new BoardRequestInvalid({ message: "The body is not JSON" }),
+  }).pipe(
+    Effect.flatMap((body) =>
+      Schema.decodeUnknownEffect(schema)(body).pipe(
+        Effect.mapError((error) => new BoardRequestInvalid({ message: error.message })),
+      ),
+    ),
+  )
 
 export const createApp = (dependencies: Dependencies) => {
   const run = async (
@@ -265,28 +292,41 @@ export const createApp = (dependencies: Dependencies) => {
     ),
   )
 
-  app.post("/api/board/move", (c) =>
+  app.get("/api/board/issue", (c) =>
     run(
       c,
-      Effect.tryPromise({
-        try: () => c.req.json<unknown>(),
-        catch: () => new BoardRequestInvalid({ message: "The body is not JSON" }),
-      }).pipe(
-        Effect.flatMap((body) =>
-          Schema.decodeUnknownEffect(MoveCardRequest)(body).pipe(
-            Effect.mapError((error) => new BoardRequestInvalid({ message: error.message })),
+      Effect.flatMap(
+        parseCardQuery(c.req.query("org"), c.req.query("repo"), c.req.query("number")),
+        (query) =>
+          withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
+            cardDetail(token, query).pipe(Effect.map((detail) => c.json(detail))),
           ),
-        ),
-        Effect.flatMap((request) =>
-          withAccessToken(getCookie(c, SESSION_COOKIE), (token, session) =>
-            moveCard(token, session.user.login, request).pipe(
-              Effect.map((result) => c.json(result)),
-            ),
-          ),
-        ),
       ),
     ),
   )
+
+  const boardWrite =
+    <A, R>(
+      schema: Schema.Decoder<A>,
+      write: (
+        token: AccessToken,
+        login: string,
+        request: A,
+      ) => Effect.Effect<R, AppError, BoardConfig | CardRanks | ForgejoClient>,
+    ) =>
+    (c: AppContext) =>
+      run(
+        c,
+        Effect.flatMap(requestBody(c, schema), (request) =>
+          withAccessToken(getCookie(c, SESSION_COOKIE), (token, session) =>
+            write(token, session.user.login, request).pipe(Effect.map((result) => c.json(result))),
+          ),
+        ),
+      )
+
+  app.post("/api/board/move", boardWrite(MoveCardRequest, moveCard))
+  app.post("/api/board/issues", boardWrite(CreateCardRequest, createCard))
+  app.post("/api/board/assign", boardWrite(AssignSelfRequest, assignSelf))
 
   return app
 }

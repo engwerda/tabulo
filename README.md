@@ -136,9 +136,14 @@ adds the column's status label, removes it when the card goes to Todo, or closes
 issue. Other labels stay as they are. Forgejo decides whether you may change the issue, so a
 triage member who can write issues but not code can move cards too.
 
+When you add a card to a Todo or status column, Tabulo creates the issue in Forgejo as you,
+with the column's status label, and puts the card first in the column. Open a card to read its
+description as Forgejo renders it, and assign or unassign yourself. Tabulo writes the whole
+assignee list, so an assignee change someone makes at the same moment can be lost.
+
 The order of cards within a column is shared by everyone who opens the organization's board,
-whichever repositories they chose. Only members of the organization can move and reorder
-cards; others see the board read-only. Cards of archived repositories cannot be moved.
+whichever repositories they chose. Only members of the organization can move, reorder, and add
+cards; others see the board read-only. Cards of archived repositories cannot be changed.
 
 ## Check a Forgejo instance
 

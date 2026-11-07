@@ -105,6 +105,10 @@ export const BoardCard = Schema.Struct({
   labels: Schema.Array(BoardLabel),
   assignees: Schema.Array(Schema.Struct({ login: Schema.String, avatarUrl: Schema.String })),
   milestone: Schema.NullOr(Schema.String),
+  /** The issue's poster. */
+  author: Schema.Struct({ login: Schema.String, avatarUrl: Schema.String }),
+  comments: Schema.Number,
+  createdAt: Schema.String,
   updatedAt: Schema.String,
   closedAt: Schema.NullOr(Schema.String),
   /** The key of the column the card is in. */
@@ -150,3 +154,41 @@ export const MoveCardResult = Schema.Struct({
   orderSaved: Schema.Boolean,
 })
 export type MoveCardResult = typeof MoveCardResult.Type
+
+/** A new issue created from a board column, in that column. */
+export const CreateCardRequest = Schema.Struct({
+  org: Schema.String,
+  repo: Schema.String,
+  title: Schema.String.check(Schema.isTrimmed(), Schema.isNonEmpty(), Schema.isMaxLength(255)),
+  /** A Todo or Status column key; Done is refused. */
+  column: Schema.String,
+})
+export type CreateCardRequest = typeof CreateCardRequest.Type
+
+export const CreateCardResult = Schema.Struct({
+  /** The new card, ranked at the top of its column. */
+  card: BoardCard,
+  /** False when Forgejo created the issue but Tabulo could not store the card's rank. */
+  orderSaved: Schema.Boolean,
+})
+export type CreateCardResult = typeof CreateCardResult.Type
+
+/** What a card's detail panel shows beyond the card itself. */
+export const CardDetail = Schema.Struct({
+  key: Schema.String,
+  /** The description as Forgejo renders it; empty when the issue has none. */
+  bodyHtml: Schema.String,
+})
+export type CardDetail = typeof CardDetail.Type
+
+/** Adds or removes the signed-in user as an assignee, keeping the other assignees. */
+export const AssignSelfRequest = Schema.Struct({
+  org: Schema.String,
+  repo: Schema.String,
+  number: Schema.Int.check(Schema.isGreaterThan(0)),
+  assigned: Schema.Boolean,
+})
+export type AssignSelfRequest = typeof AssignSelfRequest.Type
+
+export const AssignSelfResult = Schema.Struct({ card: BoardCard })
+export type AssignSelfResult = typeof AssignSelfResult.Type
