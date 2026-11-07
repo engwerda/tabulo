@@ -90,9 +90,9 @@ the board.
   land in the same gap at the same moment can store equal ranks; the key then orders them the
   same way for everyone, and a later move places a card after both.
 - **Who arranges.** Only members of the organization may move, reorder, or add cards. Anyone
-  may assign themselves; Forgejo decides. Forgejo authorizes each issue write as the user, so
-  Tabulo does not check push access. Cards of archived repositories cannot be moved, added, or
-  assigned.
+  may change a card's labels, milestone, or assignees, or comment; Forgejo decides. Forgejo
+  authorizes each issue write as the user, so Tabulo does not check push access. Cards of
+  archived repositories cannot be moved, added, edited, or commented on.
 - **Address.** `/board/<org>` takes `repos` (comma-separated names), and the client-side
   filters `q` (title words, or `#number` for one issue number), `assignee` (a login, `@me` for
   the viewer, or `@none`), `label` (a full label name), and `milestone` (a title or `@none`).
@@ -106,8 +106,12 @@ the board.
 | `GET /api/board?org=&repos=a,b` | Columns, cards, `viewerCanArrange`, and `failedRepos`. At most 20 repositories. |
 | `POST /api/board/move` | Moves one card and answers with `{ card, orderSaved }`. |
 | `POST /api/board/issues` | Creates an issue in a column and answers with `{ card, orderSaved }`. |
-| `POST /api/board/assign` | Adds or removes the user as an assignee and answers with `{ card }`. |
-| `GET /api/board/issue?org=&repo=&number=` | The card's key and its description as HTML, `{ key, bodyHtml }`. |
+| `POST /api/board/assignees` | Adds or removes one assignee and answers with `{ card }`. |
+| `POST /api/board/labels` | Adds or removes one label and answers with `{ card }`. |
+| `POST /api/board/milestone` | Sets or clears the milestone and answers with `{ card }`. |
+| `POST /api/board/comment` | Comments on the issue and answers with `{ comment }`. |
+| `GET /api/board/issue?org=&repo=&number=` | The card's description and latest 50 comments as HTML, `{ key, bodyHtml, comments, commentCount }`. |
+| `GET /api/board/issue-options?org=&repo=` | The labels, open milestones, and assignable users a card of the repository can take, `{ labels, milestones, assignees }`. |
 
 `GET /api/board` reads the organization's labels and whether the user is a member, then for each
 repository the repository, its open issues, and the issues closed since the start of the Done
@@ -138,7 +142,9 @@ characters. The server:
    and Forgejo removes the issue's other labels in the same exclusive scope. To Todo it removes
    each status column label. To Done it closes the issue. From Done it changes the labels
    first, then reopens the issue. It never replaces the whole label set, so labels changed in
-   Forgejo meanwhile survive. A Forgejo refusal of the first write answers with its status and
+   Forgejo meanwhile survive. Forgejo 15 and later find the label to remove by name, then by
+   the id of a repository label, so Tabulo removes an organization label by name; a
+   repository label with the same name shadows it. A Forgejo refusal of the first write answers with its status and
    changes nothing; a failure after an earlier write answers 502 saying Forgejo applied part
    of the move.
 4. Stores one rank, the moved card's, directly after `afterKey` in the column's order across
@@ -159,17 +165,33 @@ characters. The server:
    across the organization, so it shows first. If D1 fails here, it answers 200 with
    `orderSaved: false`.
 
-`POST /api/board/assign` takes `{ org, repo, number, assigned }`. It answers 400 to an invalid
-name or a pull request and 403 if the repository is archived. It reads the issue's assignees
-and, unless the user is already in the requested state, writes the whole list with the user
-added or removed. Forgejo has no endpoint that adds a single assignee, so an assignee change
-made by someone else between the read and the write is lost. Forgejo ignores the assignees
-without an error when the user cannot write the repository's issues; Tabulo then answers 403.
-The card's rank is its stored rank, or the rank a board read would give it.
+The card edits `POST /api/board/assignees`, `labels`, `milestone`, and `comment` take
+`{ org, repo, number }` and their own fields. Each answers 400 to an invalid name, number, or
+field and to a pull request, and 403 if the repository is archived, before it writes. A
+Forgejo refusal answers with its status. An edit that finds the issue already as asked writes
+nothing. Forgejo ignores some writes without an error when the user may not make them; when
+the issue is still not as asked after the write, Tabulo answers 403. The answered card is as
+the board shows it, with its stored rank or the rank a board read would give it.
 
-`GET /api/board/issue` reads the issue's description and has Forgejo render it
-(`POST /api/v1/markdown` in `comment` mode, as Forgejo shows an issue). An empty description
-answers `bodyHtml: ""` without a render. Anyone who can read the repository may ask; Forgejo
+- `assignees` takes `{ login, assigned }`. Forgejo has no endpoint that adds a single
+  assignee, so Tabulo reads the assignees and writes the whole list with the login added or
+  removed. An assignee change made by someone else between the read and the write is lost.
+  Forgejo ignores the list when the user cannot write the repository's issues.
+- `labels` takes `{ labelId, present }` and adds or removes that one label, never the set. A
+  status column label answers 400, because a card changes column only through a move. Forgejo
+  ignores a label id it does not know.
+- `milestone` takes `{ milestoneId }`, a milestone id or null. Null sends `milestone: 0`,
+  which clears it. Forgejo answers 403 when the user cannot write the repository's issues and
+  500 (Tabulo answers 502) for a milestone the repository does not have.
+- `comment` takes `{ body }`, trimmed text of 1 to 65,535 characters, and answers with the new
+  comment, its body rendered as in `GET /api/board/issue`. Anyone who can read the repository
+  may comment unless Forgejo has locked the issue.
+
+`GET /api/board/issue` reads the issue's description and its comments and has Forgejo render
+them (`POST /api/v1/markdown` in `comment` mode, as Forgejo shows an issue), at most four at
+once. Forgejo does not page an issue's comments, so Tabulo reads them all and answers the
+latest 50, oldest first, with `commentCount` for all of them. Empty text answers `""` without
+a render. Anyone who can read the repository may ask; Forgejo
 answers 404 for an issue the user cannot see. The client sanitizes the HTML again before
 showing it.
 
@@ -195,6 +217,6 @@ showing it.
 ## Non-goals
 
 - Replacing Forgejo's issue pages. Tabulo shows a description read-only and links to Forgejo
-  for editing.
+  for editing it, the title, and older comments.
 - Supporting forges other than Forgejo and Gitea-compatible APIs.
 - Storing issue content as a second source of truth.

@@ -56,6 +56,13 @@ export const ForgejoLabel = Schema.Struct({
 })
 export type ForgejoLabel = typeof ForgejoLabel.Type
 
+/** A user where Forgejo names one beside other data: a poster, an assignee, an author. */
+export const ForgejoPerson = Schema.Struct({ login: Schema.String, avatar_url: Schema.String })
+export type ForgejoPerson = typeof ForgejoPerson.Type
+
+export const ForgejoMilestone = Schema.Struct({ id: Schema.Number, title: Schema.String })
+export type ForgejoMilestone = typeof ForgejoMilestone.Type
+
 /** An issue as the repository issue endpoints return it. */
 export const ForgejoRepoIssue = Schema.Struct({
   number: Schema.Number,
@@ -63,11 +70,9 @@ export const ForgejoRepoIssue = Schema.Struct({
   html_url: Schema.String,
   state: Schema.Literals(["open", "closed"]),
   labels: Schema.Array(ForgejoLabel),
-  assignees: Schema.NullOr(
-    Schema.Array(Schema.Struct({ login: Schema.String, avatar_url: Schema.String })),
-  ),
-  milestone: Schema.NullOr(Schema.Struct({ title: Schema.String })),
-  user: Schema.Struct({ login: Schema.String, avatar_url: Schema.String }),
+  assignees: Schema.NullOr(Schema.Array(ForgejoPerson)),
+  milestone: Schema.NullOr(ForgejoMilestone),
+  user: ForgejoPerson,
   comments: Schema.Number,
   created_at: Schema.String,
   updated_at: Schema.String,
@@ -78,6 +83,14 @@ export type ForgejoRepoIssue = typeof ForgejoRepoIssue.Type
 
 /** The description of an issue, which only a card's detail reads. */
 export const ForgejoIssueBody = Schema.Struct({ body: Schema.String })
+
+export const ForgejoComment = Schema.Struct({
+  id: Schema.Number,
+  user: ForgejoPerson,
+  body: Schema.String,
+  created_at: Schema.String,
+})
+export type ForgejoComment = typeof ForgejoComment.Type
 
 export const ForgejoOrg = Schema.Struct({
   name: Schema.String,

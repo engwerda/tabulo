@@ -2,18 +2,22 @@ import { Cause, Clock, Effect, Exit, Schema } from "effect"
 import { type Context, Hono } from "hono"
 import { deleteCookie, getCookie, setCookie } from "hono/cookie"
 import {
-  AssignSelfRequest,
+  AddCommentRequest,
   CreateCardRequest,
   type Dashboard,
   MoveCardRequest,
+  SetAssigneeRequest,
+  SetLabelRequest,
+  SetMilestoneRequest,
 } from "../shared/api.ts"
 import { beginLogin, completeLogin } from "./auth/oauth.ts"
 import { currentSession, withAccessToken } from "./auth/session.ts"
 import {
-  assignSelf,
+  addComment,
   BoardConfig,
   cardDetail,
   createCard,
+  issueOptions,
   listOrgRepos,
   listOrgs,
   loadBoard,
@@ -21,6 +25,10 @@ import {
   parseBoardQuery,
   parseCardQuery,
   parseName,
+  parseRepoQuery,
+  setAssignee,
+  setLabel,
+  setMilestone,
 } from "./board.ts"
 import { CardRanks, makeCardRanks } from "./card-ranks.ts"
 import { loadConfig } from "./config.ts"
@@ -305,6 +313,17 @@ export const createApp = (dependencies: Dependencies) => {
     ),
   )
 
+  app.get("/api/board/issue-options", (c) =>
+    run(
+      c,
+      Effect.flatMap(parseRepoQuery(c.req.query("org"), c.req.query("repo")), (repo) =>
+        withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
+          issueOptions(token, repo).pipe(Effect.map((options) => c.json(options))),
+        ),
+      ),
+    ),
+  )
+
   const boardWrite =
     <A, R>(
       schema: Schema.Decoder<A>,
@@ -326,7 +345,10 @@ export const createApp = (dependencies: Dependencies) => {
 
   app.post("/api/board/move", boardWrite(MoveCardRequest, moveCard))
   app.post("/api/board/issues", boardWrite(CreateCardRequest, createCard))
-  app.post("/api/board/assign", boardWrite(AssignSelfRequest, assignSelf))
+  app.post("/api/board/assignees", boardWrite(SetAssigneeRequest, setAssignee))
+  app.post("/api/board/labels", boardWrite(SetLabelRequest, setLabel))
+  app.post("/api/board/milestone", boardWrite(SetMilestoneRequest, setMilestone))
+  app.post("/api/board/comment", boardWrite(AddCommentRequest, addComment))
 
   return app
 }
