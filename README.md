@@ -183,6 +183,7 @@ list children as tasks:
 - [x] web#34
 - [ ] other-owner/repo#56
 - [ ] https://your-forgejo.example/owner/repo/issues/78
+- [ ] [Fix the login form](https://your-forgejo.example/owner/repo/issues/79)
 1. [ ] **#90**: Login page
 ```
 

@@ -20,9 +20,12 @@ const SHORT_REF = new RegExp(`^(?:(?:(${NAME})/)?(${NAME}))?#([1-9][0-9]*)(?![A-
 const ISSUE_PATH = new RegExp(`^/(${NAME})/(${NAME})/(?:issues|pulls)/([1-9][0-9]*)/?$`)
 // Forgejo's Goldmark task list extension reads the checkbox from the source of the item's first
 // line, so escapes, emphasis, and link definitions there make it plain text.
-const TASK = /^\[[ xX]\][\t ]+(\S+)/
+const TASK = /^\[[ xX]\][\t ]+(.*)/
+// An inline link: its text, then its destination, optionally in <> and followed by a title.
+const LINK = /^\[([^[\]]*)\]\(<?([^\s<>()]*)>?(?:[\t ][^)]*)?\)/
+const firstWord = (text: string) => /^\S*/.exec(text.trimStart())?.[0] ?? ""
 
-/** The issue that `token`, the first word after a checkbox, names, if Tabulo accepts the form. */
+/** The issue that `token`, a word or link destination after a checkbox, names, if valid. */
 const referenceOf = (
   token: string,
   repository: RepoRef,
@@ -59,7 +62,8 @@ const referenceOf = (
 /**
  * The issues that the task-list items of an epic's body reference, in body order. The body is
  * parsed as CommonMark, as Forgejo renders it, so code and HTML never hold task items. The
- * checkbox and reference come from the source text of each item's first line.
+ * checkbox and reference come from the source text of each item's first line. A leading inline
+ * link names its issue by its text or, failing that, its destination.
  */
 export const parseEpicChildren = (
   body: string,
@@ -70,13 +74,19 @@ export const parseEpicChildren = (
   const prefix = base.pathname.replace(/\/$/, "")
   const children = new Map<string, EpicReference>()
   const lines = body.split(/\r\n|\r|\n/)
+  const named = (token: string) => referenceOf(token, repository, base, prefix)
   const walker = new Parser().parse(body).walker()
   for (let step = walker.next(); step !== null; step = walker.next()) {
     const paragraph = step.node.firstChild
     if (!step.entering || step.node.type !== "item" || paragraph?.type !== "paragraph") continue
     const [[line, column]] = paragraph.sourcepos
-    const token = TASK.exec(lines[line - 1]?.slice(column - 1) ?? "")?.[1]
-    const reference = token === undefined ? undefined : referenceOf(token, repository, base, prefix)
+    const text = TASK.exec(lines[line - 1]?.slice(column - 1) ?? "")?.[1]
+    if (text === undefined) continue
+    const link = LINK.exec(text)
+    const reference =
+      link === null
+        ? named(firstWord(text))
+        : (named(firstWord(link[1] ?? "")) ?? named(link[2] ?? ""))
     if (reference === undefined) continue
     children.set(reference.ref, reference)
     if (children.size === MAX_CHILDREN) break

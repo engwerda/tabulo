@@ -224,10 +224,13 @@ organization and repository selection. It shows open epics and epics closed with
 - **References.** The first word after the checkbox, in the same source text, is `#12`,
   `repo#12`, `owner/repo#12`, or an issue or pull request URL on `FORGEJO_URL`, bare or as an
   autolink. It may be wrapped in `(`, `<`, `[`, `*`, or `_` and followed by punctuation, so
-  `#12: Login`, `(#12)`, `**#12**`, `<https://…/issues/12>`, and `[#12](…)` count. A word in a
-  code span or after an inline HTML comment is not a reference. Only the first reference of an
-  item counts. A bare number refers to the epic's repository, a repo-only reference to its
-  organization. The parser preserves body order, deduplicates case-insensitively, and caps each
+  `#12: Login`, `(#12)`, `**#12**`, and `<https://…/issues/12>` count. When the text after the
+  checkbox starts with an inline link `[text](destination)`, the first word of its text is tried
+  first and the destination URL second, so `[#12](…)` and `[Fix login](https://…/issues/12)`
+  count. The destination must be an absolute URL, and a reference-style link counts only by its
+  text. A word in a code span or after an inline HTML comment is not a reference. Only the
+  first reference of an item counts. A bare number refers to the epic's repository, a repo-only
+  reference to its organization. The parser preserves body order, deduplicates case-insensitively, and caps each
   epic at 200 children. Forgejo dependencies do not create epic links.
 - **Progress.** Checkbox state is ignored. The child's real issue state and labels determine
   its column through `boardLayout`, including repository status labels matching an organization

@@ -27,6 +27,8 @@ describe("epic task-list references", () => {
     ["10) [x] #12", "acme/api#12"],
     ["- [ ]\t#12", "acme/api#12"],
     ["> - [ ] #12", "acme/api#12"],
+    ["- [ ] [Fix login](https://forgejo.example/acme/api/issues/12)", "acme/api#12"],
+    ['- [ ] [Fix login](<https://forgejo.example/acme/api/issues/12> "Login") now', "acme/api#12"],
     ["- [ ] [#12 Fix login](https://forgejo.example/other/web/issues/3)", "acme/api#12"],
   ])("parses %s", (line, ref) => expect(parse(line)).toEqual([ref]))
 
@@ -102,6 +104,16 @@ describe("epic task-list references", () => {
       "acme/api#12",
       "acme/api#13",
     ])
+  })
+
+  it("reads a leading link by its text, then by its inline destination only", () => {
+    const definition = "\n\n[1]: https://forgejo.example/acme/api/issues/13"
+    expect(parse(`- [ ] [#12][1]${definition}`)).toEqual(["acme/api#12"])
+    expect(parse(`- [ ] [Fix login][1]${definition}`)).toEqual([])
+    expect(parse("- [ ] [**Fix**](https://forgejo.example/acme/api/issues/13), more")).toEqual([
+      "acme/api#13",
+    ])
+    expect(parse("- [ ] [Fix login](/acme/api/issues/13)")).toEqual([])
   })
 
   it("hides everything after an unclosed HTML comment", () => {
