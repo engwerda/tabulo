@@ -1,28 +1,7 @@
 import type { DashboardItem, NotificationItem } from "../shared/api.ts"
-import { absoluteTime, relativeTime, textColorOn } from "./format.ts"
-
-const linkClass =
-  "block rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
-
-/** Label names on their Forgejo colors, with text that keeps WCAG AA contrast. */
-export const LabelChips = ({
-  labels,
-}: {
-  labels: ReadonlyArray<{ readonly name: string; readonly color: string }>
-}) =>
-  labels.length === 0 ? null : (
-    <ul className="mt-1.5 flex flex-wrap gap-1" aria-label="Labels">
-      {labels.map((label) => (
-        <li
-          key={label.name}
-          className="rounded-full px-2 py-0.5 text-xs font-medium"
-          style={{ backgroundColor: label.color, color: textColorOn(label.color) }}
-        >
-          {label.name}
-        </li>
-      ))}
-    </ul>
-  )
+import { absoluteTime, relativeTime } from "./format.ts"
+import { BellIcon, CommentIcon, IssueOpenIcon, PullIcon } from "./ui/icons.tsx"
+import { LabelList } from "./ui/LabelChip.tsx"
 
 const Updated = ({ iso }: { iso: string }) => (
   <time dateTime={iso} title={absoluteTime(iso)}>
@@ -30,78 +9,76 @@ const Updated = ({ iso }: { iso: string }) => (
   </time>
 )
 
-const KindIcon = ({ kind }: { kind: DashboardItem["kind"] }) => (
-  <svg
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.5"
-    strokeLinecap="round"
-    strokeLinejoin="round"
+export const KindIcon = ({ kind }: { kind: DashboardItem["kind"] | "notification" }) => (
+  <span
     aria-hidden="true"
-    className={`mt-0.5 size-4 shrink-0 ${kind === "pull" ? "text-emerald-600" : "text-sky-600"}`}
+    className={`mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg ${
+      kind === "pull"
+        ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"
+        : kind === "issue"
+          ? "bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-400"
+          : "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400"
+    }`}
   >
-    {kind === "pull" ? (
-      <>
-        <circle cx="4" cy="3.5" r="1.75" />
-        <circle cx="4" cy="12.5" r="1.75" />
-        <circle cx="12" cy="12.5" r="1.75" />
-        <path d="M4 5.25v5.5M12 10.75V6a2 2 0 0 0-2-2H7.5M9 2.5 7.5 4 9 5.5" />
-      </>
-    ) : (
-      <>
-        <circle cx="8" cy="8" r="6.25" />
-        <circle cx="8" cy="8" r="1.25" fill="currentColor" />
-      </>
-    )}
-  </svg>
+    {kind === "pull" ? <PullIcon /> : kind === "issue" ? <IssueOpenIcon /> : <BellIcon />}
+  </span>
 )
 
+const rowClass =
+  "group relative flex gap-3 px-4 py-3 transition hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+const stretchedLink =
+  "after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-indigo-500"
+
 export const ItemRow = ({ item }: { item: DashboardItem }) => (
-  <div className="flex gap-3 px-4 py-3">
+  <div className={rowClass}>
     <KindIcon kind={item.kind} />
     <div className="min-w-0 flex-1">
-      <a href={item.url} className={linkClass}>
-        <span className="block text-xs font-medium text-zinc-500 dark:text-zinc-400">
-          <span className="sr-only">{item.kind === "pull" ? "Pull request " : "Issue "}</span>
-          {item.repo}#{item.number}
-        </span>
-        <span className="block break-words text-sm font-medium text-zinc-900 hover:text-indigo-700 dark:text-zinc-100 dark:hover:text-indigo-300">
-          {item.title}
-        </span>
+      <a
+        href={item.url}
+        className={`block text-sm leading-5 font-medium break-words text-zinc-900 group-hover:text-indigo-700 dark:text-zinc-100 dark:group-hover:text-indigo-300 ${stretchedLink}`}
+      >
+        <span className="sr-only">{item.kind === "pull" ? "Pull request: " : "Issue: "}</span>
+        {item.title}
       </a>
-      <LabelChips labels={item.labels} />
-      <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-        {item.author} · updated <Updated iso={item.updatedAt} />
-        {item.comments > 0 && ` · ${item.comments} ${item.comments === 1 ? "comment" : "comments"}`}
+      <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
+        <span className="font-medium text-zinc-600 dark:text-zinc-300">
+          {item.repo} #{item.number}
+        </span>{" "}
+        · {item.author} · <Updated iso={item.updatedAt} />
+      </p>
+      <LabelList labels={item.labels} className="mt-2" />
+    </div>
+    {item.comments > 0 && (
+      <span
+        className="flex h-5 shrink-0 items-center gap-1 text-xs text-zinc-400 tabular-nums"
+        title={`${item.comments} ${item.comments === 1 ? "comment" : "comments"}`}
+      >
+        <CommentIcon className="size-3.5" />
+        {item.comments}
+        <span className="sr-only">{item.comments === 1 ? " comment" : " comments"}</span>
+      </span>
+    )}
+  </div>
+)
+
+export const NotificationRow = ({ notification }: { notification: NotificationItem }) => (
+  <div className={rowClass}>
+    <KindIcon kind="notification" />
+    <div className="min-w-0 flex-1">
+      {notification.url === "" ? (
+        <p className="text-sm leading-5 font-medium break-words">{notification.title}</p>
+      ) : (
+        <a
+          href={notification.url}
+          className={`block text-sm leading-5 font-medium break-words text-zinc-900 group-hover:text-indigo-700 dark:text-zinc-100 dark:group-hover:text-indigo-300 ${stretchedLink}`}
+        >
+          {notification.title}
+        </a>
+      )}
+      <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
+        <span className="font-medium text-zinc-600 dark:text-zinc-300">{notification.repo}</span> ·{" "}
+        {notification.subjectType} · <Updated iso={notification.updatedAt} />
       </p>
     </div>
   </div>
 )
-
-export const NotificationRow = ({ notification }: { notification: NotificationItem }) => {
-  const label = (
-    <>
-      <span className="block text-xs font-medium text-zinc-500 dark:text-zinc-400">
-        {notification.repo} · {notification.subjectType}
-      </span>
-      <span className="block break-words text-sm font-medium text-zinc-900 dark:text-zinc-100">
-        {notification.title}
-      </span>
-    </>
-  )
-  return (
-    <div className="px-4 py-3">
-      {notification.url === "" ? (
-        label
-      ) : (
-        <a href={notification.url} className={`${linkClass} hover:text-indigo-700`}>
-          {label}
-        </a>
-      )}
-      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-        <Updated iso={notification.updatedAt} />
-      </p>
-    </div>
-  )
-}

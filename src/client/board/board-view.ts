@@ -6,11 +6,17 @@ export const columnCards = (cards: ReadonlyArray<BoardCard>, column: string) =>
   cards.filter((card) => card.column === column).sort(compareCardOrder)
 
 export type BoardFilters = {
+  /** A login, ME, or NONE. */
   readonly assignee: string | null
+  /** A milestone title or NONE. */
   readonly milestone: string | null
   readonly label: string | null
   readonly text: string
 }
+
+/** Filter values that are not names: Forgejo logins and milestone titles cannot start with @. */
+export const ME = "@me"
+export const NONE = "@none"
 
 export const FILTER_PARAMS = {
   assignee: "assignee",
@@ -32,30 +38,60 @@ export const isFiltered = (filters: BoardFilters) =>
   filters.label !== null ||
   filters.text.trim() !== ""
 
-export const matchesFilters = (card: BoardCard, filters: BoardFilters) => {
-  const text = filters.text.trim().toLowerCase()
+const matchesAssignee = (card: BoardCard, assignee: string | null, viewer: string) => {
+  if (assignee === null) return true
+  if (assignee === NONE) return card.assignees.length === 0
+  const login = assignee === ME ? viewer : assignee
+  return card.assignees.some((candidate) => candidate.login === login)
+}
+
+/** `viewer` is the signed-in login, which ME stands for. */
+const matchesText = (card: BoardCard, query: string) => {
+  const text = query.trim().toLowerCase()
+  if (text === "") return true
+  // "#12" names an issue number; plain words also search the title and repo#number.
+  if (/^#\d+$/.test(text)) return `#${card.number}` === text
   return (
-    (filters.assignee === null ||
-      card.assignees.some((assignee) => assignee.login === filters.assignee)) &&
-    (filters.milestone === null || card.milestone === filters.milestone) &&
-    (filters.label === null || card.labels.some((label) => label.name === filters.label)) &&
-    (text === "" ||
-      card.title.toLowerCase().includes(text) ||
-      `${card.repo}#${card.number}`.toLowerCase().includes(text))
+    card.title.toLowerCase().includes(text) ||
+    String(card.number) === text ||
+    `${card.repo}#${card.number}`.toLowerCase().includes(text)
   )
 }
+
+export const matchesFilters = (card: BoardCard, filters: BoardFilters, viewer: string) =>
+  matchesAssignee(card, filters.assignee, viewer) &&
+  (filters.milestone === null ||
+    (filters.milestone === NONE
+      ? card.milestone === null
+      : card.milestone === filters.milestone)) &&
+  (filters.label === null || card.labels.some((label) => label.name === filters.label)) &&
+  matchesText(card, filters.text)
 
 const sortedUnique = (values: ReadonlyArray<string>) =>
   [...new Set(values)].sort((a, b) => a.localeCompare(b))
 
-/** The values each filter can take on this board. */
-export const filterChoices = (cards: ReadonlyArray<BoardCard>) => ({
-  assignees: sortedUnique(cards.flatMap((card) => card.assignees.map(({ login }) => login))),
-  milestones: sortedUnique(
-    cards.flatMap((card) => (card.milestone === null ? [] : [card.milestone])),
-  ),
-  labels: sortedUnique(cards.flatMap((card) => card.labels.map(({ name }) => name))),
-})
+/** The values each filter can take on this board, with the colors and avatars to show. */
+export const filterChoices = (cards: ReadonlyArray<BoardCard>) => {
+  const avatars = new Map<string, string>()
+  const colors = new Map<string, string>()
+  for (const card of cards) {
+    for (const { login, avatarUrl } of card.assignees) avatars.set(login, avatarUrl)
+    for (const { name, color } of card.labels) colors.set(name, color)
+  }
+  return {
+    assignees: sortedUnique([...avatars.keys()]).map((login) => ({
+      login,
+      avatarUrl: avatars.get(login) ?? "",
+    })),
+    milestones: sortedUnique(
+      cards.flatMap((card) => (card.milestone === null ? [] : [card.milestone])),
+    ),
+    labels: sortedUnique([...colors.keys()]).map((name) => ({
+      name,
+      color: colors.get(name) ?? "#a1a1aa",
+    })),
+  }
+}
 
 /** Where a card goes: a column, and the cards shown directly above and below it there. */
 export type CardMove = {
@@ -65,9 +101,35 @@ export type CardMove = {
   readonly beforeKey: string | null
 }
 
-/** The neighbours of a card dropped at `index` among the other cards shown in a column. */
-export const dropNeighbours = (shownKeys: ReadonlyArray<string>, key: string, index: number) => {
-  const others = shownKeys.filter((other) => other !== key)
+/** While a card is dragged over another column: that column, and its index among the shown cards. */
+export type DragPreview = { readonly key: string; readonly column: string; readonly index: number }
+
+/** The keys `column` shows during a drag, with the dragged card where `preview` puts it. */
+export const previewKeys = (
+  shownKeys: ReadonlyArray<string>,
+  column: string,
+  preview: DragPreview | null,
+): ReadonlyArray<string> => {
+  if (preview === null) return shownKeys
+  const others = shownKeys.filter((key) => key !== preview.key)
+  if (column !== preview.column) return others
+  return [...others.slice(0, preview.index), preview.key, ...others.slice(preview.index)]
+}
+
+/**
+ * The cards above and below `key` once it is dropped on `overKey`, as a sortable list shows it:
+ * it takes the place of the card it is over. `overKey` null keeps its place in `keys`, and a
+ * card missing from `keys` goes to the end.
+ */
+export const neighboursAfterDrop = (
+  keys: ReadonlyArray<string>,
+  key: string,
+  overKey: string | null,
+) => {
+  const others = keys.filter((other) => other !== key)
+  const from = keys.indexOf(key)
+  const to = overKey === null ? from : keys.indexOf(overKey)
+  const index = from === -1 ? others.length : to === -1 ? from : to
   return { afterKey: others[index - 1] ?? null, beforeKey: others[index] ?? null }
 }
 
