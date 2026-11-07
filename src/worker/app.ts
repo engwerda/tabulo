@@ -29,6 +29,7 @@ import {
   type SessionNotFound,
 } from "./errors.ts"
 import { ForgejoClient, type HttpFetch, makeForgejoClient } from "./forgejo/client.ts"
+import { parseSearchQuery, searchItems } from "./search.ts"
 import {
   makeSessionStore,
   OAUTH_STATE_LIFETIME_MS,
@@ -229,6 +230,17 @@ export const createApp = (dependencies: Dependencies) => {
       withAccessToken(getCookie(c, SESSION_COOKIE), (token, session) =>
         loadDashboardSections(token).pipe(
           Effect.map((sections) => c.json({ user: session.user, ...sections } satisfies Dashboard)),
+        ),
+      ),
+    ),
+  )
+
+  app.get("/api/search", (c) =>
+    run(
+      c,
+      Effect.flatMap(parseSearchQuery(c.req.query("q"), c.req.query("limit")), (query) =>
+        withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
+          searchItems(token, query).pipe(Effect.map((results) => c.json(results))),
         ),
       ),
     ),

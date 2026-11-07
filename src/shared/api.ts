@@ -150,3 +150,7 @@ export const MoveCardResult = Schema.Struct({
   orderSaved: Schema.Boolean,
 })
 export type MoveCardResult = typeof MoveCardResult.Type
+
+/** Issues and pull requests matching a search, open ones first. */
+export const SearchResults = Schema.Struct({ items: Schema.Array(DashboardItem) })
+export type SearchResults = typeof SearchResults.Type
