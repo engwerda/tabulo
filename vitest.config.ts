@@ -20,6 +20,10 @@ export default defineConfig({
           APP_URL: "https://tabulo.example",
           FORGEJO_URL: "https://forgejo.example",
           FORGEJO_CLIENT_ID: "test-client-id",
+          // Empty means the default; without these a local BOARD_* setting would leak in.
+          BOARD_STATUS_SCOPE: "",
+          BOARD_COLUMNS: "",
+          BOARD_DONE_DAYS: "",
           TEST_MIGRATIONS: await readD1Migrations(path.join(import.meta.dirname, "migrations")),
         },
       },
