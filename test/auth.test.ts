@@ -172,3 +172,52 @@ describe("POST /auth/logout", () => {
     expect(await sessionCount()).toBe(0)
   })
 })
+
+describe("stored token encryption", () => {
+  const sessionRows = async () =>
+    (
+      await env.DB.prepare(
+        "SELECT id_hash, access_token_enc, refresh_token_enc FROM sessions",
+      ).all<{ id_hash: string; access_token_enc: string; refresh_token_enc: string }>()
+    ).results
+
+  it("ends both sessions when their encrypted access tokens are swapped", async () => {
+    const forgejo = createFakeForgejo()
+    const call = tabulo(forgejo.fetch)
+    const first = await signIn(call, forgejo)
+    const second = await signIn(call, forgejo)
+    const [a, b] = await sessionRows()
+    if (a === undefined || b === undefined) throw new Error("expected two sessions")
+    await env.DB.batch([
+      env.DB.prepare("UPDATE sessions SET access_token_enc = ? WHERE id_hash = ?").bind(
+        b.access_token_enc,
+        a.id_hash,
+      ),
+      env.DB.prepare("UPDATE sessions SET access_token_enc = ? WHERE id_hash = ?").bind(
+        a.access_token_enc,
+        b.id_hash,
+      ),
+    ])
+
+    expect((await call("/api/me", { headers: { cookie: first } })).status).toBe(401)
+    expect((await call("/api/me", { headers: { cookie: second } })).status).toBe(401)
+    expect(await sessionCount()).toBe(0)
+  })
+
+  it("ends the session when one byte of its encrypted refresh token changes", async () => {
+    const forgejo = createFakeForgejo()
+    const call = tabulo(forgejo.fetch)
+    const cookie = await signIn(call, forgejo)
+    const [row] = await sessionRows()
+    if (row === undefined) throw new Error("expected a session")
+    const bytes = Uint8Array.from(atob(row.refresh_token_enc), (char) => char.charCodeAt(0))
+    // Past the 12-byte IV, inside the ciphertext.
+    bytes[12] = (bytes[12] ?? 0) ^ 0x01
+    await env.DB.prepare("UPDATE sessions SET refresh_token_enc = ? WHERE id_hash = ?")
+      .bind(btoa(String.fromCharCode(...bytes)), row.id_hash)
+      .run()
+
+    expect((await call("/api/me", { headers: { cookie } })).status).toBe(401)
+    expect(await sessionCount()).toBe(0)
+  })
+})
