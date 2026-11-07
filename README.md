@@ -52,24 +52,6 @@ You need Node.js 22.18 or later and an account on a Forgejo instance.
    npm run dev
    ```
 
-## Search and shortcuts
-
-Press `Cmd+K` (`Ctrl+K` on Windows and Linux), or choose **Search…** in the header, to open the
-command menu. Type to find a view of an organization, a repository of the organization you used
-last (or your first organization), an item on your dashboard, or an action such as switching the
-theme. From two characters on, it also searches the issues and pull requests of every repository
-you can access, open ones first. Press `Enter` to run the highlighted result and `Esc` to close
-the menu. It lists the commands you used last when the query is empty.
-
-| Key | Action |
-|---|---|
-| `Cmd/Ctrl+K` | Open the command menu |
-| `?` | Show the keyboard shortcuts |
-| `g` then `d` | Go to the dashboard |
-| `g` then `b`, `i`, or `e` | Go to the board, insights, or epics of the organization you used last |
-
-Keys without `Cmd` or `Ctrl` are ignored while you type in a field.
-
 ## Deploy to Cloudflare
 
 Tabulo needs a Cloudflare account with Workers and D1. The steps use `wrangler`, which is
@@ -220,6 +202,24 @@ Epics themselves appear while open or closed within `BOARD_DONE_DAYS`. Unavailab
 stay in the total and show as unavailable, including references beyond the request's limit of
 200 individual child lookups. The summary counts open epics that have children but none done as at risk.
 The page refreshes every minute.
+
+## Search and shortcuts
+
+Press `Cmd+K` (`Ctrl+K` on Windows and Linux), or choose **Search…** in the header, to open the
+command menu. Type to find a view of an organization, a repository of the organization you used
+last (or your first organization), an item on your dashboard, or an action such as switching the
+theme. From two characters on, it also searches the issues and pull requests of every repository
+you can access, open ones first. Press `Enter` to run the highlighted result and `Esc` to close
+the menu. It lists the commands you used last when the query is empty.
+
+| Key | Action |
+|---|---|
+| `Cmd/Ctrl+K` | Open the command menu |
+| `?` | Show the keyboard shortcuts |
+| `g` then `d` | Go to the dashboard |
+| `g` then `b`, `i`, or `e` | Go to the board, insights, or epics of the organization you used last |
+
+Keys without `Cmd` or `Ctrl` are ignored while you type in a field.
 
 ## Check a Forgejo instance
 
