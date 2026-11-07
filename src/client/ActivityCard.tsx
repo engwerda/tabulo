@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query"
 import { useState } from "react"
 import { browserTimeZone, fetchActivity } from "./api.ts"
 import { CalendarHeatmap } from "./charts/CalendarHeatmap.tsx"
+import { TableToggle } from "./charts/ChartCard.tsx"
+import { DataTable } from "./charts/DataTable.tsx"
 import { formatCount, formatLongDay } from "./charts/scale.ts"
 
 const STALE_TIME_MS = 5 * 60 * 1000
@@ -39,6 +41,17 @@ export const ActivityCard = () => {
     staleTime: STALE_TIME_MS,
   })
   const data = activity.data
+  const [showTable, setShowTable] = useState(false)
+  const table =
+    data === undefined ? null : (
+      <DataTable
+        caption="Contributions per day, for the days that have any"
+        columns={["Day", "Contributions"]}
+        rows={data.days
+          .filter((day) => day.count > 0)
+          .map((day) => ({ key: day.date, cells: [formatLongDay(day.date), day.count] }))}
+      />
+    )
   return (
     <section
       aria-labelledby="your-activity"
@@ -46,9 +59,17 @@ export const ActivityCard = () => {
     >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-8">
         <div className="lg:w-56 lg:shrink-0">
-          <h2 id="your-activity" className="text-sm font-semibold tracking-tight">
-            Your activity
-          </h2>
+          <div className="flex items-start justify-between gap-3">
+            <h2 id="your-activity" className="text-sm font-semibold tracking-tight">
+              Your activity
+            </h2>
+            {data !== undefined && (
+              <TableToggle
+                pressed={showTable}
+                onToggle={() => setShowTable((current) => !current)}
+              />
+            )}
+          </div>
           <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
             Contributions in Forgejo over the last year
           </p>
@@ -79,10 +100,17 @@ export const ActivityCard = () => {
         </div>
         <div className="min-w-0 flex-1">
           {data !== undefined ? (
-            <CalendarHeatmap
-              days={data.days}
-              ariaLabel={`${data.total} contributions over the last year; longest streak ${data.longestStreak} days.`}
-            />
+            showTable ? (
+              table
+            ) : (
+              <>
+                <CalendarHeatmap
+                  days={data.days}
+                  ariaLabel={`${data.total} contributions over the last year; longest streak ${data.longestStreak} days.`}
+                />
+                <div className="sr-only">{table}</div>
+              </>
+            )
           ) : activity.isError ? (
             <div role="alert" className="flex items-center gap-3 text-sm">
               <p className="text-red-700 dark:text-red-400">

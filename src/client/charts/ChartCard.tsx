@@ -11,6 +11,24 @@ type ChartCardProps = {
   readonly children: ReactNode
 }
 
+/** Switches a chart to its table view and back. */
+export const TableToggle = ({
+  pressed,
+  onToggle,
+}: {
+  readonly pressed: boolean
+  readonly onToggle: () => void
+}) => (
+  <button
+    type="button"
+    aria-pressed={pressed}
+    onClick={onToggle}
+    className="rounded-md px-2 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 aria-pressed:bg-zinc-100 aria-pressed:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:aria-pressed:bg-zinc-800 dark:aria-pressed:text-zinc-100"
+  >
+    Table
+  </button>
+)
+
 export const ChartCard = ({
   title,
   description,
@@ -38,14 +56,7 @@ export const ChartCard = ({
         <div className="flex items-center gap-2">
           {actions}
           {table !== undefined && (
-            <button
-              type="button"
-              aria-pressed={showTable}
-              onClick={() => setShowTable((current) => !current)}
-              className="rounded-md px-2 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 aria-pressed:bg-zinc-100 aria-pressed:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:aria-pressed:bg-zinc-800 dark:aria-pressed:text-zinc-100"
-            >
-              Table
-            </button>
+            <TableToggle pressed={showTable} onToggle={() => setShowTable((current) => !current)} />
           )}
         </div>
       </header>
