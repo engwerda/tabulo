@@ -219,12 +219,7 @@ export const BoardPage = ({ org }: { org: string }) => {
           Change organization
         </Link>
         {repos.data !== undefined && (
-          <RepoPicker
-            repos={repos.data}
-            selected={selected}
-            onChange={chooseRepos}
-            defaultOpen={!hasSelection}
-          />
+          <RepoPicker repos={repos.data} selected={selected} onChange={chooseRepos} />
         )}
         {board.data !== undefined && (
           <BoardFiltersBar cards={board.data.cards} filters={filters} setParams={setParams} />
@@ -253,7 +248,7 @@ export const BoardPage = ({ org }: { org: string }) => {
 
       {!hasSelection ? (
         <p className="px-4 text-sm text-zinc-600 sm:px-6 dark:text-zinc-400">
-          Choose the repositories whose issues the board shows.
+          Choose the repositories whose issues the board shows with the Repositories button above.
         </p>
       ) : board.data === undefined ? (
         board.isError ? (
