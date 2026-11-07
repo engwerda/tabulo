@@ -1,5 +1,13 @@
 import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
+import {
+  type ReactNode,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import { useSearchParams } from "wouter"
 import type { Board, BoardCard, MoveCardRequest } from "../../shared/api.ts"
 import {
@@ -180,6 +188,9 @@ export const BoardPage = ({ org }: { org: string }) => {
   const [params, setParams] = useSearchParams()
   const selected = (params.get("repos") ?? "").split(",").filter((name) => name !== "")
   const filters = readFilters(params)
+  // The search box updates at once; the board catches up without blocking the next keystroke.
+  const searchText = useDeferredValue(filters.text)
+  const boardFilters = { ...filters, text: searchText }
   const selectedRef = params.get(CARD_PARAM)
   const [dragging, setDragging] = useState(false)
   const [dismissedFailures, setDismissedFailures] = useState<string | null>(null)
@@ -425,7 +436,7 @@ export const BoardPage = ({ org }: { org: string }) => {
     [toast],
   )
 
-  const visible = (card: BoardCard) => matchesFilters(card, filters, viewer.login)
+  const visible = (card: BoardCard) => matchesFilters(card, boardFilters, viewer.login)
   const data = board.data
   const archived = new Set(
     (repos.data ?? []).filter((repo) => repo.archived).map((repo) => repo.name),
@@ -503,21 +514,35 @@ export const BoardPage = ({ org }: { org: string }) => {
     return () => document.removeEventListener("keydown", listener)
   }, [])
 
-  const actions: CardActions = {
+  // Cards are memoized, so they get one actions object for good that calls the latest handlers.
+  const latestActions = useRef<CardActions | null>(null)
+  latestActions.current = {
     open: (card) => setCardParam(cardRef(card), selectedRef !== null),
     moveTo: moveToTop,
     toggleAssigned: (card) => assign.mutate(card),
     copyLink,
-    href: (card) => {
-      const next = new URLSearchParams(params)
-      next.set(CARD_PARAM, cardRef(card))
-      return `?${next}`
-    },
   }
+  const actions = useMemo<CardActions>(
+    () => ({
+      open: (card) => latestActions.current?.open(card),
+      moveTo: (card, column) => latestActions.current?.moveTo(card, column),
+      toggleAssigned: (card) => latestActions.current?.toggleAssigned(card),
+      copyLink: (card) => latestActions.current?.copyLink(card),
+    }),
+    [],
+  )
+  // A card's link keeps the board's repositories and filters, but not the search text, so typing
+  // does not re-render every card.
+  const hrefBase = (() => {
+    const next = new URLSearchParams(params)
+    next.delete(CARD_PARAM)
+    next.delete(FILTER_PARAMS.text)
+    return next.toString()
+  })()
 
   const failures = data?.failedRepos ?? []
   const failureId = failures.map((failure) => `${failure.repo}:${failure.message}`).join("|")
-  const filtered = isFiltered(filters)
+  const filtered = isFiltered(boardFilters)
   const shownCount = data === undefined ? 0 : data.cards.filter(visible).length
   const onlyDefaultColumns = data?.columns.every((column) => column._tag !== "Status")
   const composerTarget =
@@ -679,6 +704,7 @@ export const BoardPage = ({ org }: { org: string }) => {
               )
             }
             actions={actions}
+            hrefBase={hrefBase}
             onMove={(cardMove) => startMove(cardMove)}
             onDragChange={(isDragging) => {
               setDragging(isDragging)

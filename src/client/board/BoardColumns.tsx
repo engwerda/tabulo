@@ -47,6 +47,7 @@ type BoardColumnsProps = {
   readonly onCompose: (column: string) => void
   readonly canCreate: boolean
   readonly actions: CardActions
+  readonly hrefBase: string
   readonly onMove: (move: CardMove) => void
   readonly onDragChange: (dragging: boolean) => void
 }
@@ -196,6 +197,7 @@ export const BoardColumns = ({
   onCompose,
   canCreate,
   actions,
+  hrefBase,
   onMove,
   onDragChange,
 }: BoardColumnsProps) => {
@@ -356,6 +358,7 @@ export const BoardColumns = ({
                   showRepo={showRepo}
                   selected={selectedKey === card.key}
                   actions={actions}
+                  hrefBase={hrefBase}
                 />
               ))}
             </Column>
