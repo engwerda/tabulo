@@ -455,15 +455,21 @@ export const buildInsights = (input: InsightsInput): Insights => {
         medianDurationMinutes: roundedOrNull(
           median(windowRuns.flatMap((run) => run.durationMinutes ?? [])),
         ),
-        weekly: weeks.map((week) => {
-          const inWeek = windowRuns.filter((run) => weekOf(run.created) === week)
-          return {
+        weekly: (() => {
+          const outcomes = (outcome: RunOutcome) =>
+            perWeek(windowRuns.flatMap((run) => (run.outcome === outcome ? [run.created] : [])))
+          const [success, failure, other] = [
+            outcomes("success"),
+            outcomes("failure"),
+            outcomes("other"),
+          ]
+          return weeks.map((week, index) => ({
             weekStart: week,
-            success: count(inWeek, (run) => run.outcome === "success"),
-            failure: count(inWeek, (run) => run.outcome === "failure"),
-            other: count(inWeek, (run) => run.outcome === "other"),
-          }
-        }),
+            success: success[index] ?? 0,
+            failure: failure[index] ?? 0,
+            other: other[index] ?? 0,
+          }))
+        })(),
         slowestWorkflows: [...groupBy(windowRuns, (run) => `${run.repo}/${run.workflow}`).values()]
           .flatMap(([first, ...rest]) => {
             const minutes = median([first, ...rest].flatMap((run) => run?.durationMinutes ?? []))

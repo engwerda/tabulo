@@ -9,8 +9,6 @@ export type ZonedTime = {
   readonly hour: number
 }
 
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
 /** Whether `name` is an IANA time zone that this runtime knows. */
 export const isTimeZone = (name: string) => {
   try {
@@ -21,37 +19,51 @@ export const isTimeZone = (name: string) => {
   }
 }
 
-// Every UTC offset is a whole number of quarter hours, so all instants in one UTC quarter hour
-// share a local date and hour.
-const QUARTER_HOUR_MS = 15 * 60 * 1000
-
 /** Reads instants (epoch milliseconds) as calendar times in `timeZone`. */
 export const zonedTime = (timeZone: string) => {
   const format = new Intl.DateTimeFormat("en-US", {
     timeZone,
     year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    weekday: "short",
-    hour: "2-digit",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
     hourCycle: "h23",
   })
-  // formatToParts is slow next to the rest of an aggregation, and events cluster in time.
-  const cache = new Map<number, ZonedTime>()
-  return (millis: number): ZonedTime => {
-    const slot = Math.floor(millis / QUARTER_HOUR_MS)
-    const cached = cache.get(slot)
-    if (cached !== undefined) return cached
+  /** The zone's UTC offset at `millis`, in milliseconds. */
+  const offsetAt = (millis: number) => {
     const parts = Object.fromEntries(
-      format.formatToParts(slot * QUARTER_HOUR_MS).map((part) => [part.type, part.value] as const),
+      format.formatToParts(millis).map((part) => [part.type, Number(part.value)] as const),
     )
-    const time = {
-      date: `${parts.year}-${parts.month}-${parts.day}`,
-      weekday: WEEKDAYS.indexOf(parts.weekday ?? ""),
-      hour: Number(parts.hour),
+    const local = Date.UTC(
+      parts.year ?? 0,
+      (parts.month ?? 1) - 1,
+      parts.day ?? 1,
+      parts.hour ?? 0,
+      parts.minute ?? 0,
+    )
+    return local - Math.floor(millis / 60_000) * 60_000
+  }
+  // formatToParts is slow next to the rest of an aggregation, and an offset changes at most
+  // once a day: a UTC day whose offset is the same at both ends has that offset throughout.
+  const dayOffsets = new Map<number, number | null>()
+  const offsetFor = (millis: number) => {
+    const day = Math.floor(millis / DAY_MS)
+    let offset = dayOffsets.get(day)
+    if (offset === undefined) {
+      const start = offsetAt(day * DAY_MS)
+      offset = start === offsetAt((day + 1) * DAY_MS - 1) ? start : null
+      dayOffsets.set(day, offset)
     }
-    cache.set(slot, time)
-    return time
+    return offset ?? offsetAt(millis)
+  }
+  return (millis: number): ZonedTime => {
+    const local = new Date(millis + offsetFor(millis))
+    return {
+      date: local.toISOString().slice(0, 10),
+      weekday: (local.getUTCDay() + 6) % 7,
+      hour: local.getUTCHours(),
+    }
   }
 }
 
