@@ -226,6 +226,8 @@ type CardPanelProps = {
   readonly onUpdate: (run: () => Promise<CardUpdateResult>) => void
   /** The card with its new comment count after the viewer commented. */
   readonly onCommented: (card: BoardCard) => void
+  /** Stops board reads in flight before a write, so their older answers cannot undo it. */
+  readonly holdReads: () => Promise<void>
   readonly updating: boolean
   readonly onCopyLink: () => void
   readonly onClose: () => void
@@ -243,6 +245,7 @@ export const CardPanel = ({
   onToggleAssigned,
   onUpdate,
   onCommented,
+  holdReads,
   updating,
   onCopyLink,
   onClose,
@@ -264,6 +267,7 @@ export const CardPanel = ({
   })
   const comment = useMutation({
     mutationFn: (body: string) => addComment({ org, repo: card.repo, number: card.number, body }),
+    onMutate: holdReads,
     onSuccess: ({ comment: added }) => {
       queryClient.setQueryData<CardDetail>(detailKey, (current) =>
         current === undefined
@@ -321,9 +325,16 @@ export const CardPanel = ({
             label: milestone.title,
           })),
         ]
+  // A closed milestone is not among the choices, so nothing is ticked rather than "No milestone".
   const currentMilestone = options.data?.milestones.find(
     (milestone) => milestone.title === card.milestone,
   )
+  const pickedMilestone =
+    card.milestone === null
+      ? ""
+      : currentMilestone === undefined
+        ? null
+        : String(currentMilestone.id)
 
   return (
     <aside
@@ -511,9 +522,7 @@ export const CardPanel = ({
                   multiple={false}
                   disabled={updating}
                   choices={milestoneChoices}
-                  picked={
-                    new Set([currentMilestone === undefined ? "" : String(currentMilestone.id)])
-                  }
+                  picked={new Set(pickedMilestone === null ? [] : [pickedMilestone])}
                   onPick={(id) =>
                     onUpdate(() =>
                       setMilestone({ ...ref, milestoneId: id === "" ? null : Number(id) }),

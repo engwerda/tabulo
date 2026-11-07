@@ -304,6 +304,13 @@ export const BoardPage = ({ org }: { org: string }) => {
   const columnTitle = (key: string) =>
     board.data?.columns.find((column) => column.key === key)?.title ?? key
 
+  // The last write to finish reads the board again; an earlier one would read it while a later
+  // write is still on its way and show that card back in its old place for a moment.
+  const refetchAfterWrites = () =>
+    queryClient.isMutating({ mutationKey: writeKey }) > 1
+      ? undefined
+      : queryClient.invalidateQueries({ queryKey: boardKey })
+
   /** Stops board reads in flight, whose answers predate a write and would undo it on screen. */
   const holdReads = () => queryClient.cancelQueries({ queryKey: boardKey }, { revert: false })
 
@@ -358,7 +365,7 @@ export const BoardPage = ({ org }: { org: string }) => {
       }
       toast({ tone: "error", title: "The card was not moved", detail: error.message })
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: boardKey }),
+    onSettled: refetchAfterWrites,
   })
 
   /** Moves a card and offers to put it back where it was, unless `undo` is null. */
@@ -418,7 +425,7 @@ export const BoardPage = ({ org }: { org: string }) => {
     mutationKey: [...writeKey, "create"],
     mutationFn: createCard,
     onMutate: holdReads,
-    onSettled: () => queryClient.invalidateQueries({ queryKey: boardKey }),
+    onSettled: refetchAfterWrites,
     onSuccess: ({ card, orderSaved }) => {
       putCard(card)
       toast({
@@ -427,7 +434,7 @@ export const BoardPage = ({ org }: { org: string }) => {
         detail: orderSaved
           ? card.title
           : "Its place at the top of the column was not saved, so it may show lower down.",
-        action: { label: "Open", run: () => setCardParam(cardRef(card), false) },
+        action: { label: "Open", run: () => latestActions.current?.open(card) },
       })
     },
     onError: (error) =>
@@ -443,7 +450,7 @@ export const BoardPage = ({ org }: { org: string }) => {
     mutationKey: [...writeKey, "update"],
     mutationFn: ({ run }: CardUpdate) => run(),
     onMutate: holdReads,
-    onSettled: () => queryClient.invalidateQueries({ queryKey: boardKey }),
+    onSettled: refetchAfterWrites,
     onSuccess: ({ card }, { announce }) => {
       putCard(card)
       if (announce !== undefined) {
@@ -536,20 +543,26 @@ export const BoardPage = ({ org }: { org: string }) => {
     if (target !== undefined) setCardParam(cardRef(target), true)
   }
 
-  // Opening the panel adds a history entry, so Back closes it; closing takes that entry back.
-  const pushedPanel = useRef(false)
+  // Opening the panel adds a history entry, so Back closes it. Closing goes back to that entry
+  // only if the board's address is unchanged since; otherwise it would undo a new filter.
+  const pushedFrom = useRef<string | null>(null)
+  const boardAddress = () => {
+    const next = new URLSearchParams(window.location.search)
+    next.delete(CARD_PARAM)
+    return next.toString()
+  }
   const openPanel = (card: BoardCard) => {
-    if (selectedRef === null) pushedPanel.current = true
+    if (selectedRef === null) pushedFrom.current = boardAddress()
     setCardParam(cardRef(card), selectedRef !== null)
   }
   const closePanel = () => {
     const key = selectedCard?.key
-    if (pushedPanel.current) {
-      pushedPanel.current = false
+    if (pushedFrom.current !== null && pushedFrom.current === boardAddress()) {
       window.history.back()
     } else {
       setCardParam(null, true)
     }
+    pushedFrom.current = null
     if (key !== undefined) {
       document
         .querySelector<HTMLElement>(`[data-card-key="${CSS.escape(key)}"] a[data-card-link]`)
@@ -560,6 +573,9 @@ export const BoardPage = ({ org }: { org: string }) => {
   // A card in the address that the board does not have, such as a closed issue's old link.
   useEffect(() => {
     if (selectedRef === null || data === undefined || selectedCard !== undefined) return
+    // A repository that failed to load this time keeps its card open until it loads again.
+    const repo = selectedRef.split("#")[0]?.toLowerCase()
+    if (data.failedRepos.some((failure) => failure.repo.toLowerCase() === repo)) return
     toast({
       tone: "warning",
       title: `${selectedRef} is not on this board`,
@@ -850,6 +866,7 @@ export const BoardPage = ({ org }: { org: string }) => {
             onToggleAssigned={() => toggleAssigned(selectedCard)}
             onUpdate={(run) => update.mutate({ run })}
             onCommented={putCard}
+            holdReads={holdReads}
             updating={update.isPending}
             onCopyLink={() => copyLink(selectedCard)}
             onClose={closePanel}
