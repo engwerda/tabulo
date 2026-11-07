@@ -54,6 +54,12 @@ describe("board filters", () => {
     expect(shown("label=@none")).toEqual([1, 2, 3])
   })
 
+  it("shows cards with any of several assignees or labels", () => {
+    expect(shown("assignee=@none&assignee=@me")).toEqual([1, 3])
+    expect(shown("assignee=grace&assignee=ada")).toEqual([1, 2])
+    expect(shown("label=@none&assignee=grace")).toEqual([1, 2])
+  })
+
   it("still matches a login and a milestone title by name", () => {
     expect(shown("assignee=grace")).toEqual([1, 2])
     expect(shown("milestone=v1.4")).toEqual([2])

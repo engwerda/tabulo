@@ -1,6 +1,7 @@
+import type { ReactNode } from "react"
 import type { DashboardItem, NotificationItem } from "../shared/api.ts"
 import { absoluteTime, relativeTime } from "./format.ts"
-import { BellIcon, CommentIcon, IssueOpenIcon, PullIcon } from "./ui/icons.tsx"
+import { AtIcon, BellIcon, CommentIcon, IssueOpenIcon, PullIcon, UserIcon } from "./ui/icons.tsx"
 import { LabelList } from "./ui/LabelChip.tsx"
 
 const Updated = ({ iso }: { iso: string }) => (
@@ -9,18 +10,30 @@ const Updated = ({ iso }: { iso: string }) => (
   </time>
 )
 
-export const KindIcon = ({ kind }: { kind: DashboardItem["kind"] | "notification" }) => (
+type Kind = DashboardItem["kind"] | "notification" | "assigned" | "mention"
+
+const KIND_TONE: Record<Kind, string> = {
+  pull: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400",
+  issue: "bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-400",
+  assigned: "bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400",
+  mention: "bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-400",
+  notification: "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400",
+}
+
+const KIND_ICON: Record<Kind, ReactNode> = {
+  pull: <PullIcon />,
+  issue: <IssueOpenIcon />,
+  assigned: <UserIcon />,
+  mention: <AtIcon />,
+  notification: <BellIcon />,
+}
+
+export const KindIcon = ({ kind }: { kind: Kind }) => (
   <span
     aria-hidden="true"
-    className={`mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg ${
-      kind === "pull"
-        ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"
-        : kind === "issue"
-          ? "bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-400"
-          : "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400"
-    }`}
+    className={`mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg ${KIND_TONE[kind]}`}
   >
-    {kind === "pull" ? <PullIcon /> : kind === "issue" ? <IssueOpenIcon /> : <BellIcon />}
+    {KIND_ICON[kind]}
   </span>
 )
 

@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react"
+import { createPortal } from "react-dom"
 import { ChevronDownIcon } from "./icons.tsx"
 
 export const buttonClass = {
@@ -30,24 +31,27 @@ export const panelClass =
   "rounded-xl border border-zinc-200 bg-white shadow-pop dark:border-zinc-800 dark:bg-zinc-900"
 
 export const Kbd = ({ children }: { children: ReactNode }) => (
-  <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-zinc-200 bg-zinc-50 px-1 font-sans text-[0.6875rem] font-medium text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400">
+  <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border leading-none border-zinc-200 bg-zinc-50 px-1 font-sans text-[0.6875rem] font-medium text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400">
     {children}
   </kbd>
 )
 
-/** Closes on a pointer down outside `container` and on Escape, which returns focus. */
+/** Closes on a pointer down outside every one of `inside` and on Escape, which returns focus. */
 export const useDismiss = (
   open: boolean,
   close: () => void,
-  container: RefObject<HTMLElement | null>,
+  inside: ReadonlyArray<RefObject<HTMLElement | null>>,
   returnFocus?: RefObject<HTMLElement | null>,
 ) => {
   const closeRef = useRef(close)
   closeRef.current = close
+  const insideRef = useRef(inside)
+  insideRef.current = inside
   useEffect(() => {
     if (!open) return
     const onPointer = (event: PointerEvent) => {
-      if (!container.current?.contains(event.target as Node)) closeRef.current()
+      const target = event.target as Node
+      if (!insideRef.current.some((ref) => ref.current?.contains(target))) closeRef.current()
     }
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return
@@ -61,7 +65,7 @@ export const useDismiss = (
       document.removeEventListener("pointerdown", onPointer)
       document.removeEventListener("keydown", onKey, true)
     }
-  }, [open, container, returnFocus])
+  }, [open, returnFocus])
 }
 
 type PopoverProps = {
@@ -75,11 +79,6 @@ type PopoverProps = {
   readonly children: (close: () => void) => ReactNode
   readonly open?: boolean
   readonly onOpenChange?: (open: boolean) => void
-  /**
-   * "fixed" places the panel against the viewport, so a scrolling ancestor such as a board
-   * column cannot clip it. It opens upward when there is no room below.
-   */
-  readonly strategy?: "absolute" | "fixed"
   /** Classes of the wrapper; a trigger that should truncate needs "min-w-0" here. */
   readonly containerClass?: string
   /** Moves focus to the first menu item on open, as a menu button does. */
@@ -118,20 +117,22 @@ const moveMenuFocus = (event: ReactKeyboardEvent<HTMLElement>) => {
 
 const GAP = 6
 
-/** Where a fixed panel goes: below the trigger, or above it when it would overflow. */
-const fixedPosition = (trigger: DOMRect, panel: HTMLElement, align: "start" | "end") => {
+/** Where the panel goes: below the trigger, or above it when it would overflow, inside the screen. */
+const panelPosition = (trigger: DOMRect, panel: HTMLElement, align: "start" | "end") => {
   const below = trigger.bottom + GAP + panel.offsetHeight <= window.innerHeight - GAP
-  const style: CSSProperties = below
-    ? { top: trigger.bottom + GAP }
-    : { top: Math.max(GAP, trigger.top - GAP - panel.offsetHeight) }
-  const left = align === "end" ? trigger.right - panel.offsetWidth : Math.max(GAP, trigger.left)
+  const top = below ? trigger.bottom + GAP : Math.max(GAP, trigger.top - GAP - panel.offsetHeight)
+  const left = align === "end" ? trigger.right - panel.offsetWidth : trigger.left
   return {
-    ...style,
+    top,
     left: Math.min(Math.max(GAP, left), window.innerWidth - panel.offsetWidth - GAP),
   }
 }
 
-/** A button that toggles a panel below it; the panel closes on Escape or an outside click. */
+/**
+ * A button that toggles a panel below it; the panel closes on Escape or an outside click. The
+ * panel renders in a portal against the viewport, so a scrolling or transformed ancestor such as
+ * a board column, a card, or the filter row cannot clip or displace it.
+ */
 export const Popover = ({
   label,
   accessibleLabel,
@@ -142,7 +143,6 @@ export const Popover = ({
   children,
   open: controlledOpen,
   onOpenChange,
-  strategy = "absolute",
   containerClass = "relative",
   focusFirstItem = false,
   triggerTabIndex,
@@ -158,53 +158,53 @@ export const Popover = ({
   const trigger = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
   const panelId = useId()
-  const [fixedStyle, setFixedStyle] = useState<CSSProperties | null>(null)
-  // An absolute panel near the edge of a narrow screen shifts back inside it.
-  const [shift, setShift] = useState(0)
+  const [position, setPosition] = useState<CSSProperties | null>(null)
   const close = () => setOpen(false)
   const closeRef = useRef(close)
   closeRef.current = close
-  useDismiss(open, close, container, returnFocus ?? trigger)
+  useDismiss(open, close, [container, panel], returnFocus ?? trigger)
 
   useLayoutEffect(() => {
     if (!open) {
-      setShift(0)
-      return
-    }
-    if (focusFirstItem) panel.current?.querySelector<HTMLElement>(MENU_ITEMS)?.focus()
-    if (strategy === "absolute" && panel.current !== null) {
-      const rect = panel.current.getBoundingClientRect()
-      const overflowRight = rect.right - (window.innerWidth - GAP)
-      setShift(overflowRight > 0 ? -overflowRight : rect.left < GAP ? GAP - rect.left : 0)
-    }
-  }, [open, strategy, focusFirstItem])
-
-  useLayoutEffect(() => {
-    if (!open || strategy !== "fixed") {
-      setFixedStyle(null)
+      setPosition(null)
       return
     }
     const place = () => {
       if (trigger.current !== null && panel.current !== null) {
-        setFixedStyle(fixedPosition(trigger.current.getBoundingClientRect(), panel.current, align))
+        setPosition(panelPosition(trigger.current.getBoundingClientRect(), panel.current, align))
       }
     }
     place()
-    const closeOnScroll = (event: Event) => {
-      if (!panel.current?.contains(event.target as Node)) closeRef.current()
+    // The panel follows its trigger when something scrolls, and closes once the trigger has
+    // scrolled out of sight.
+    const follow = () => {
+      const rect = trigger.current?.getBoundingClientRect()
+      if (rect === undefined) return
+      if (
+        rect.bottom < 0 ||
+        rect.top > window.innerHeight ||
+        rect.right < 0 ||
+        rect.left > window.innerWidth
+      ) {
+        closeRef.current()
+      } else {
+        place()
+      }
     }
-    window.addEventListener("scroll", closeOnScroll, true)
+    window.addEventListener("scroll", follow, true)
     window.addEventListener("resize", place)
     return () => {
-      window.removeEventListener("scroll", closeOnScroll, true)
+      window.removeEventListener("scroll", follow, true)
       window.removeEventListener("resize", place)
     }
-  }, [open, strategy, align])
+  }, [open, align])
 
-  const position =
-    strategy === "fixed"
-      ? "fixed"
-      : `absolute top-full mt-1.5 ${align === "end" ? "right-0 origin-top-right" : "left-0 origin-top-left"}`
+  // Focus moves in once the panel is placed and visible; a hidden element cannot take it.
+  const placed = open && position !== null
+  useEffect(() => {
+    if (placed && focusFirstItem) panel.current?.querySelector<HTMLElement>(MENU_ITEMS)?.focus()
+  }, [placed, focusFirstItem])
+
   return (
     <div ref={container} className={containerClass}>
       <button
@@ -224,26 +224,26 @@ export const Popover = ({
           />
         )}
       </button>
-      {open && (
-        // biome-ignore lint/a11y/noStaticElementInteractions: the handlers only contain events for the controls inside
-        <div
-          ref={panel}
-          id={panelId}
-          style={
-            strategy === "fixed" ? (fixedStyle ?? { visibility: "hidden" }) : { marginLeft: shift }
-          }
-          // A press inside the panel must not reach a draggable card around it.
-          onMouseDown={(event) => event.stopPropagation()}
-          onTouchStart={(event) => event.stopPropagation()}
-          onKeyDown={moveMenuFocus}
-          className={`${position} z-40 max-w-[calc(100vw-0.75rem)] animate-pop-in ${panelClass} ${extraPanelClass}`}
-        >
-          {children(() => {
-            setOpen(false)
-            ;(returnFocus ?? trigger).current?.focus()
-          })}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          // biome-ignore lint/a11y/noStaticElementInteractions: the handlers only contain events for the controls inside
+          <div
+            ref={panel}
+            id={panelId}
+            style={position ?? { visibility: "hidden", top: 0, left: 0 }}
+            // A press inside the panel must not reach a draggable card around its trigger.
+            onMouseDown={(event) => event.stopPropagation()}
+            onTouchStart={(event) => event.stopPropagation()}
+            onKeyDown={moveMenuFocus}
+            className={`fixed z-50 max-w-[calc(100vw-0.75rem)] animate-pop-in ${panelClass} ${extraPanelClass}`}
+          >
+            {children(() => {
+              setOpen(false)
+              ;(returnFocus ?? trigger).current?.focus()
+            })}
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }
@@ -253,14 +253,18 @@ export const MenuOption = ({
   selected,
   onSelect,
   children,
+  multiple = false,
 }: {
   selected: boolean
   onSelect: () => void
   children: ReactNode
+  /** A choice among several that can be picked together. */
+  multiple?: boolean
 }) => (
+  // biome-ignore lint/a11y/useAriaPropsSupportedByRole: both menu item roles take aria-checked
   <button
     type="button"
-    role="menuitemradio"
+    role={multiple ? "menuitemcheckbox" : "menuitemradio"}
     aria-checked={selected}
     onClick={onSelect}
     className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800 ${

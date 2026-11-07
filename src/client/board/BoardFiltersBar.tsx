@@ -22,43 +22,65 @@ const chipClass = (active: boolean) =>
       : "border-zinc-200 bg-white text-zinc-700 shadow-card hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/70"
   }`
 
+/**
+ * A filter's menu. With `multiple`, choices toggle and the menu stays open, and a card matches
+ * any chosen value; otherwise picking a choice replaces the value and closes the menu.
+ */
 const FilterMenu = ({
   name,
+  plural,
   icon,
-  value,
+  values,
+  multiple,
   choices,
   onChange,
 }: {
   name: string
+  plural: string
   icon: ReactNode
-  value: string | null
+  values: ReadonlyArray<string>
+  multiple: boolean
   choices: ReadonlyArray<Choice>
-  onChange: (value: string | null) => void
+  onChange: (values: ReadonlyArray<string>) => void
 }) => {
   const [search, setSearch] = useState("")
-  // Keep a value from the address selectable even when no card has it any more.
-  const all =
-    value === null || choices.some((choice) => choice.value === value)
-      ? choices
-      : [...choices, { value, label: value }]
-  const current = all.find((choice) => choice.value === value)
+  // Keep values from the address selectable even when no card has them any more.
+  const all: ReadonlyArray<Choice> = [
+    ...choices,
+    ...values
+      .filter((value) => !choices.some((choice) => choice.value === value))
+      .map((value) => ({ value, label: value })),
+  ]
+  const chosen = all.filter((choice) => values.includes(choice.value))
+  const first = chosen[0]
   const shown = all.filter((choice) => choice.label.toLowerCase().includes(search.toLowerCase()))
+  const toggle = (value: string) =>
+    onChange(
+      values.includes(value) ? values.filter((other) => other !== value) : [...values, value],
+    )
   return (
     <Popover
-      triggerClass={chipClass(value !== null)}
-      accessibleLabel={current === undefined ? `${name}: any` : `${name}: ${current.label}`}
+      triggerClass={chipClass(values.length > 0)}
+      accessibleLabel={
+        chosen.length === 0 ? `${name}: any` : `${name}: ${chosen.map((c) => c.label).join(", ")}`
+      }
       onOpenChange={(open) => {
         if (!open) setSearch("")
       }}
       label={
         <>
           <span className="opacity-70">{icon}</span>
-          {current === undefined ? (
+          {first === undefined ? (
             name
           ) : (
-            <span className="flex max-w-40 items-center gap-1.5">
-              {current.icon}
-              <span className="truncate">{current.label}</span>
+            <span className="flex max-w-44 items-center gap-1.5">
+              {first.icon}
+              <span className="truncate">{first.label}</span>
+              {chosen.length > 1 && (
+                <span className="rounded bg-indigo-100 px-1 text-xs tabular-nums dark:bg-indigo-500/20">
+                  +{chosen.length - 1}
+                </span>
+              )}
             </span>
           )}
         </>
@@ -69,7 +91,7 @@ const FilterMenu = ({
         <>
           {all.length > 6 && (
             <label className="relative mb-1 block">
-              <span className="sr-only">Find a {name.toLowerCase()}</span>
+              <span className="sr-only">Search {plural}</span>
               <SearchIcon className="pointer-events-none absolute top-2 left-2.5 size-4 text-zinc-400" />
               <input
                 // biome-ignore lint/a11y/noAutofocus: the menu opened to search it
@@ -77,38 +99,45 @@ const FilterMenu = ({
                 type="search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder={`Find a ${name.toLowerCase()}`}
+                placeholder={`Search ${plural}`}
                 className={`${inputClass} pl-8 shadow-none`}
               />
             </label>
           )}
           <div role="menu" aria-label={name} className="scroll-thin max-h-72 overflow-y-auto">
             <MenuOption
-              selected={value === null}
+              selected={values.length === 0}
               onSelect={() => {
-                onChange(null)
+                onChange([])
                 close()
               }}
             >
               <span className="flex-1">Any {name.toLowerCase()}</span>
-              {value === null && <CheckIcon className="size-4 text-indigo-600" />}
+              {values.length === 0 && <CheckIcon className="size-4 text-indigo-600" />}
             </MenuOption>
-            {shown.map((choice) => (
-              <MenuOption
-                key={choice.value}
-                selected={choice.value === value}
-                onSelect={() => {
-                  onChange(choice.value)
-                  close()
-                }}
-              >
-                {choice.icon}
-                <span className="min-w-0 flex-1 truncate">{choice.label}</span>
-                {choice.value === value && <CheckIcon className="size-4 text-indigo-600" />}
-              </MenuOption>
-            ))}
+            {shown.map((choice) => {
+              const on = values.includes(choice.value)
+              return (
+                <MenuOption
+                  key={choice.value}
+                  selected={on}
+                  multiple={multiple}
+                  onSelect={() => {
+                    if (multiple) toggle(choice.value)
+                    else {
+                      onChange([choice.value])
+                      close()
+                    }
+                  }}
+                >
+                  {choice.icon}
+                  <span className="min-w-0 flex-1 truncate">{choice.label}</span>
+                  {on && <CheckIcon className="size-4 text-indigo-600" />}
+                </MenuOption>
+              )
+            })}
             {shown.length === 0 && (
-              <p className="px-2 py-1.5 text-sm text-zinc-500">No {name.toLowerCase()} matches.</p>
+              <p className="px-2 py-1.5 text-sm text-zinc-500">Nothing matches.</p>
             )}
           </div>
         </>
@@ -135,12 +164,14 @@ export const BoardFiltersBar = ({
   total,
 }: BoardFiltersBarProps) => {
   const choices = filterChoices(cards)
-  const set = (filter: keyof BoardFilters, value: string | null) =>
+  const set = (filter: keyof BoardFilters, value: string | ReadonlyArray<string> | null) =>
     setParams(
       (current) => {
         const next = new URLSearchParams(current)
-        if (value === null || value === "") next.delete(FILTER_PARAMS[filter])
-        else next.set(FILTER_PARAMS[filter], value)
+        next.delete(FILTER_PARAMS[filter])
+        for (const one of value === null ? [] : typeof value === "string" ? [value] : value) {
+          if (one !== "") next.append(FILTER_PARAMS[filter], one)
+        }
         return next
       },
       { replace: true },
@@ -154,7 +185,8 @@ export const BoardFiltersBar = ({
       },
       { replace: true },
     )
-  const mine = filters.assignee === ME
+  const mine = filters.assignee.includes(ME)
+  const others = filters.assignee.filter((assignee) => assignee !== ME)
 
   return (
     <search
@@ -175,7 +207,7 @@ export const BoardFiltersBar = ({
               event.currentTarget.blur()
             }
           }}
-          placeholder="Search title or #number"
+          placeholder="Search or #number"
           aria-keyshortcuts="/"
           className={`${inputClass} peer pr-8 pl-8 [&::-webkit-search-cancel-button]:appearance-none`}
         />
@@ -202,7 +234,7 @@ export const BoardFiltersBar = ({
       <button
         type="button"
         aria-pressed={mine}
-        onClick={() => set("assignee", mine ? null : ME)}
+        onClick={() => set("assignee", mine ? others : [ME, ...others])}
         className={chipClass(mine)}
         title="Show only cards assigned to you (M)"
       >
@@ -211,9 +243,11 @@ export const BoardFiltersBar = ({
       </button>
       <FilterMenu
         name="Assignee"
+        plural="people"
+        multiple
         icon={<UserIcon />}
-        value={mine ? null : filters.assignee}
-        onChange={(value) => set("assignee", value)}
+        values={others}
+        onChange={(values) => set("assignee", mine ? [ME, ...values] : values)}
         choices={[
           {
             value: NONE,
@@ -231,9 +265,11 @@ export const BoardFiltersBar = ({
       />
       <FilterMenu
         name="Label"
+        plural="labels"
+        multiple
         icon={<TagIcon />}
-        value={filters.label}
-        onChange={(value) => set("label", value)}
+        values={filters.label}
+        onChange={(values) => set("label", values)}
         choices={[
           {
             value: NONE,
@@ -253,9 +289,11 @@ export const BoardFiltersBar = ({
       />
       <FilterMenu
         name="Milestone"
+        plural="milestones"
+        multiple={false}
         icon={<MilestoneIcon />}
-        value={filters.milestone}
-        onChange={(value) => set("milestone", value)}
+        values={filters.milestone === null ? [] : [filters.milestone]}
+        onChange={(values) => set("milestone", values[0] ?? null)}
         choices={[
           { value: NONE, label: "No milestone" },
           ...choices.milestones.map((milestone) => ({ value: milestone, label: milestone })),

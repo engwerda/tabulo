@@ -390,8 +390,8 @@ const AVATAR_COLORS = ["#6366f1", "#0ea5e9", "#f97316", "#10b981", "#ec4899", "#
 const avatar = (name: string) => {
   const hash = [...name].reduce((sum, char) => sum + char.charCodeAt(0), 0)
   const color = AVATAR_COLORS[hash % AVATAR_COLORS.length]
-  const letter = name.slice(0, 1).toUpperCase()
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="${color}"/><text x="32" y="42" font-family="system-ui,sans-serif" font-size="30" font-weight="600" fill="#fff" text-anchor="middle">${letter}</text></svg>`
+  const letter = `${name.slice(0, 1).toUpperCase()}${name.slice(1, 2)}`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="${color}"/><text x="32" y="42" font-family="system-ui,sans-serif" font-size="26" font-weight="600" fill="#fff" text-anchor="middle">${letter}</text></svg>`
 }
 
 const escapeHtml = (text: string) =>

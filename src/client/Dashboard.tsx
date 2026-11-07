@@ -69,7 +69,7 @@ const Stat = ({
   href: string
   label: string
   value: number | null
-  kind: DashboardItem["kind"] | "notification"
+  kind: Parameters<typeof KindIcon>[0]["kind"]
 }) => (
   <a
     href={href}
@@ -161,7 +161,10 @@ export const DashboardView = () => {
           )
         ) : (
           <>
-            <nav aria-label="Summary" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <nav
+              aria-label="Summary"
+              className="-mx-4 flex gap-3 overflow-x-auto px-4 [scrollbar-width:none] *:min-w-[12rem] *:flex-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:*:min-w-0 lg:grid-cols-4"
+            >
               <Stat
                 href="#review-requests"
                 label="Reviews waiting"
@@ -172,12 +175,17 @@ export const DashboardView = () => {
                 href="#assigned"
                 label="Assigned to me"
                 value={total(data.assigned)}
-                kind="issue"
+                kind="assigned"
               />
-              <Stat href="#mentioned" label="Mentions" value={total(data.mentioned)} kind="issue" />
+              <Stat
+                href="#mentioned"
+                label="Mentions"
+                value={total(data.mentioned)}
+                kind="mention"
+              />
               <Stat
                 href="#notifications"
-                label="Unread notifications"
+                label="Unread"
                 value={total(data.notifications)}
                 kind="notification"
               />

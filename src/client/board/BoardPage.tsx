@@ -58,6 +58,17 @@ const REFRESH_MS = 60_000
 const MAX_BOARD_REPOS = 20
 /** The last board the browser showed, which the header's Board link returns to. */
 export const LAST_BOARD_KEY = "tabulo.board.last"
+
+/**
+ * A change to a card's assignees, labels, or milestone. `done` says what happened in the toast
+ * ("Added Kind/Bug to api#3"), `issue` names the issue if it fails, and `undo` reverses it.
+ */
+export type CardUpdate = {
+  readonly run: () => Promise<CardUpdateResult>
+  readonly done: string
+  readonly issue: string
+  readonly undo?: () => Promise<CardUpdateResult>
+}
 const CARD_PARAM = "card"
 
 // Remembering choices is a convenience: storage can be missing or refuse writes.
@@ -147,7 +158,7 @@ const BoardSkeleton = () => (
       <div
         // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have no identity
         key={column}
-        className="flex min-w-[16.5rem] flex-1 shrink-0 flex-col gap-2 rounded-2xl bg-zinc-100/80 p-2 dark:bg-zinc-900/50"
+        className="flex min-w-[14.5rem] flex-1 flex-col gap-2 rounded-2xl bg-zinc-100/80 p-2 dark:bg-zinc-900/50"
       >
         <div className="mx-1.5 my-2.5 h-4 w-24 animate-shimmer rounded bg-zinc-200 dark:bg-zinc-800" />
         {Array.from({ length: count }, (_, card) => (
@@ -198,6 +209,45 @@ const OrgNotFound = ({ org }: { org: string }) => (
       <Link href="/board" className={`${buttonClass.primary} mt-6`}>
         Choose an organization
       </Link>
+    </div>
+  </div>
+)
+
+const ReposFailed = ({
+  failures,
+  onChoose,
+  onRetry,
+}: {
+  failures: ReadonlyArray<{ readonly repo: string; readonly message: string }>
+  onChoose: () => void
+  onRetry: () => void
+}) => (
+  <div className="grid flex-1 place-items-center px-6 pb-16">
+    <div className="max-w-md text-center">
+      <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-amber-50 text-amber-500 dark:bg-amber-500/10">
+        <AlertIcon className="size-5" />
+      </div>
+      <h2 className="mt-5 text-base font-semibold tracking-tight">
+        {failures.length === 1
+          ? `Could not load ${failures[0]?.repo}`
+          : "Could not load these repositories"}
+      </h2>
+      <ul className="mt-2 space-y-0.5 text-sm text-zinc-600 dark:text-zinc-400">
+        {failures.map((failure) => (
+          <li key={failure.repo}>
+            <span className="font-medium text-zinc-800 dark:text-zinc-200">{failure.repo}</span>:{" "}
+            {failure.message}
+          </li>
+        ))}
+      </ul>
+      <div className="mt-5 flex justify-center gap-2">
+        <button type="button" onClick={onRetry} className={buttonClass.secondary}>
+          Try again
+        </button>
+        <button type="button" onClick={onChoose} className={buttonClass.primary}>
+          Choose repositories
+        </button>
+      </div>
     </div>
   </div>
 )
@@ -255,7 +305,6 @@ export const BoardPage = ({ org }: { org: string }) => {
     if (hasSelection) {
       restoredFor.current = org
       storage.write(reposKey(org), selection)
-      storage.write(LAST_BOARD_KEY, `/board/${encodeURIComponent(org)}?repos=${selection}`)
       return
     }
     if (restoredFor.current === org) return
@@ -320,6 +369,7 @@ export const BoardPage = ({ org }: { org: string }) => {
       request,
     }: {
       request: MoveCardRequest
+      cardMove: CardMove
       previous: Board
       undo: CardMove | null
     }) => moveCard(request),
@@ -343,7 +393,7 @@ export const BoardPage = ({ org }: { org: string }) => {
         ...(undo === null ? {} : { action: { label: "Undo", run: () => startMove(undo, null) } }),
       })
     },
-    onError: (error, { previous }) => {
+    onError: (error, { previous, request, cardMove, undo }) => {
       // A partly applied move changed Forgejo, so the refetch below shows the truth; restoring
       // the board from before the move would show a state that no longer exists.
       if (error instanceof RequestFailed && error.code === "move_partly_applied") {
@@ -363,7 +413,12 @@ export const BoardPage = ({ org }: { org: string }) => {
         })
         return
       }
-      toast({ tone: "error", title: "The card was not moved", detail: error.message })
+      toast({
+        tone: "error",
+        title: `Couldn't move ${request.repo}#${request.number}`,
+        detail: error.message,
+        action: { label: "Retry", run: () => startMove(cardMove, undo) },
+      })
     },
     onSettled: refetchAfterWrites,
   })
@@ -389,6 +444,7 @@ export const BoardPage = ({ org }: { org: string }) => {
       applyMove(current, cardMove, new Date().toISOString()),
     )
     move.mutate({
+      cardMove,
       previous: current,
       undo: undo === undefined ? back : undo,
       request: {
@@ -441,41 +497,48 @@ export const BoardPage = ({ org }: { org: string }) => {
       toast({ tone: "error", title: "The issue was not created", detail: error.message }),
   })
 
-  /** A change to a card's assignees, labels, or milestone; `announce` names it in a toast. */
-  type CardUpdate = {
-    readonly run: () => Promise<CardUpdateResult>
-    readonly announce?: (card: BoardCard) => string
-  }
   const update = useMutation({
     mutationKey: [...writeKey, "update"],
     mutationFn: ({ run }: CardUpdate) => run(),
     onMutate: holdReads,
     onSettled: refetchAfterWrites,
-    onSuccess: ({ card }, { announce }) => {
+    onSuccess: ({ card }, { done, issue, undo }) => {
       putCard(card)
-      if (announce !== undefined) {
-        toast({ tone: "success", title: announce(card), detail: card.title })
-      }
+      toast({
+        tone: "success",
+        title: done,
+        detail: card.title,
+        ...(undo === undefined
+          ? {}
+          : {
+              action: {
+                label: "Undo",
+                run: () =>
+                  update.mutate({ run: undo, done: `Undid the change to ${issue}`, issue }),
+              },
+            }),
+      })
     },
-    onError: (error) =>
-      toast({ tone: "error", title: "The issue did not change", detail: error.message }),
+    onError: (error, variables) =>
+      toast({
+        tone: "error",
+        title: `Couldn't change ${variables.issue}`,
+        detail: error.message,
+        action: { label: "Retry", run: () => update.mutate(variables) },
+      }),
   })
 
   const toggleAssigned = (card: BoardCard) => {
     const assigned = card.assignees.some((assignee) => assignee.login === viewer.login)
+    const set = (to: boolean) => () =>
+      setAssignee({ org, repo: card.repo, number: card.number, login: viewer.login, assigned: to })
     update.mutate({
-      run: () =>
-        setAssignee({
-          org,
-          repo: card.repo,
-          number: card.number,
-          login: viewer.login,
-          assigned: !assigned,
-        }),
-      announce: (changed) =>
-        assigned
-          ? `Unassigned you from ${changed.repo}#${changed.number}`
-          : `Assigned ${changed.repo}#${changed.number} to you`,
+      run: set(!assigned),
+      undo: set(assigned),
+      issue: `${card.repo}#${card.number}`,
+      done: assigned
+        ? `Unassigned you from ${card.repo}#${card.number}`
+        : `Assigned ${card.repo}#${card.number} to you`,
     })
   }
 
@@ -570,6 +633,16 @@ export const BoardPage = ({ org }: { org: string }) => {
     }
   }
 
+  // Board in the header returns here, but only to a board whose repositories all loaded.
+  useEffect(() => {
+    if (data !== undefined && data.failedRepos.length === 0 && data.repos.length > 0) {
+      storage.write(
+        LAST_BOARD_KEY,
+        `/board/${encodeURIComponent(data.org)}?repos=${data.repos.join(",")}`,
+      )
+    }
+  }, [data])
+
   // A card in the address that the board does not have, such as a closed issue's old link.
   useEffect(() => {
     if (selectedRef === null || data === undefined || selectedCard !== undefined) return
@@ -593,8 +666,12 @@ export const BoardPage = ({ org }: { org: string }) => {
     setParams(
       (current) => {
         const next = new URLSearchParams(current)
-        if (next.get(FILTER_PARAMS.assignee) === ME) next.delete(FILTER_PARAMS.assignee)
-        else next.set(FILTER_PARAMS.assignee, ME)
+        const assignees = next.getAll(FILTER_PARAMS.assignee)
+        next.delete(FILTER_PARAMS.assignee)
+        const toggled = assignees.includes(ME)
+          ? assignees.filter((assignee) => assignee !== ME)
+          : [ME, ...assignees]
+        for (const assignee of toggled) next.append(FILTER_PARAMS.assignee, assignee)
         return next
       },
       { replace: true },
@@ -688,9 +765,11 @@ export const BoardPage = ({ org }: { org: string }) => {
         <div className="flex items-center gap-3 px-4 pt-4 pb-3 sm:px-6">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <OrgSwitcher org={org} />
-            <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-700">
-              /
-            </span>
+            {!orgMissing && (
+              <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-700">
+                /
+              </span>
+            )}
             {repos.data !== undefined && (
               <RepoPicker
                 repos={repos.data}
@@ -809,6 +888,12 @@ export const BoardPage = ({ org }: { org: string }) => {
               <BoardSkeleton />
             </div>
           )
+        ) : data.failedRepos.length > 0 && data.failedRepos.length === data.repos.length ? (
+          <ReposFailed
+            failures={data.failedRepos}
+            onChoose={() => setPickerOpen(true)}
+            onRetry={() => void board.refetch()}
+          />
         ) : filtered && shownCount === 0 && data.cards.length > 0 ? (
           <NoMatches query={boardFilters.text.trim()} onClear={clearFilters} />
         ) : (
@@ -864,7 +949,7 @@ export const BoardPage = ({ org }: { org: string }) => {
             onStep={step}
             onMoveTo={(column) => moveToTop(selectedCard, column)}
             onToggleAssigned={() => toggleAssigned(selectedCard)}
-            onUpdate={(run) => update.mutate({ run })}
+            onUpdate={(change) => update.mutate(change)}
             onCommented={putCard}
             holdReads={holdReads}
             updating={update.isPending}

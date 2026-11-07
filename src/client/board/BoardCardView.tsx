@@ -77,7 +77,6 @@ const CardMenu = ({
   returnFocus: RefObject<HTMLElement | null>
 }) => (
   <Popover
-    strategy="fixed"
     align="end"
     chevron={false}
     focusFirstItem
@@ -181,7 +180,14 @@ const CardMenu = ({
   </Popover>
 )
 
-export const ColumnDot = ({ column }: { column: BoardColumn }) => {
+/** A column's mark, always in the same 16px box so lists of columns line up. */
+export const ColumnDot = ({ column }: { column: BoardColumn }) => (
+  <span aria-hidden="true" className="grid size-4 shrink-0 place-items-center">
+    <ColumnMark column={column} />
+  </span>
+)
+
+const ColumnMark = ({ column }: { column: BoardColumn }) => {
   if (column._tag === "Status") {
     return (
       <span
@@ -219,7 +225,7 @@ const CARD_LINK = "a[data-card-link]"
 
 /**
  * Arrow keys move focus between cards: up and down within a column, left and right to the card
- * at the same height in the next column that has cards.
+ * at the same height in the next column that has cards. Home and End go to a column's ends.
  */
 const focusNeighbour = (link: HTMLElement, key: string) => {
   const column = link.closest("section")
@@ -227,6 +233,11 @@ const focusNeighbour = (link: HTMLElement, key: string) => {
   if (column == null || board == null) return false
   const links = [...column.querySelectorAll<HTMLElement>(CARD_LINK)]
   const index = links.indexOf(link)
+  if (key === "Home" || key === "End") {
+    const target = key === "Home" ? links[0] : links.at(-1)
+    target?.focus()
+    return target !== undefined
+  }
   if (key === "ArrowDown" || key === "ArrowUp") {
     const target = links[index + (key === "ArrowDown" ? 1 : -1)]
     target?.focus()
@@ -362,7 +373,12 @@ const CardContents = memo(function CardContents({
       setMenuOpen(true)
       return
     }
-    if (event.key.startsWith("Arrow") && !event.altKey && !event.metaKey && !event.ctrlKey) {
+    if (
+      (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End") &&
+      !event.altKey &&
+      !event.metaKey &&
+      !event.ctrlKey
+    ) {
       if (focusNeighbour(event.currentTarget, event.key)) event.preventDefault()
       return
     }
