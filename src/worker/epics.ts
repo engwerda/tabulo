@@ -9,7 +9,21 @@ export type EpicReference = RepoRef & { readonly number: number; readonly ref: s
 
 const MAX_CHILDREN = 200
 const NAME = "[A-Za-z0-9_.-]+"
-const SHORT_REF = new RegExp(`^(?:(?:(${NAME})/)?(${NAME}))?#([1-9][0-9]*)$`)
+const SHORT_REF = new RegExp(`^(?:(?:(${NAME})/)?(${NAME}))?#([1-9][0-9]*)(?![A-Za-z0-9])`)
+const ISSUE_PATH = new RegExp(`^/(${NAME})/(${NAME})/(?:issues|pulls)/([1-9][0-9]*)/?$`)
+const LIST_ITEM = /^(?:[-*+]|[0-9]{1,9}[.)])(?:[\t ]+|$)/
+const CHECKBOX = /^\[[ xX]\][\t ]+(\S+)/
+const FENCE = /^(`{3,}|~{3,})(.*)$/
+
+const indentOf = (line: string) => {
+  let column = 0
+  for (const char of line) {
+    if (char === " ") column++
+    else if (char === "\t") column += 4 - (column % 4)
+    else break
+  }
+  return column
+}
 
 export const parseEpicChildren = (
   body: string,
@@ -19,25 +33,44 @@ export const parseEpicChildren = (
   const base = new URL(forgejoUrl)
   const prefix = base.pathname.replace(/\/$/, "")
   const children = new Map<string, EpicReference>()
-  let fence: { marker: string; length: number } | undefined
-  for (const line of body.split(/\r?\n/)) {
-    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line)
+  // Content columns of the enclosing list items, innermost last. Code and fences are indented
+  // relative to the innermost one.
+  const items: Array<number> = []
+  let blank = false
+  let fence: { marker: string; length: number; indent: number } | undefined
+  for (const line of body.replace(/<!--[\s\S]*?-->/g, " ").split(/\r?\n/)) {
+    const indent = indentOf(line)
+    const text = line.trimStart()
     if (fence !== undefined) {
+      const close = FENCE.exec(text)
       if (
-        marker?.[1]?.[0] === fence.marker &&
-        marker[1].length >= fence.length &&
-        marker[2]?.trim() === ""
+        close?.[1]?.[0] === fence.marker &&
+        close[1].length >= fence.length &&
+        close[2]?.trim() === "" &&
+        indent - fence.indent <= 3
       )
         fence = undefined
       continue
     }
-    if (marker?.[1] !== undefined) {
-      fence = { marker: marker[1][0] ?? "", length: marker[1].length }
+    if (text === "") {
+      blank = true
       continue
     }
-    const task = /^\s*[-*+][\t ]+\[[ xX]\]\s+(\S+)(?:\s|$)/.exec(line)
-    if (task?.[1] === undefined) continue
-    const target = task[1].replace(/^<(.+)>$/, "$1")
+    const item = LIST_ITEM.exec(text)
+    if (item !== null || blank) while ((items.at(-1) ?? 0) > indent) items.pop()
+    blank = false
+    const container = items.at(-1) ?? 0
+    if (indent - container > 3) continue
+    const marker = FENCE.exec(text)?.[1]
+    if (marker !== undefined) {
+      fence = { marker: marker[0] ?? "", length: marker.length, indent: container }
+      continue
+    }
+    if (item === null) continue
+    items.push(indent + item[0].length)
+    const token = CHECKBOX.exec(text.slice(item[0].length))?.[1]
+    if (token === undefined) continue
+    const target = token.replace(/^[(<[*_]+/, "")
     let owner = repository.owner
     let name = repository.name
     let number: number
@@ -47,11 +80,11 @@ export const parseEpicChildren = (
       name = short[2] ?? name
       number = Number(short[3])
     } else {
-      if (!URL.canParse(target)) continue
-      const url = new URL(target)
+      const link = /^[^<>()[\]]+/.exec(target)?.[0].replace(/[.,:;!?*_]+$/, "") ?? ""
+      if (!URL.canParse(link)) continue
+      const url = new URL(link)
       if (url.origin !== base.origin || !url.pathname.startsWith(`${prefix}/`)) continue
-      const path = url.pathname.slice(prefix.length)
-      const issue = new RegExp(`^/(${NAME})/(${NAME})/issues/([1-9][0-9]*)/?$`).exec(path)
+      const issue = ISSUE_PATH.exec(url.pathname.slice(prefix.length))
       if (issue === null) continue
       owner = issue[1] ?? owner
       name = issue[2] ?? name

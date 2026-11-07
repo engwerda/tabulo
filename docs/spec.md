@@ -147,12 +147,16 @@ An epic is an issue bearing the full `EPIC_LABEL` name. The Epics view shares th
 organization and repository selection. It shows open epics and epics closed within
 `BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
 
-- **Children.** Task-list lines begin with `- [ ]`, `- [x]`, or the equivalent `*` or `+`
-  marker, followed by `#12`, `repo#12`, `owner/repo#12`, or an issue URL on `FORGEJO_URL`.
-  References may have trailing text. A bare number refers to the epic's repository, a repo-only
-  reference to its organization. The pure `parseEpicChildren` function in `src/worker/epics.ts`
-  ignores fenced code, preserves body order, deduplicates case-insensitively, and caps each
-  epic at 200 children. Forgejo dependencies do not create epic links.
+- **Children.** Task-list lines begin with `- [ ]`, `- [x]`, the equivalent `*` or `+`
+  marker, or an ordered marker such as `1. [ ]` or `1) [ ]`. The first word after the checkbox
+  is `#12`, `repo#12`, `owner/repo#12`, or an issue or pull request URL on `FORGEJO_URL`. It
+  may be wrapped in `(`, `<`, `[`, `*`, or `_` and followed by punctuation, so `#12: Login`,
+  `(#12)`, `**#12**`, and `[#12](…)` count. Only the first reference on a line counts. A bare
+  number refers to the epic's repository, a repo-only reference to its organization. The pure
+  `parseEpicChildren` function in `src/worker/epics.ts` ignores fenced and indented code
+  (indentation counts from the enclosing list item) and HTML comments, preserves body order,
+  deduplicates case-insensitively, and caps each epic at 200 children. Forgejo dependencies do
+  not create epic links.
 - **Progress.** Checkbox state is ignored. The child's real issue state and labels determine
   its column through `boardLayout`, including repository status labels matching an organization
   column. Every closed child is Done, however old. Pull request children are marked as pull

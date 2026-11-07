@@ -169,11 +169,13 @@ list children as tasks:
 - [x] web#34
 - [ ] other-owner/repo#56
 - [ ] https://your-forgejo.example/owner/repo/issues/78
+1. [ ] **#90**: Login page
 ```
 
 A bare number belongs to the epic's repository; `web#34` belongs to the same organization.
-Only task-list references count. Code fences and Forgejo dependencies do not create links.
-Tabulo keeps the first 200 unique references in body order.
+Only the first reference after a task checkbox counts, and pull request references count too.
+Code, HTML comments, and Forgejo dependencies do not create links. Tabulo keeps the first 200
+unique references in body order.
 
 Open **Epics**, choose an organization and repositories, then expand a card to see its children.
 The address `/epics/<org>?repos=<repo>,<repo>` keeps your selection, filters, and sort order,

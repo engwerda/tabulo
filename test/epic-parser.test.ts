@@ -14,6 +14,17 @@ describe("epic task-list references", () => {
     ["- [ ] https://forgejo.example/other/web/issues/12", "other/web#12"],
     ["- [ ] <https://forgejo.example/other/web/issues/12> details", "other/web#12"],
     ["- [ ] https://forgejo.example/other/web/issues/12#comment-1", "other/web#12"],
+    ["- [ ] https://forgejo.example/other/web/pulls/12", "other/web#12"],
+    ["- [ ] (https://forgejo.example/other/web/issues/12).", "other/web#12"],
+    ["- [ ] #12: Login page", "acme/api#12"],
+    ["- [ ] #12, #13", "acme/api#12"],
+    ["- [ ] #12.", "acme/api#12"],
+    ["- [ ] (#12)", "acme/api#12"],
+    ["- [ ] **#12** title", "acme/api#12"],
+    ["- [ ] _web#12_", "acme/web#12"],
+    ["- [ ] [#12](https://forgejo.example/acme/api/issues/12)", "acme/api#12"],
+    ["1. [ ] #12", "acme/api#12"],
+    ["10) [x] #12", "acme/api#12"],
   ])("parses %s", (line, ref) => expect(parse(line)).toEqual([ref]))
 
   it("deduplicates all forms and casing while preserving body order", () => {
@@ -37,7 +48,8 @@ describe("epic task-list references", () => {
     "- [ ] #9007199254740992",
     "- [ ] https://elsewhere.example/acme/api/issues/12",
     "- [ ] https://forgejo.example.evil/acme/api/issues/12",
-    "- [ ] https://forgejo.example/acme/api/pulls/12",
+    "- [ ] `#12`",
+    "1- [ ] #12",
     "- [ ] https://forgejo.example/api/v1/repos/acme/api/issues/12",
   ])("ignores invalid or non-task reference %s", (line) => expect(parse(line)).toEqual([]))
 
@@ -47,6 +59,30 @@ describe("epic task-list references", () => {
         "````md\n- [ ] #1\n```\n- [ ] #2\n````\n- [ ] #3\n  ~~~\n- [ ] #4\n  ~~~~\n- [ ] #5\n```\n- [ ] #6",
       ),
     ).toEqual(["acme/api#3", "acme/api#5"])
+  })
+
+  it("ignores indented code, fences inside list items, and HTML comments", () => {
+    expect(
+      parse(
+        [
+          "Notes",
+          "",
+          "    - [ ] #1",
+          "",
+          "- [ ] #2",
+          "    ```",
+          "    - [ ] #3",
+          "    ```",
+          "  - [ ] #4",
+          "    - [ ] #5",
+          "          - [ ] #6",
+          "<!--",
+          "- [ ] #7",
+          "-->",
+          "- [ ] <!-- #8 --> #9",
+        ].join("\n"),
+      ),
+    ).toEqual(["acme/api#2", "acme/api#4", "acme/api#5", "acme/api#9"])
   })
 
   it("handles CRLF and blank bodies", () => {
