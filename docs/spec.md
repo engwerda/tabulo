@@ -110,17 +110,21 @@ other repositories still show. Before it answers, it stores ranks in one D1 batc
   cards are ranked most recently updated first.
 - Rows of issues that a loaded repository no longer lists (closed before the Done window,
   deleted, or transferred) are deleted. Rows of other repositories are kept.
+- Neither step touches a row written after the read started. Such a row comes from a move made
+  while this read's Forgejo listing was already out of date.
 
-`POST /api/board/move` takes `{ org, repo, number, toColumn, afterKey, beforeKey }`. `afterKey`
+`POST /api/board/move` takes `{ org, repo, number, fromColumn, toColumn, afterKey, beforeKey }`.
+`fromColumn` is the column the client showed the card in. `afterKey`
 and `beforeKey` are the keys of the cards shown directly above and below the drop, or null.
 Keys are `owner/repo#number`, lowercased, in the request's organization, at most 200
 characters. The server:
 
 1. Answers 400 to an invalid key, and 403 unless the user is a member of the organization or
    if the repository is archived.
-2. Checks the neighbours against the stored ranks. If `afterKey` or `beforeKey` has no rank in
-   the destination column, or `beforeKey` sorts before `afterKey`, the user's board is out of
-   date: it answers 409 and changes nothing.
+2. Checks that the user's board is current. If Forgejo has the card in another column than
+   `fromColumn`, if `afterKey` or `beforeKey` has no rank in the destination column, or if
+   `beforeKey` sorts before `afterKey`, it answers 409 and changes nothing. Acting on the stale
+   view could undo someone else's change.
 3. If the column changes, writes to Forgejo as the user. To a status column it adds that label,
    and Forgejo removes the issue's other labels in the same exclusive scope. To Todo it removes
    each status column label. To Done it closes the issue. From Done it changes the labels

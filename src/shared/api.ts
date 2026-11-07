@@ -134,6 +134,8 @@ export const MoveCardRequest = Schema.Struct({
   org: Schema.String,
   repo: Schema.String,
   number: Schema.Int.check(Schema.isGreaterThan(0)),
+  /** The column the client showed the card in; a mismatch with Forgejo answers 409. */
+  fromColumn: Schema.String,
   toColumn: Schema.String,
   /** The key of the card shown directly above the drop, or null at the top of the column. */
   afterKey: Schema.NullOr(Schema.String),

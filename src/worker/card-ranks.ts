@@ -12,14 +12,16 @@ export class CardRanks extends Context.Service<
     readonly forOrg: (org: string) => Effect.Effect<ReadonlyMap<string, CardPlace>>
     /**
      * In one batch, stores `ranked` for cards that have no row or a row for another column,
-     * and deletes the rows of `removed`. A row that already names the card's column is kept,
-     * so a concurrent reader or mover is not overwritten.
+     * and deletes the rows of `removed`. Rows written at or after `readStartedAt` are left
+     * alone: they come from a move that happened while this reader's Forgejo listing was
+     * already out of date.
      */
     readonly materialize: (
       org: string,
       ranked: ReadonlyArray<RankedCard>,
       removed: ReadonlyArray<string>,
       updatedBy: string,
+      readStartedAt: number,
     ) => Effect.Effect<void>
     readonly place: (org: string, card: RankedCard, updatedBy: string) => Effect.Effect<void>
   }
@@ -83,7 +85,7 @@ export const makeCardRanks = (db: D1Database): CardRanks["Service"] => ({
 
   // One JSON parameter per statement keeps a board of any size within D1's limits on bound
   // parameters and statements per invocation.
-  materialize: (org, ranked, removed, updatedBy) =>
+  materialize: (org, ranked, removed, updatedBy, readStartedAt) =>
     Effect.gen(function* () {
       const statements: Array<D1PreparedStatement> = []
       if (ranked.length > 0) {
@@ -98,18 +100,20 @@ export const makeCardRanks = (db: D1Database): CardRanks["Service"] => ({
                ON CONFLICT (org, issue_key) DO UPDATE SET column_key = excluded.column_key,
                  rank = excluded.rank, updated_at = excluded.updated_at,
                  updated_by = excluded.updated_by
-               WHERE card_ranks.column_key <> excluded.column_key`,
+               WHERE card_ranks.column_key <> excluded.column_key
+                 AND card_ranks.updated_at < ?5`,
             )
-            .bind(org, now, updatedBy, JSON.stringify(ranked)),
+            .bind(org, now, updatedBy, JSON.stringify(ranked), readStartedAt),
         )
       }
       if (removed.length > 0) {
         statements.push(
           db
             .prepare(
-              "DELETE FROM card_ranks WHERE org = ?1 AND issue_key IN (SELECT value FROM json_each(?2))",
+              `DELETE FROM card_ranks WHERE org = ?1 AND updated_at < ?3
+               AND issue_key IN (SELECT value FROM json_each(?2))`,
             )
-            .bind(org, JSON.stringify(removed)),
+            .bind(org, JSON.stringify(removed), readStartedAt),
         )
       }
       if (statements.length > 0) yield* query(() => db.batch(statements))

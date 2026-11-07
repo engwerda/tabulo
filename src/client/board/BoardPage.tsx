@@ -180,6 +180,7 @@ export const BoardPage = ({ org }: { org: string }) => {
         org: board.data.org,
         repo: card.repo,
         number: card.number,
+        fromColumn: card.column,
         toColumn: cardMove.toColumn,
         afterKey: cardMove.afterKey,
         beforeKey: cardMove.beforeKey,

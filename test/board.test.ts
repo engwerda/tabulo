@@ -4,6 +4,7 @@ import { createFakeClock } from "./fake-clock.ts"
 import { createFakeForgejo } from "./fake-forgejo.ts"
 import {
   acme,
+  backlog,
   boardIssue,
   boardRepo,
   bug,
@@ -357,9 +358,12 @@ const rankRows = async () =>
     ).all()
   ).results
 
+const BOARD_COLUMN_LABELS = [backlog.name, inProgress.name, review.name]
+
 type MoveBody = {
   repo: string
   number: number
+  fromColumn?: string
   toColumn: string
   afterKey?: string | null
   beforeKey?: string | null
@@ -377,7 +381,16 @@ const boardSession = async (
   const clock = createFakeClock()
   const call = tabulo(forgejo.fetch, { clock: clock.clock, vars })
   const cookie = await signIn(call, forgejo)
-  const move = ({ afterKey = null, beforeKey = null, ...body }: MoveBody, as = cookie) =>
+  // Unless a test says otherwise, the client saw the card where Forgejo has it now.
+  const columnInForgejo = (repo: string, number: number) => {
+    const issue = forgejo.issue("acme", repo, number)
+    if (issue === undefined || issue.state === "closed") return "done"
+    return issue.labels.find((label) => BOARD_COLUMN_LABELS.includes(label.name))?.name ?? "todo"
+  }
+  const move = (
+    { afterKey = null, beforeKey = null, fromColumn, ...body }: MoveBody,
+    as = cookie,
+  ) =>
     call("/api/board/move", {
       method: "POST",
       headers: {
@@ -385,7 +398,13 @@ const boardSession = async (
         origin: "https://tabulo.example",
         "content-type": "application/json",
       },
-      body: JSON.stringify({ org: "acme", afterKey, beforeKey, ...body }),
+      body: JSON.stringify({
+        org: "acme",
+        afterKey,
+        beforeKey,
+        fromColumn: fromColumn ?? columnInForgejo(body.repo, body.number),
+        ...body,
+      }),
     })
   const board = async (as = cookie, repos = "api,web") =>
     (await (
@@ -753,8 +772,9 @@ describe("card order", () => {
 
   it("re-ranks a card moved in Forgejo and forgets issues gone from the selected repositories only", async () => {
     const org = orderOrg()
-    const { forgejo, board } = await boardSession({ orgs: [org] })
+    const { forgejo, clock, board } = await boardSession({ orgs: [org] })
     await board()
+    clock.advance(60_000)
     const issue = forgejo.issue("acme", "api", 1)
     if (issue === undefined) throw new Error("fixture has no acme/api#1")
     issue.labels = [inProgress]
