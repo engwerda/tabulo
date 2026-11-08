@@ -80,7 +80,6 @@ const useDocumentTitle = (title: string) => {
   }, [title])
 }
 
-/** A path segment as text; a malformed escape such as `/board/%` stays as typed. */
 const decodePathSegment = (segment: string) => {
   try {
     return decodeURIComponent(segment)
@@ -234,7 +233,6 @@ const useSignOut = () => {
   const toast = useToast()
   return useMutation({
     mutationFn: signOut,
-    // Someone who walks away from a shared computer must know they are still signed in.
     onError: (error) =>
       toast({ tone: "error", title: "You are still signed in", detail: sentence(error.message) }),
     onSuccess: () => {

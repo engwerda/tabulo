@@ -38,15 +38,15 @@ import { ColumnDot, LabelName, RepoIssueRef } from "./BoardCardView.tsx"
 import type { CardUpdate } from "./BoardPage.tsx"
 import { commentDraftKey, drafts } from "./drafts.ts"
 
-/**
- * Forgejo already sanitizes rendered Markdown; this keeps Tabulo safe if it ever does not. No
- * form control survives except a task list's checkbox, so no text can post as the reader.
- */
+const FORM_TAGS = ["button", "dialog", "form", "option", "select", "textarea"]
+const FORM_ATTRIBUTES = ["action", "formaction", "popover", "popovertarget"]
+
+/** Forgejo already sanitizes rendered Markdown; this keeps Tabulo safe if it ever does not. */
 const sanitize = (html: string) => {
   const content = DOMPurify.sanitize(html, {
     USE_PROFILES: { html: true },
-    FORBID_TAGS: ["button", "dialog", "form", "option", "select", "style", "textarea"],
-    FORBID_ATTR: ["action", "formaction", "popover", "popovertarget", "style"],
+    FORBID_TAGS: [...FORM_TAGS, "style"],
+    FORBID_ATTR: [...FORM_ATTRIBUTES, "style"],
     RETURN_DOM_FRAGMENT: true,
   })
   for (const link of content.querySelectorAll("a[href]")) {

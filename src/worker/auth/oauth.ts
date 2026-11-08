@@ -32,7 +32,6 @@ export const completeLogin = ({ code, state, browserState, previousSession }: Ca
     if (code === undefined || state === undefined) {
       return yield* new OAuthCallbackInvalid({ message: "code and state are required" })
     }
-    // Compared before the state is taken, so a callback from another browser cannot use it up.
     if (state !== browserState) return yield* new OAuthStateInvalid()
     const store = yield* SessionStore
     const codeVerifier = yield* store.takeOAuthState(state)

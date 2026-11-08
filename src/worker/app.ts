@@ -104,6 +104,11 @@ const cookieOptions = (maxAgeMs: number) =>
     maxAge: Math.floor(maxAgeMs / 1000),
   }) as const
 
+const sendsNonJsonBody = (contentType: string | undefined) =>
+  contentType !== undefined && !/^application\/json\s*(;|$)/i.test(contentType)
+
+const MAX_BODY_BYTES = 1024 * 1024
+
 const unauthenticated = (c: AppContext) => {
   if (getCookie(c, SESSION_COOKIE) !== undefined) {
     deleteCookie(c, SESSION_COOKIE, { path: "/", secure: true })
@@ -214,18 +219,15 @@ export const createApp = (dependencies: Dependencies) => {
     if (appOrigin === undefined || c.req.header("origin") !== appOrigin) {
       return c.json({ error: "Cross-origin request refused" }, 403)
     }
-    // An HTML form posts from Tabulo's own origin too, but it cannot send a JSON body.
-    const type = c.req.header("content-type")
-    if (type !== undefined && !/^application\/json\s*(;|$)/i.test(type)) {
+    if (sendsNonJsonBody(c.req.header("content-type"))) {
       return c.json({ error: "Send the request body as application/json" }, 415)
     }
     return next()
   })
 
-  // The largest body Tabulo takes is a comment of 65,535 characters.
   app.use(
     bodyLimit({
-      maxSize: 1024 * 1024,
+      maxSize: MAX_BODY_BYTES,
       onError: (c) => c.json({ error: "The request body is too large" }, 413),
     }),
   )

@@ -215,7 +215,6 @@ describe("POST /auth/logout", () => {
     expect((await call("/api/me", { headers: { cookie } })).status).toBe(200)
   })
 
-  // A form in rendered Markdown would post from Tabulo's own origin; forms cannot send JSON.
   it.each(["application/x-www-form-urlencoded", "multipart/form-data; boundary=x", "text/plain"])(
     "refuses a %s body from Tabulo's own Origin and keeps the session",
     async (type) => {
@@ -346,17 +345,14 @@ describe("state-changing requests", () => {
 describe("request bodies", () => {
   it("refuses a body over 1 MB before reading it", async () => {
     const forgejo = createFakeForgejo()
-    const call = tabulo(forgejo.fetch)
-    const cookie = await signIn(call, forgejo)
-    const before = forgejo.requests.length
 
-    const response = await call("/api/board/comment", {
+    const response = await tabulo(forgejo.fetch)("/api/board/comment", {
       method: "POST",
-      headers: { cookie, origin: APP_URL, "content-type": "application/json" },
+      headers: { origin: APP_URL, "content-type": "application/json" },
       body: JSON.stringify({ org: "acme", repo: "api", number: 1, body: "x".repeat(1024 * 1024) }),
     })
 
     expect(response.status).toBe(413)
-    expect(forgejo.requests.length).toBe(before)
+    expect(forgejo.requests).toEqual([])
   })
 })

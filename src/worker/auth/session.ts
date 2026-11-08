@@ -34,10 +34,6 @@ const awaitConcurrentRefresh = (session: Session) =>
     ),
   )
 
-/**
- * The session with the user as Forgejo names them now, so a rename reaches Tabulo within one
- * access token's lifetime. A failed read keeps the stored user.
- */
 const reloadUser = (session: Session) =>
   Effect.gen(function* () {
     const forgejo = yield* ForgejoClient
