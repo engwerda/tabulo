@@ -282,8 +282,8 @@ export const Popover = ({
           <div
             ref={panel}
             id={panelId}
-            // Transparent rather than `visibility: hidden` while it is measured: under reduced
-            // motion every property transitions for 1ms, and a still-hidden panel refuses focus.
+            // Transparent rather than `visibility: hidden` while it is measured: a hidden panel
+            // refuses focus until its visibility has finished changing.
             style={position ?? { opacity: 0, pointerEvents: "none", top: 0, left: 0 }}
             // A press inside the panel must not reach a draggable card around its trigger.
             onMouseDown={(event) => event.stopPropagation()}

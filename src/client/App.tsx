@@ -257,7 +257,11 @@ const Header = ({ user, logout }: { user: User; logout: ReturnType<typeof useSig
     <header className="sticky top-0 z-30 border-b border-zinc-200/80 bg-white/80 backdrop-blur-lg dark:border-zinc-800/80 dark:bg-zinc-950/80">
       <div className="flex h-14 items-center justify-between gap-3 px-4 sm:gap-4 sm:px-6">
         <div className="flex min-w-0 items-center gap-3 sm:gap-6">
-          <Link href="/" className="flex items-center gap-2 rounded-lg" aria-label="Tabulo home">
+          <Link
+            href="/"
+            className={`flex items-center gap-2 rounded-lg ${touchTarget}`}
+            aria-label="Tabulo home"
+          >
             <LogoMark />
             <span className="text-[0.9375rem] font-semibold tracking-tight max-md:hidden">
               Tabulo

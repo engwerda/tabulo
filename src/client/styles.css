@@ -152,8 +152,10 @@
   ::after {
     /* biome-ignore lint/complexity/noImportantStyles: reduced motion must win over every animation */
     animation-duration: 1ms !important;
+    /* No transition at all, rather than a 1ms one: code that measures layout right after a
+       change must see the final state, and nothing waits on transitionend. */
     /* biome-ignore lint/complexity/noImportantStyles: reduced motion must win over every transition */
-    transition-duration: 1ms !important;
+    transition-duration: 0s !important;
   }
 }
 

@@ -12,7 +12,9 @@ export const IssueRef = ({
   number: number
   className?: string
 }) => (
-  <span className={`whitespace-nowrap tabular-nums ${className}`}>
-    {repo}#{number}
+  <span className={`inline-flex min-w-0 whitespace-nowrap tabular-nums ${className}`}>
+    {/* A long repository name gives way before the number does. */}
+    <span className="truncate">{repo}</span>
+    <span className="shrink-0">#{number}</span>
   </span>
 )
