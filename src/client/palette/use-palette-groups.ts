@@ -1,7 +1,16 @@
 import { useQuery } from "@tanstack/react-query"
 import { useEffect, useMemo, useState } from "react"
-import type { DashboardItem } from "../../shared/api.ts"
-import { fetchDashboard, fetchInstance, fetchOrgRepos, fetchOrgs, fetchSearch } from "../api.ts"
+import { useRoute, useSearchParams } from "wouter"
+import type { BoardCard, DashboardItem } from "../../shared/api.ts"
+import {
+  fetchBoard,
+  fetchDashboard,
+  fetchInstance,
+  fetchOrgRepos,
+  fetchOrgs,
+  fetchSearch,
+} from "../api.ts"
+import { boardQueryKey } from "../board/board-view.ts"
 import { DASHBOARD } from "../Dashboard.tsx"
 import { ORGS } from "../scope/OrgPicker.tsx"
 import { readRememberedRepos, useLastScope } from "../scope/remembered.ts"
@@ -34,6 +43,10 @@ export type PaletteItem = Searchable & {
   readonly current?: boolean
   readonly shortcut?: ShortcutId
   readonly external?: boolean
+  /** What Enter does, when it is not "Select" or, for an external item, opening a new tab. */
+  readonly enterLabel?: string
+  /** A second way to open the item, with Ctrl or Cmd and Enter or a click. */
+  readonly alternate?: { readonly label: string; readonly run: (context: RunContext) => void }
   /** Items of the issue search are not remembered: they are not there when the query is empty. */
   readonly remember: boolean
   readonly run: (context: RunContext) => void
@@ -70,20 +83,37 @@ const VIEW_SHORTCUTS: Record<OrgViewId, ShortcutId> = {
 
 const openExternal = (url: string) => window.open(url, "_blank", "noopener,noreferrer")
 
+/** The board on screen, and the address that opens one of its cards in the side panel. */
+type OpenBoard = {
+  readonly cards: ReadonlyMap<string, BoardCard>
+  readonly cardHref: (card: BoardCard) => string
+}
+
 const issueItem = (
   item: DashboardItem,
   id: string,
+  board: OpenBoard | undefined,
   extra: { readonly keywords?: string; readonly hint?: string; readonly remember: boolean },
-): PaletteItem => ({
-  id,
-  title: item.title,
-  subtitle: `${item.repo}#${item.number}`,
-  icon: item.kind,
-  kind: { type: item.kind, state: item.state },
-  external: true,
-  run: () => openExternal(item.url),
-  ...extra,
-})
+): PaletteItem => {
+  const base = {
+    id,
+    title: item.title,
+    subtitle: `${item.repo}#${item.number}`,
+    icon: item.kind,
+    kind: { type: item.kind, state: item.state },
+    ...extra,
+  }
+  const card = board?.cards.get(`${item.repo}#${item.number}`.toLowerCase())
+  if (board === undefined || card === undefined) {
+    return { ...base, external: true, run: () => openExternal(item.url) }
+  }
+  return {
+    ...base,
+    enterLabel: "Open on the board",
+    alternate: { label: "Open in Forgejo", run: () => openExternal(item.url) },
+    run: ({ navigate }) => navigate(board.cardHref(card)),
+  }
+}
 
 const WORK_SECTIONS = [
   { key: "reviewRequests", label: "Review requested" },
@@ -112,6 +142,31 @@ export const usePaletteGroups = (query: string, active: boolean) => {
     enabled: active,
     staleTime: Number.POSITIVE_INFINITY,
   })
+
+  // On a board, an issue that is one of its cards opens in the board's side panel.
+  const [onBoard, boardParams] = useRoute("/board/:org")
+  const boardOrg = onBoard ? boardParams.org : undefined
+  const [params] = useSearchParams()
+  const boardRepos = parseRepos(params.get("repos"))
+  // The board's own query; the palette only reads what the board has loaded.
+  const board = useQuery({
+    queryKey: boardQueryKey(boardOrg ?? "", boardRepos.join(",")),
+    queryFn: () => fetchBoard(boardOrg ?? "", boardRepos),
+    enabled: false,
+  })
+  const boardData = board.data
+  const boardSearch = params.toString()
+  const openBoard = useMemo((): OpenBoard | undefined => {
+    if (boardOrg === undefined || boardData === undefined) return undefined
+    return {
+      cards: new Map(boardData.cards.map((card) => [card.key.toLowerCase(), card])),
+      cardHref: (card) => {
+        const next = new URLSearchParams(boardSearch)
+        next.set("card", `${card.repo}#${card.number}`)
+        return `/board/${encodeURIComponent(boardOrg)}?${next}`
+      },
+    }
+  }, [boardOrg, boardData, boardSearch])
 
   const text = query.trim()
   const debounced = useDebounced(text)
@@ -186,14 +241,15 @@ export const usePaletteGroups = (query: string, active: boolean) => {
     }
 
     const repositories: Array<PaletteItem> = []
+    const orgName = orgList?.find((entry) => entry.name === org)?.fullName || org
     if (org !== undefined) {
       const active = (repos.data ?? []).filter((repo) => !repo.archived)
       for (const repo of active) {
         repositories.push({
           id: `repo:board:${repo.fullName}`,
           title: repo.name,
-          subtitle: `${org} · Open its board`,
-          keywords: "board repository",
+          subtitle: "Open its board",
+          keywords: `board repository ${org} ${orgName}`,
           icon: "repository",
           remember: true,
           run: ({ navigate }) => navigate(orgViewHref("board", org, [repo.name])),
@@ -204,8 +260,8 @@ export const usePaletteGroups = (query: string, active: boolean) => {
           repositories.push({
             id: `repo:forgejo:${repo.fullName}`,
             title: repo.name,
-            subtitle: `${org} · Open in Forgejo`,
-            keywords: "forgejo repository open",
+            subtitle: "Open in Forgejo",
+            keywords: `forgejo repository open ${org} ${orgName}`,
             icon: "external",
             external: true,
             remember: true,
@@ -224,7 +280,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
         if (seen.has(item.url)) continue
         seen.add(item.url)
         work.push(
-          issueItem(item, `work:${item.url}`, {
+          issueItem(item, `work:${item.url}`, openBoard, {
             keywords: label,
             hint: label,
             remember: true,
@@ -282,7 +338,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
     ]
 
     const issues: ReadonlyArray<PaletteItem> = (searchItems ?? []).map((item) => ({
-      ...issueItem(item, `issue:${item.url}`, { remember: false }),
+      ...issueItem(item, `issue:${item.url}`, openBoard, { remember: false }),
       ...(seen.has(item.url) ? { sameAs: `work:${item.url}` } : {}),
     }))
 
@@ -298,7 +354,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
       { id: "work", heading: "Your work", items: work, limit: 5, emptyLimit: 4, filter: true },
       {
         id: "repositories",
-        heading: org === undefined ? "Repositories" : `Repositories in ${org}`,
+        heading: orgName === undefined ? "Repositories" : `Repositories in ${orgName}`,
         items: repositories,
         limit: 6,
         emptyLimit: 5,
@@ -314,7 +370,17 @@ export const usePaletteGroups = (query: string, active: boolean) => {
         filter: false,
       },
     ]
-  }, [lastScope, orgList, org, repos.data, forgejoUrl, dashboardData, searchItems, currentTheme])
+  }, [
+    lastScope,
+    orgList,
+    org,
+    repos.data,
+    forgejoUrl,
+    dashboardData,
+    searchItems,
+    currentTheme,
+    openBoard,
+  ])
 
   const status: SearchStatus = !searching
     ? "idle"

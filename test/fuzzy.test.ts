@@ -41,6 +41,27 @@ describe("fuzzyMatch", () => {
     expect(fuzzyMatch("ca", "acme/cab")?.indices).toEqual([5, 6])
   })
 
+  it("rejects scattered letters inside words once a term has three characters", () => {
+    expect(fuzzyMatch("cache", "Add rate limiting to the public search endpoint")).toBeNull()
+    expect(fuzzyMatch("rate", "Cache organization labels for a minute")).toBeNull()
+    expect(fuzzyMatch("brd", "Show keyboard shortcuts")).toBeNull()
+    expect(fuzzyMatch("cache", "Cache organization labels")?.indices).toEqual([0, 1, 2, 3, 4])
+  })
+
+  it("keeps runs of two or more and word starts in a term of three characters", () => {
+    expect(fuzzyMatch("dsh", "Dashboard")?.indices).toEqual([0, 2, 3])
+    expect(fuzzyMatch("rlw", "Rate limit the webhook")?.indices).toEqual([0, 5, 15])
+    expect(fuzzyMatch("brd", "Go to Board")?.indices).toEqual([6, 9, 10])
+  })
+
+  it("finds the sound placement when the best-scoring letters would be scattered", () => {
+    expect(fuzzyMatch("abc", "Abxc zbc")?.indices).toEqual([0, 6, 7])
+  })
+
+  it("still matches scattered letters in a term of one or two characters", () => {
+    expect(fuzzyMatch("ce", "public search")?.indices).toEqual([5, 8])
+  })
+
   it("requires every space-separated term, in any order", () => {
     expect(fuzzyMatch("limit rate", "Rate limit the webhook")?.indices).toEqual([
       0, 1, 2, 3, 5, 6, 7, 8, 9,

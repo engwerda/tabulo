@@ -4,7 +4,7 @@ import { useLocation } from "wouter"
 import { CheckIcon } from "../ui/icons.tsx"
 import { buttonClass, Kbd } from "../ui/primitives.tsx"
 import { Glyph, SearchIcon } from "./icons.tsx"
-import { Key, ShortcutKeys } from "./keys.tsx"
+import { isMac, Key, ShortcutKeys } from "./keys.tsx"
 import { rankSections } from "./rank.ts"
 import { readRecent, rememberCommand } from "./recent.ts"
 import { type PaletteItem, type RunContext, usePaletteGroups } from "./use-palette-groups.ts"
@@ -88,7 +88,7 @@ type OptionProps = {
   readonly subtitleIndices: ReadonlyArray<number>
   readonly active: boolean
   readonly onHover: () => void
-  readonly onChoose: () => void
+  readonly onChoose: (alternate: boolean) => void
 }
 
 const Option = ({
@@ -109,7 +109,7 @@ const Option = ({
     data-active={active ? "" : undefined}
     onMouseMove={onHover}
     onMouseDown={(event) => event.preventDefault()}
-    onClick={onChoose}
+    onClick={(event) => onChoose(event.metaKey || event.ctrlKey)}
     className="group flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2 data-active:bg-zinc-100 dark:data-active:bg-zinc-800"
   >
     <span className="grid size-7 shrink-0 place-items-center rounded-md border border-zinc-200 bg-white text-zinc-500 group-data-active:text-zinc-900 dark:border-zinc-700/80 dark:bg-zinc-900 dark:text-zinc-400 dark:group-data-active:text-zinc-100">
@@ -221,7 +221,7 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
     return () => window.clearTimeout(timer)
   }, [notice, onClose])
 
-  const choose = (item: PaletteItem) => {
+  const choose = (item: PaletteItem, alternate = false) => {
     if (item.remember) rememberCommand(item.id)
     let reporting = false
     const context: RunContext = {
@@ -236,7 +236,8 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
         )
       },
     }
-    item.run(context)
+    const run = (alternate ? item.alternate?.run : undefined) ?? item.run
+    run(context)
     if (!reporting) onClose()
   }
 
@@ -249,6 +250,7 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.nativeEvent.isComposing) return
     const control = event.ctrlKey && !event.metaKey && !event.altKey
+    const modified = event.metaKey || event.ctrlKey
     if (event.key === "ArrowDown" || (control && event.key === "n")) {
       event.preventDefault()
       move(1)
@@ -257,7 +259,7 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
       move(-1)
     } else if (event.key === "Enter" && event.target === input.current) {
       event.preventDefault()
-      if (active !== undefined) choose(active.item)
+      if (active !== undefined) choose(active.item, modified)
     } else if (event.key === "Escape") {
       event.preventDefault()
       event.stopPropagation()
@@ -372,7 +374,7 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
                         subtitleIndices={row.subtitleIndices}
                         active={index === activeIndex}
                         onHover={() => setActiveId(row.item.id)}
-                        onChoose={() => choose(row.item)}
+                        onChoose={(alternate) => choose(row.item, alternate)}
                       />
                     )
                   })}
@@ -425,8 +427,16 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
               </span>
               <span className="flex items-center gap-1.5">
                 <Key name="↵" />
-                {active?.item.external === true ? "Open in a new tab" : "Select"}
+                {active?.item.enterLabel ??
+                  (active?.item.external === true ? "Open in a new tab" : "Select")}
               </span>
+              {active?.item.alternate !== undefined && (
+                <span className="flex items-center gap-1.5">
+                  <Key name={isMac ? "⌘" : "Ctrl"} />
+                  <Key name="↵" />
+                  {active.item.alternate.label}
+                </span>
+              )}
             </span>
           ) : (
             <span

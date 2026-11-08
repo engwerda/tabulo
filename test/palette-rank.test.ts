@@ -117,6 +117,24 @@ describe("rankSections", () => {
     ])
   })
 
+  it("leaves out an item whose only match is scattered letters", () => {
+    const work = group("work", [
+      { id: "work:cache", title: "Cache organization labels", subtitle: "acme/api#78" },
+      { id: "work:rate", title: "Add rate limiting to the public search endpoint" },
+    ])
+    expect(ids(rankSections("cache", [work], []))).toEqual([["work", ["work:cache"]]])
+  })
+
+  it("highlights nothing in a server result whose text has only scattered letters", () => {
+    const issues = group(
+      "issues",
+      [{ id: "issue:1", title: "Add rate limiting to the public search endpoint" }],
+      { filter: false },
+    )
+    const [section] = rankSections("cache", [issues], [])
+    expect(section?.rows[0]?.titleIndices).toEqual([])
+  })
+
   it("limits each group", () => {
     const many = group(
       "repositories",
