@@ -9,7 +9,7 @@ import { SectionCard } from "./SectionCard.tsx"
 import { useViewer } from "./session.ts"
 import { ErrorNotice } from "./ui/ErrorNotice.tsx"
 import { AtIcon, BellIcon, IssueOpenIcon, PullIcon, RefreshIcon, UserIcon } from "./ui/icons.tsx"
-import { buttonClass, cardClass } from "./ui/primitives.tsx"
+import { buttonClass, cardClass, pageContainer } from "./ui/primitives.tsx"
 
 export const DASHBOARD = ["dashboard"] as const
 
@@ -126,7 +126,7 @@ const Summary = ({ data }: { data: Dashboard }) => {
             <li key={key}>
               <a
                 href={`#${SECTIONS[key].id}`}
-                className="inline-block rounded-md px-0.5 underline-offset-4 transition-colors pointer-coarse:py-2.5 hover:text-zinc-900 hover:underline focus-visible:outline-2 focus-visible:outline-indigo-500 dark:hover:text-zinc-100"
+                className="inline-block rounded-md px-0.5 underline-offset-4 transition-colors pointer-coarse:py-3 hover:text-zinc-900 hover:underline focus-visible:outline-2 focus-visible:outline-indigo-500 dark:hover:text-zinc-100"
               >
                 <span className="font-semibold text-zinc-900 tabular-nums dark:text-zinc-100">
                   {count}
@@ -237,7 +237,7 @@ export const DashboardView = () => {
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 pt-6 pb-10 sm:px-6 sm:pt-8">
+    <main className={`${pageContainer} pt-6 pb-10 sm:pt-8`}>
       <header className="mb-6 sm:mb-8">
         <div className="flex h-8 items-center justify-between gap-3">
           <p className="text-2xs font-medium tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
@@ -249,15 +249,18 @@ export const DashboardView = () => {
                 Updated {relativeTime(new Date(dashboard.dataUpdatedAt).toISOString())}
               </span>
             )}
-            <button
-              type="button"
-              onClick={refresh}
-              disabled={refreshing}
-              className={`${buttonClass.ghost} -mr-2.5`}
-            >
-              <RefreshIcon className={`size-4 ${refreshing ? "animate-spin" : ""}`} />
-              Refresh
-            </button>
+            {/* With nothing loaded, the error notice's Retry is the one way to try again. */}
+            {!(dashboard.data === undefined && dashboard.isError) && (
+              <button
+                type="button"
+                onClick={refresh}
+                disabled={refreshing}
+                className={`${buttonClass.ghost} -mr-2.5`}
+              >
+                <RefreshIcon className={`size-4 ${refreshing ? "animate-spin" : ""}`} />
+                Refresh
+              </button>
+            )}
           </div>
         </div>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">

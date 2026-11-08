@@ -10,7 +10,7 @@ import { ScopeBar } from "../scope/ScopeBar.tsx"
 import { useRepoSelection } from "../scope/use-repo-selection.ts"
 import { ErrorNotice } from "../ui/ErrorNotice.tsx"
 import { PageTitle } from "../ui/PageTitle.tsx"
-import { buttonClass, cardClass, Segmented } from "../ui/primitives.tsx"
+import { buttonClass, cardClass, pageContainer, Segmented } from "../ui/primitives.tsx"
 import { InsightsDashboard } from "./InsightsDashboard.tsx"
 import { incompleteNotice, insightsSummary, RANGE_LABELS } from "./summary.ts"
 
@@ -144,7 +144,7 @@ export const InsightsPage = ({ org }: { org: string }) => {
 
   return (
     <main>
-      <div className="mx-auto max-w-screen-2xl px-4 pb-8 sm:px-6">
+      <div className={`${pageContainer} pb-8`}>
         <ScopeBar org={org} view="insights" repoSelection={repoSelection} />
         <PageTitle
           title="Insights"

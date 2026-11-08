@@ -104,22 +104,35 @@ export const ItemRow = ({ item, alsoIn }: { item: DashboardItem; alsoIn?: string
   </div>
 )
 
-export const NotificationRow = ({ notification }: { notification: NotificationItem }) => (
-  <div className={rowClass}>
-    <span className={glyphClass}>{SUBJECT_ICONS[notification.subjectType] ?? <BellIcon />}</span>
-    <div className="min-w-0 flex-1">
-      {notification.url === "" ? (
-        <p className={titleClass}>{notification.title}</p>
-      ) : (
-        <a href={notification.url} className={`block ${titleClass} ${stretchedLink}`}>
-          {notification.title}
-        </a>
-      )}
-      <p className={`truncate ${metaClass}`}>
-        <span className={refClass}>{notification.repo}</span> ·{" "}
-        {SUBJECT_NAMES[notification.subjectType] ?? notification.subjectType} ·{" "}
-        <Updated iso={notification.updatedAt} />
-      </p>
+/** A notification names no number, but an issue's or pull request's address ends in one. */
+const numberIn = (url: string) => {
+  const match = /\/(?:issues|pulls)\/(\d+)(?:[/?#]|$)/.exec(url)
+  return match?.[1] === undefined ? null : Number(match[1])
+}
+
+export const NotificationRow = ({ notification }: { notification: NotificationItem }) => {
+  const number = numberIn(notification.url)
+  return (
+    <div className={rowClass}>
+      <span className={glyphClass}>{SUBJECT_ICONS[notification.subjectType] ?? <BellIcon />}</span>
+      <div className="min-w-0 flex-1">
+        {notification.url === "" ? (
+          <p className={titleClass}>{notification.title}</p>
+        ) : (
+          <a href={notification.url} className={`block ${titleClass} ${stretchedLink}`}>
+            {notification.title}
+          </a>
+        )}
+        <p className={`truncate ${metaClass}`}>
+          {number === null ? (
+            <span className={refClass}>{notification.repo}</span>
+          ) : (
+            <IssueRef repo={notification.repo} number={number} className={refClass} />
+          )}{" "}
+          · {SUBJECT_NAMES[notification.subjectType] ?? notification.subjectType} ·{" "}
+          <Updated iso={notification.updatedAt} />
+        </p>
+      </div>
     </div>
-  </div>
-)
+  )
+}

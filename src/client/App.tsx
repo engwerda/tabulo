@@ -98,6 +98,30 @@ const useRouteTitle = () => {
   )
 }
 
+// Sign-in always lands on "/", so the address a signed-out visitor opened, such as a shared card
+// link, waits here for the trip through Forgejo.
+const RETURN_KEY = "tabulo.returnTo"
+
+const rememberReturn = () => {
+  const here = `${window.location.pathname}${window.location.search}`
+  try {
+    if (here !== "/") sessionStorage.setItem(RETURN_KEY, here)
+  } catch {}
+}
+
+/** Goes back to the remembered address once signed in; only a path on this origin. */
+const useReturnAfterSignIn = () => {
+  const [, navigate] = useLocation()
+  useEffect(() => {
+    let saved: string | null = null
+    try {
+      saved = sessionStorage.getItem(RETURN_KEY)
+      sessionStorage.removeItem(RETURN_KEY)
+    } catch {}
+    if (saved !== null && /^\/(?![/\\])/.test(saved)) navigate(saved, { replace: true })
+  }, [navigate])
+}
+
 const SignIn = () => {
   useDocumentTitle("Sign in")
   return <SignInPage />
@@ -136,6 +160,7 @@ const SignInPage = () => (
       </ul>
       <a
         href="/auth/login"
+        onClick={rememberReturn}
         className={`${buttonClass.primary} mt-10 h-11 w-full text-[0.9375rem] sm:w-auto sm:self-start sm:px-6`}
       >
         Sign in with Forgejo
@@ -397,6 +422,7 @@ const ViewLoading = () => (
 const SignedIn = ({ user }: { user: User }) => {
   const [location] = useLocation()
   useRouteTitle()
+  useReturnAfterSignIn()
   const logout = useSignOut()
   return (
     <PaletteProvider signOut={() => logout.mutate()}>

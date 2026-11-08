@@ -35,6 +35,12 @@ export const buttonClass = {
   iconSmall: `inline-flex size-7 shrink-0 items-center justify-center rounded-md text-zinc-500 transition hover:bg-zinc-200/70 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 ${touchTarget}`,
 } as const
 
+/**
+ * The width and side gutters of every page but the full-bleed board, so content keeps its left
+ * edge when switching views.
+ */
+export const pageContainer = "mx-auto w-full max-w-screen-2xl px-4 sm:px-6"
+
 /** The surface of every card and section on a page. Floating panels use `panelClass`. */
 export const cardClass =
   "rounded-xl border border-zinc-200/80 bg-white shadow-card dark:border-zinc-800 dark:bg-zinc-900"
@@ -407,8 +413,8 @@ export const Segmented = <T extends string>({
           onClick={() => onChange(option.value)}
           className={`inline-flex items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap tabular-nums transition ${
             size === "sm"
-              ? "h-6 px-2 text-xs pointer-coarse:h-11 pointer-coarse:px-3"
-              : "h-7 px-2.5 text-sm pointer-coarse:h-11 pointer-coarse:px-3"
+              ? "h-6 px-2 text-xs pointer-coarse:h-11 pointer-coarse:min-w-11 pointer-coarse:px-3"
+              : "h-7 px-2.5 text-sm pointer-coarse:h-11 pointer-coarse:min-w-11 pointer-coarse:px-3"
           } ${
             selected
               ? "bg-white text-zinc-900 shadow-card ring-1 ring-zinc-900/5 dark:bg-zinc-700 dark:text-zinc-50 dark:ring-white/5"

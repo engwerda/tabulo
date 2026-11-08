@@ -97,7 +97,8 @@ export const RepoPicker = ({ repos, selected, onChange, open, onOpenChange }: Re
         if (!next) setSearch("")
       }}
       triggerClass={`${buttonClass.secondary} min-w-0 max-w-60 shrink-0`}
-      accessibleLabel={`Repositories: ${selected.length} of ${repos.length} chosen`}
+      // Starts with what the button shows, so a voice command naming the visible text finds it.
+      accessibleLabel={`${summary}: ${selected.length} of ${repos.length} chosen`}
       label={
         <>
           <RepoIcon className="size-4 opacity-70" />
