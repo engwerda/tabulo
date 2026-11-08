@@ -1,14 +1,18 @@
-import type {
-  AttentionItem,
-  AttentionKind,
-  Bucket,
-  CiSummary,
-  HealthStatus,
-  IncompleteListing,
-  InsightDays,
-  Insights,
-  Language,
-  RepoInsight,
+import {
+  type AttentionItem,
+  type AttentionKind,
+  type Bucket,
+  type CiSummary,
+  type HealthStatus,
+  INSIGHT_GRAIN,
+  type IncompleteListing,
+  type InsightDays,
+  type InsightGrain,
+  type Insights,
+  type Language,
+  type Person,
+  type RepoInsight,
+  type UnscoredRule,
 } from "../shared/api.ts"
 import {
   type ForgejoActionRun,
@@ -18,9 +22,10 @@ import {
   type ForgejoMilestone,
   labelHexColor,
 } from "./forgejo/schemas.ts"
-import { addDays, DAY_MS, startOfDay, weekStart, zonedTime } from "./time-zone.ts"
+import { addDays, DAY_MS, startOfDay, weekStart, type ZonedTime, zonedTime } from "./time-zone.ts"
 
-const HOUR_MS = 60 * 60 * 1000
+const MINUTE_MS = 60 * 1000
+const HOUR_MS = 60 * MINUTE_MS
 
 /** What Tabulo reads from Forgejo for one repository. */
 export type RepoActivity = {
@@ -40,6 +45,8 @@ export type InsightsInput = {
   readonly repos: ReadonlyArray<string>
   readonly days: InsightDays
   readonly tz: string
+  /** The login to narrow the numbers to, matched case-insensitively; null for everyone. */
+  readonly user: string | null
   /** Epoch milliseconds. */
   readonly now: number
   readonly loaded: ReadonlyArray<RepoActivity>
@@ -48,8 +55,6 @@ export type InsightsInput = {
   /** The board's status label scope; those labels are columns, not topics, so Top labels skips them. */
   readonly statusScope: string
 }
-
-type Person = { readonly login: string; readonly avatarUrl: string }
 
 /** An issue or pull request with its times parsed to epoch milliseconds. */
 type Item = {
@@ -311,7 +316,11 @@ export const repoHealth = (facts: RepoFacts): RepoInsight["health"] => {
   )
   const score = Math.max(0, 100 - penalties.reduce((total, { penalty }) => total + penalty, 0))
   const status: HealthStatus = score >= 80 ? "strong" : score >= 60 ? "watch" : "risky"
-  return { score, status, reasons: penalties.map(({ reason }) => reason) }
+  const unscored: Array<UnscoredRule> = [
+    ...(facts.ciSuccessRate === null ? ["ci" as const] : []),
+    ...(facts.medianMergeHours === null ? ["merges" as const] : []),
+  ]
+  return { score, status, reasons: penalties.map(({ reason }) => reason), unscored }
 }
 
 /** The workflows whose latest finished run on the default branch failed. */
@@ -343,40 +352,100 @@ const failingWorkflows = (repo: ForgejoInsightRepo, runs: ReadonlyArray<Run>, no
   })
 }
 
+/** Where one period of a series starts; `key` is the `start` that the payload shows. */
+type PeriodStart = { readonly key: string; readonly start: number }
+
+/** For each grain, the period that holds an instant and the period after a period, in `tz`. */
+const grainSteps = (
+  tz: string,
+  zoned: (time: number) => ZonedTime,
+): Record<
+  InsightGrain,
+  {
+    readonly holding: (time: number) => PeriodStart
+    readonly next: (period: PeriodStart) => PeriodStart
+  }
+> => {
+  const dayStart = startOfDay(tz)
+  const hour = (start: number) => ({ key: new Date(start).toISOString(), start })
+  const day = (date: string) => ({ key: date, start: dayStart(date) })
+  return {
+    hour: {
+      // Offsets are whole minutes, so local seconds are UTC seconds.
+      holding: (time) => hour(time - zoned(time).minute * MINUTE_MS - (time % MINUTE_MS)),
+      next: (period) => hour(period.start + HOUR_MS),
+    },
+    day: {
+      holding: (time) => day(zoned(time).date),
+      next: (period) => day(addDays(period.key, 1)),
+    },
+    week: {
+      holding: (time) => day(weekStart(zoned(time))),
+      next: (period) => day(addDays(period.key, 7)),
+    },
+  }
+}
+
 /**
- * The shown window runs from midnight on the Monday of the week `days` days ago, in `tz`, to
- * now. `first` is that Monday. The window before it is as long and ends where it starts.
+ * The shown window runs from the start of the hour, day, or week (`INSIGHT_GRAIN`) that holds
+ * the moment `days` days ago, in `tz`, to now, so every period in it is whole but the current
+ * one. `periods` lists them oldest first and `first` is the window's first date. The window
+ * before it is as long and ends where it starts.
  */
 export const insightPeriods = (now: number, days: InsightDays, tz: string) => {
-  const first = weekStart(zonedTime(tz)(now - days * DAY_MS))
-  const start = startOfDay(tz, first)
+  const grain = INSIGHT_GRAIN[days]
+  const zoned = zonedTime(tz)
+  const { holding, next } = grainSteps(tz, zoned)[grain]
+  const oldest = holding(now - days * DAY_MS)
+  const periods = [oldest]
+  for (let period = next(oldest); period.start <= now; period = next(period)) periods.push(period)
+  const { start } = oldest
   const window: Period = { start, end: Number.POSITIVE_INFINITY }
   const previous: Period = { start: start - (now - start), end: start }
-  return { first, window, previous }
+  return { grain, periods, window, previous, first: zoned(start).date }
+}
+
+/** The index of the period that holds `time`, or -1 before the first. */
+const periodIndex = (starts: ReadonlyArray<number>, time: number) => {
+  let low = 0
+  let high = starts.length
+  while (low < high) {
+    const middle = (low + high) >>> 1
+    if ((starts[middle] ?? 0) <= time) low = middle + 1
+    else high = middle
+  }
+  return low - 1
 }
 
 /** Every aggregate on the insights page, from the repositories Tabulo read. */
 export const buildInsights = (input: InsightsInput): Insights => {
   const { now, days } = input
-  const { first, window, previous } = insightPeriods(now, days, input.tz)
+  const { periods, first, window, previous } = insightPeriods(now, days, input.tz)
   const zoned = zonedTime(input.tz)
-  const weekOf = (time: number) => weekStart(zoned(time))
   const ageDays = (time: number) => Math.floor((now - time) / DAY_MS)
+  const user = input.user?.toLowerCase() ?? null
+  const involves = (item: Item) =>
+    user === null ||
+    [item.author, ...item.assignees].some((person) => person.login.toLowerCase() === user)
 
   const repos = input.loaded.map((activity) => {
-    const items = new Map<number, Item>()
+    const byNumber = new Map<number, Item>()
     for (const item of [...activity.closed, ...activity.open].map(toItem(activity.repo.name))) {
-      items.set(item.number, item)
+      byNumber.set(item.number, item)
     }
+    const all = [...byNumber.values()]
     const runs = activity.runs?.map(toRun(activity.repo.name)) ?? null
     return {
       activity,
-      items: [...items.values()],
+      /** Every issue and pull request read, for the health score. */
+      all,
+      /** The ones that involve `user`, for every other number. */
+      involved: all.filter(involves),
       runs,
       failing: failingWorkflows(activity.repo, runs ?? [], now),
     }
   })
-  const items = repos.flatMap((repo) => repo.items)
+  const items = repos.flatMap((repo) => repo.involved)
   const issues = items.filter((item) => item.kind === "issue")
   const pulls = items.filter((item) => item.kind === "pull")
   const runs = repos.flatMap((repo) => repo.runs ?? [])
@@ -394,7 +463,9 @@ export const buildInsights = (input: InsightsInput): Insights => {
     )
   const runsIn = (period: Period, list: ReadonlyArray<Run> = runs) =>
     list.filter((run) => within(period, run.created))
-  const anyCi = repos.some((repo) => repo.runs !== null)
+  // A person's numbers count what they opened or are assigned to. A run has neither, only the
+  // user who triggered it, so runs are never narrowed and their summary is left out.
+  const showCi = user === null && repos.some((repo) => repo.runs !== null)
 
   const tile = (measure: (period: Period) => number) => ({
     value: measure(window),
@@ -405,41 +476,27 @@ export const buildInsights = (input: InsightsInput): Insights => {
     previous: roundedOrNull(measure(previous)),
   })
 
-  // Weeks, Monday first, from the window's first week to the current one.
-  const weeks: Array<string> = []
-  for (let week = first; week <= weekOf(now); week = addDays(week, 7)) {
-    weeks.push(week)
-  }
-  const weekIndex = new Map(weeks.map((week, index) => [week, index] as const))
-  const perWeek = (times: ReadonlyArray<number | null>) => {
-    const counts = weeks.map(() => 0)
+  const starts = periods.map((period) => period.start)
+  const perPeriod = (times: ReadonlyArray<number | null>) => {
+    const counts = periods.map(() => 0)
     for (const time of times) {
       if (!within(window, time)) continue
-      const index = weekIndex.get(weekOf(time))
-      if (index !== undefined) counts[index] = (counts[index] ?? 0) + 1
+      const index = periodIndex(starts, time)
+      counts[index] = (counts[index] ?? 0) + 1
     }
     return counts
   }
-  // An issue counts toward a week's backlog when it was created by the week's end and closed
-  // after it. Week keys compare as strings.
-  const issueWeeks = issues.map((item) => ({
-    created: weekOf(item.created),
-    closed: item.closed === null ? null : weekOf(item.closed),
-  }))
-  const issuesOpened = perWeek(issues.map((item) => item.created))
-  const issuesClosed = perWeek(issues.map((item) => item.closed))
-  const pullsOpened = perWeek(pulls.map((item) => item.created))
-  const pullsMerged = perWeek(pulls.map((item) => item.merged))
-  const weekly = weeks.map((week, index) => ({
-    weekStart: week,
+  const issuesOpened = perPeriod(issues.map((item) => item.created))
+  const issuesClosed = perPeriod(issues.map((item) => item.closed))
+  const pullsOpened = perPeriod(pulls.map((item) => item.created))
+  const pullsMerged = perPeriod(pulls.map((item) => item.merged))
+  const series = periods.map((period, index) => ({
+    start: period.key,
     issuesOpened: issuesOpened[index] ?? 0,
     issuesClosed: issuesClosed[index] ?? 0,
     pullsOpened: pullsOpened[index] ?? 0,
     pullsMerged: pullsMerged[index] ?? 0,
-    openIssues: count(
-      issueWeeks,
-      ({ created, closed }) => created <= week && (closed === null || closed > week),
-    ),
+    openIssues: openAt(issues, starts[index + 1] ?? now),
   }))
 
   const windowMergeHours = mergeHours(window)
@@ -482,23 +539,23 @@ export const buildInsights = (input: InsightsInput): Insights => {
   }
 
   const windowRuns = runsIn(window)
-  const ci: CiSummary | null = anyCi
+  const ci: CiSummary | null = showCi
     ? {
         runs: windowRuns.length,
         successRate: successRate(windowRuns),
         medianDurationMinutes: roundedOrNull(
           median(windowRuns.flatMap((run) => run.durationMinutes ?? [])),
         ),
-        weekly: (() => {
+        series: (() => {
           const outcomes = (outcome: RunOutcome) =>
-            perWeek(windowRuns.flatMap((run) => (run.outcome === outcome ? [run.created] : [])))
+            perPeriod(windowRuns.flatMap((run) => (run.outcome === outcome ? [run.created] : [])))
           const [success, failure, other] = [
             outcomes("success"),
             outcomes("failure"),
             outcomes("other"),
           ]
-          return weeks.map((week, index) => ({
-            weekStart: week,
+          return periods.map((period, index) => ({
+            start: period.key,
             success: success[index] ?? 0,
             failure: failure[index] ?? 0,
             other: other[index] ?? 0,
@@ -532,7 +589,7 @@ export const buildInsights = (input: InsightsInput): Insights => {
     ageDays(item.updated) >= STALE_PULL_DAYS
 
   const attention: Array<AttentionItem> = repos.flatMap(
-    ({ activity, items: repoItems, failing }) => [
+    ({ activity, involved: repoItems, failing }) => [
       ...failing,
       ...activity.milestones.filter(isOverdue).map(
         (milestone): AttentionItem => ({
@@ -576,12 +633,14 @@ export const buildInsights = (input: InsightsInput): Insights => {
   )
 
   const repoStats = repos.map((repo): RepoInsight => {
-    const { activity, items: repoItems, runs: repoRuns } = repo
+    const { activity, all, involved: repoItems, runs: repoRuns } = repo
+    const allIssues = all.filter((item) => item.kind === "issue")
+    const allPulls = all.filter((item) => item.kind === "pull")
     const repoIssues = repoItems.filter((item) => item.kind === "issue")
     const repoPulls = repoItems.filter((item) => item.kind === "pull")
     const lastActivity = Math.max(
       Date.parse(activity.repo.updated_at),
-      ...repoItems.map((item) => item.updated),
+      ...all.map((item) => item.updated),
       ...(repoRuns ?? []).map((run) => run.created),
     )
     const repoWindowRuns = repoRuns === null ? null : runsIn(window, repoRuns)
@@ -589,10 +648,10 @@ export const buildInsights = (input: InsightsInput): Insights => {
       archived: activity.repo.archived,
       ciSuccessRate: repoWindowRuns === null ? null : successRate(repoWindowRuns),
       failingDefaultBranch: repo.failing.length > 0,
-      medianMergeHours: median(mergeHours(window, repoPulls)),
-      stalePulls: count(repoItems, isStalePull),
-      openIssues: openNow(repoIssues),
-      openIssuesAtStart: openAt(repoIssues, window.start),
+      medianMergeHours: median(mergeHours(window, allPulls)),
+      stalePulls: count(all, isStalePull),
+      openIssues: openNow(allIssues),
+      openIssuesAtStart: openAt(allIssues, window.start),
       daysSinceActivity: ageDays(lastActivity),
       overdueMilestones: count(activity.milestones, isOverdue),
     }
@@ -600,7 +659,7 @@ export const buildInsights = (input: InsightsInput): Insights => {
       name: activity.repo.name,
       url: activity.repo.html_url,
       archived: activity.repo.archived,
-      openIssues: facts.openIssues,
+      openIssues: openNow(repoIssues),
       openPulls: openNow(repoPulls),
       issuesClosed: count(repoIssues, (item) => within(window, item.closed)),
       pullsMerged: count(repoPulls, (item) => within(window, item.merged)),
@@ -610,16 +669,28 @@ export const buildInsights = (input: InsightsInput): Insights => {
         repoWindowRuns === null
           ? null
           : { runs: repoWindowRuns.length, successRate: successRate(repoWindowRuns) },
-      activity: perWeek(repoItems.flatMap((item) => [item.created, item.closed])),
+      activity: perPeriod(repoItems.flatMap((item) => [item.created, item.closed])),
       health: repoHealth(facts),
     }
   })
+
+  const people = new Map<string, Person>()
+  for (const item of repos.flatMap((repo) => repo.all)) {
+    for (const person of [item.author, ...item.assignees]) {
+      const key = person.login.toLowerCase()
+      if (!people.has(key)) people.set(key, person)
+    }
+  }
 
   return {
     org: input.org,
     repos: input.repos,
     days,
     tz: input.tz,
+    user: input.user,
+    people: [...people.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, person]) => person),
     generatedAt: new Date(now).toISOString(),
     window: { start: first, end: zoned(now).date },
     tiles: {
@@ -630,14 +701,14 @@ export const buildInsights = (input: InsightsInput): Insights => {
       pullsMerged: tile((period) => count(pulls, (item) => within(period, item.merged))),
       medianIssueCloseHours: optionalTile((period) => median(closeHours(period))),
       medianPullMergeHours: optionalTile((period) => median(mergeHours(period))),
-      ciSuccessRate: anyCi
+      ciSuccessRate: showCi
         ? {
             value: successRate(runsIn(window)),
             previous: successRate(runsIn(previous)),
           }
         : { value: null, previous: null },
     },
-    weekly,
+    series,
     pullMergeTime: {
       p50: roundedOrNull(quantile(windowMergeHours, 0.5)),
       p75: roundedOrNull(quantile(windowMergeHours, 0.75)),

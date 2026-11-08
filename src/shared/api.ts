@@ -250,8 +250,19 @@ export const AddCommentResult = Schema.Struct({ comment: CardComment })
 export type AddCommentResult = typeof AddCommentResult.Type
 // Insights and activity.
 
-export const INSIGHT_DAYS = [30, 90, 180, 365] as const
+export const INSIGHT_DAYS = [1, 7, 30, 90, 180, 365] as const
 export type InsightDays = (typeof INSIGHT_DAYS)[number]
+export const DEFAULT_INSIGHT_DAYS: InsightDays = 7
+export type InsightGrain = "hour" | "day" | "week"
+/** The period each range is counted in. */
+export const INSIGHT_GRAIN: Record<InsightDays, InsightGrain> = {
+  1: "hour",
+  7: "day",
+  30: "week",
+  90: "week",
+  180: "week",
+  365: "week",
+}
 
 /** A count in the window and the same count in the window before it. */
 export const Tile = Schema.Struct({ value: Schema.Number, previous: Schema.Number })
@@ -267,29 +278,33 @@ export type OptionalTile = typeof OptionalTile.Type
 export const Bucket = Schema.Struct({ label: Schema.String, count: Schema.Number })
 export type Bucket = typeof Bucket.Type
 
-export const InsightWeek = Schema.Struct({
-  /** The Monday that starts the week, `YYYY-MM-DD` in the request's time zone. */
-  weekStart: Schema.String,
+export const InsightPeriod = Schema.Struct({
+  /**
+   * When the period starts: an ISO instant for an hour, because a daylight saving change repeats
+   * a wall-clock hour, and `YYYY-MM-DD` in the request's time zone for a day or a week (its
+   * Monday).
+   */
+  start: Schema.String,
   issuesOpened: Schema.Number,
   issuesClosed: Schema.Number,
   pullsOpened: Schema.Number,
   pullsMerged: Schema.Number,
-  /** Open issues at the end of the week, or now for the current week. */
+  /** Open issues at the end of the period, or now for the current period. */
   openIssues: Schema.Number,
 })
-export type InsightWeek = typeof InsightWeek.Type
+export type InsightPeriod = typeof InsightPeriod.Type
 
 export const Language = Schema.Struct({ name: Schema.String, bytes: Schema.Number })
 export type Language = typeof Language.Type
 
-export const CiWeek = Schema.Struct({
-  weekStart: Schema.String,
+export const CiPeriod = Schema.Struct({
+  start: Schema.String,
   success: Schema.Number,
   failure: Schema.Number,
   /** Cancelled, skipped, and unfinished runs. */
   other: Schema.Number,
 })
-export type CiWeek = typeof CiWeek.Type
+export type CiPeriod = typeof CiPeriod.Type
 
 export const CiSummary = Schema.Struct({
   /** Workflow runs created in the window. */
@@ -297,7 +312,7 @@ export const CiSummary = Schema.Struct({
   /** Passed runs among the runs that passed or failed. */
   successRate: Schema.NullOr(Schema.Number),
   medianDurationMinutes: Schema.NullOr(Schema.Number),
-  weekly: Schema.Array(CiWeek),
+  series: Schema.Array(CiPeriod),
   slowestWorkflows: Schema.Array(
     Schema.Struct({
       name: Schema.String,
@@ -330,6 +345,9 @@ export type AttentionItem = typeof AttentionItem.Type
 export const HealthStatus = Schema.Literals(["strong", "watch", "risky"])
 export type HealthStatus = typeof HealthStatus.Type
 
+export const UnscoredRule = Schema.Literals(["ci", "merges"])
+export type UnscoredRule = typeof UnscoredRule.Type
+
 export const RepoInsight = Schema.Struct({
   name: Schema.String,
   url: Schema.String,
@@ -343,15 +361,21 @@ export const RepoInsight = Schema.Struct({
   ci: Schema.NullOr(
     Schema.Struct({ runs: Schema.Number, successRate: Schema.NullOr(Schema.Number) }),
   ),
-  /** Issues and pull requests opened, closed, or merged per week, aligned with `weekly`. */
+  /** Issues and pull requests opened, closed, or merged per period, aligned with `series`. */
   activity: Schema.Array(Schema.Number),
+  /** Read from all of the repository's issues, pull requests, and runs, whoever is involved. */
   health: Schema.Struct({
     score: Schema.Number,
     status: HealthStatus,
     reasons: Schema.Array(Schema.String),
+    /** The rules that had nothing to read in the window, so the score rests on the others. */
+    unscored: Schema.Array(UnscoredRule),
   }),
 })
 export type RepoInsight = typeof RepoInsight.Type
+
+export const Person = Schema.Struct({ login: Schema.String, avatarUrl: Schema.String })
+export type Person = typeof Person.Type
 
 /** A listing of a repository that Tabulo stopped reading before its end. */
 export const IncompleteListing = Schema.Struct({
@@ -365,10 +389,22 @@ export const Insights = Schema.Struct({
   repos: Schema.Array(Schema.String),
   days: Schema.Literals(INSIGHT_DAYS),
   tz: Schema.String,
+  /**
+   * The login the numbers are narrowed to, as requested, or null for everyone. Narrowed numbers
+   * count the issues and pull requests that person opened or is assigned to; `ci` and the CI
+   * pass rate tile are then null.
+   */
+  user: Schema.NullOr(Schema.String),
+  /**
+   * Everyone who opened or is assigned to an issue or pull request that Tabulo read, whatever
+   * `user` is, by login.
+   */
+  people: Schema.Array(Person),
   generatedAt: Schema.String,
   /**
-   * The first and last day of the window in `tz`, `YYYY-MM-DD`. It starts at midnight on a
-   * Monday and ends now, so the last week in `weekly` is still in progress.
+   * The first and last day of the window in `tz`, `YYYY-MM-DD`. It starts at the beginning of
+   * an hour, a day, or a week (`INSIGHT_GRAIN`) and ends now, so the last period in `series` is
+   * still in progress.
    */
   window: Schema.Struct({ start: Schema.String, end: Schema.String }),
   tiles: Schema.Struct({
@@ -382,7 +418,7 @@ export const Insights = Schema.Struct({
     medianPullMergeHours: OptionalTile,
     ciSuccessRate: OptionalTile,
   }),
-  weekly: Schema.Array(InsightWeek),
+  series: Schema.Array(InsightPeriod),
   pullMergeTime: Schema.Struct({
     p50: Schema.NullOr(Schema.Number),
     p75: Schema.NullOr(Schema.Number),
@@ -396,8 +432,7 @@ export const Insights = Schema.Struct({
   ),
   contributors: Schema.Array(
     Schema.Struct({
-      login: Schema.String,
-      avatarUrl: Schema.String,
+      ...Person.fields,
       pullsMerged: Schema.Number,
       issuesClosed: Schema.Number,
     }),

@@ -1,12 +1,13 @@
 export const DAY_MS = 24 * 60 * 60 * 1000
 
-/** An instant's calendar date, weekday, and hour in one time zone. */
+/** An instant's calendar date, weekday, hour, and minute in one time zone. */
 export type ZonedTime = {
   /** `YYYY-MM-DD`. */
   readonly date: string
   /** 0 is Monday. */
   readonly weekday: number
   readonly hour: number
+  readonly minute: number
 }
 
 /** Whether `name` is an IANA time zone that this runtime knows. */
@@ -45,12 +46,14 @@ const offsetReader = (timeZone: string) => {
   }
 }
 
-/** The instant (epoch milliseconds) that `date` (`YYYY-MM-DD`) starts in `timeZone`. */
-export const startOfDay = (timeZone: string, date: string) => {
+/** Reads the instant (epoch milliseconds) that a date (`YYYY-MM-DD`) starts in `timeZone`. */
+export const startOfDay = (timeZone: string) => {
   const offsetAt = offsetReader(timeZone)
-  const midnight = Date.parse(`${date}T00:00:00Z`)
-  // The offset at midnight UTC can differ from the one at local midnight; the second read fixes it.
-  return midnight - offsetAt(midnight - offsetAt(midnight))
+  return (date: string) => {
+    const midnight = Date.parse(`${date}T00:00:00Z`)
+    // The offset at midnight UTC can differ from the one at local midnight; the second read fixes it.
+    return midnight - offsetAt(midnight - offsetAt(midnight))
+  }
 }
 
 /** Reads instants (epoch milliseconds) as calendar times in `timeZone`. */
@@ -75,6 +78,7 @@ export const zonedTime = (timeZone: string) => {
       date: local.toISOString().slice(0, 10),
       weekday: (local.getUTCDay() + 6) % 7,
       hour: local.getUTCHours(),
+      minute: local.getUTCMinutes(),
     }
   }
 }

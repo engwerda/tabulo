@@ -180,15 +180,23 @@ const decodeActivity = Schema.decodeUnknownPromise(Activity)
 /** The browser's IANA time zone, which buckets weeks and hours on the server. */
 export const browserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
 
+/** The insights of `repos`, narrowed to the person whose login is `user` unless it is null. */
 export const fetchInsights = async (
   org: string,
   repos: ReadonlyArray<string>,
   days: InsightDays,
   tz: string,
+  user: string | null,
 ): Promise<Insights> =>
   decodeInsights(
     await requestJson(
-      `/api/insights?${new URLSearchParams({ org, repos: repos.join(","), days: String(days), tz })}`,
+      `/api/insights?${new URLSearchParams({
+        org,
+        repos: repos.join(","),
+        days: String(days),
+        tz,
+        ...(user === null ? {} : { user }),
+      })}`,
     ),
   )
 

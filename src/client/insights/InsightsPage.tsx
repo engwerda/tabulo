@@ -1,7 +1,13 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { useState } from "react"
 import { useSearchParams } from "wouter"
-import { INSIGHT_DAYS, type InsightDays, type Insights } from "../../shared/api.ts"
+import {
+  DEFAULT_INSIGHT_DAYS,
+  INSIGHT_DAYS,
+  INSIGHT_GRAIN,
+  type InsightDays,
+  type Insights,
+} from "../../shared/api.ts"
 import { browserTimeZone, fetchInsights, fetchOrgs } from "../api.ts"
 import { formatSpan } from "../charts/scale.ts"
 import { boardCardHref } from "../epics/epics-view.ts"
@@ -10,30 +16,46 @@ import { ChooseRepos } from "../scope/ChooseRepos.tsx"
 import { ORGS } from "../scope/OrgPicker.tsx"
 import { ScopeBar } from "../scope/ScopeBar.tsx"
 import { useRepoSelection } from "../scope/use-repo-selection.ts"
+import { useViewer } from "../session.ts"
 import { ErrorNotice } from "../ui/ErrorNotice.tsx"
 import { PageTitle } from "../ui/PageTitle.tsx"
 import { buttonClass, cardClass, pageContainer, Segmented } from "../ui/primitives.tsx"
 import { InsightsDashboard } from "./InsightsDashboard.tsx"
+import { PersonPicker } from "./PersonPicker.tsx"
+import { personChoices } from "./people.ts"
+import { GRAIN_WORDS, windowNote } from "./periods.ts"
 import { incompleteNotice, insightsSummary, RANGE_LABELS } from "./summary.ts"
 
-const DEFAULT_DAYS: InsightDays = 90
 const STALE_TIME_MS = 5 * 60 * 1000
 
-const useRange = () => {
+/** One parameter of the address, which a change replaces in history; null removes it. */
+const useParam = (name: string) => {
   const [params, setParams] = useSearchParams()
-  const days =
-    INSIGHT_DAYS.find((allowed) => String(allowed) === params.get("days")) ?? DEFAULT_DAYS
-  const setDays = (next: InsightDays) =>
+  const set = (value: string | null) =>
     setParams(
       (current) => {
         const updated = new URLSearchParams(current)
-        if (next === DEFAULT_DAYS) updated.delete("days")
-        else updated.set("days", String(next))
+        if (value === null) updated.delete(name)
+        else updated.set(name, value)
         return updated
       },
       { replace: true },
     )
+  return [params.get(name), set] as const
+}
+
+const useRange = () => {
+  const [param, setParam] = useParam("days")
+  const days = INSIGHT_DAYS.find((allowed) => String(allowed) === param) ?? DEFAULT_INSIGHT_DAYS
+  const setDays = (next: InsightDays) =>
+    setParam(next === DEFAULT_INSIGHT_DAYS ? null : String(next))
   return [days, setDays] as const
+}
+
+/** The login in `?user=` that the numbers are narrowed to; null for everyone. */
+const usePerson = () => {
+  const [param, setParam] = useParam("user")
+  return [param === "" ? null : param, setParam] as const
 }
 
 const CopyIcon = ({ copied }: { readonly copied: boolean }) => (
@@ -143,11 +165,13 @@ export const InsightsPage = ({ org }: { org: string }) => {
     orgs.data?.find((candidate) => candidate.name.toLowerCase() === org.toLowerCase())?.fullName ||
     org
   const [days, setDays] = useRange()
+  const [person, setPerson] = usePerson()
+  const viewer = useViewer()
   const [tz] = useState(browserTimeZone)
   const chosen = repoSelection.selected.length > 0
   const insights = useQuery({
-    queryKey: ["insights", org, repoSelection.selection, days, tz],
-    queryFn: () => fetchInsights(org, repoSelection.selected, days, tz),
+    queryKey: ["insights", org, repoSelection.selection, days, tz, person],
+    queryFn: () => fetchInsights(org, repoSelection.selected, days, tz, person),
     enabled: chosen,
     staleTime: STALE_TIME_MS,
     placeholderData: keepPreviousData,
@@ -162,18 +186,20 @@ export const InsightsPage = ({ org }: { org: string }) => {
           title="Insights"
           meta={
             data === undefined ? (
-              `The last ${RANGE_LABELS[days].long}`
+              `The last ${RANGE_LABELS[days].long}${person === null ? "" : `, involving @${person}`}`
             ) : (
               <>
-                <span
-                  className="tabular-nums"
-                  title={`From the Monday of the week ${data.days} days ago, so every week is whole`}
-                >
+                <span className="tabular-nums" title={windowNote(data.days)}>
                   {formatSpan(data.window.start, data.window.end)}
                 </span>
                 {" · "}
                 {data.repoStats.length}{" "}
                 {data.repoStats.length === 1 ? "repository" : "repositories"}
+                {data.user !== null && (
+                  <span title={`Issues and pull requests @${data.user} opened or is assigned to`}>
+                    {" · "}involving @{data.user}
+                  </span>
+                )}
                 {" · "}
                 <span title={`Weeks and hours are in ${data.tz}`}>{data.tz}</span>
                 <span className="max-sm:hidden">
@@ -188,13 +214,27 @@ export const InsightsPage = ({ org }: { org: string }) => {
                 label="Period"
                 value={String(days)}
                 onChange={(next) =>
-                  setDays(INSIGHT_DAYS.find((option) => String(option) === next) ?? DEFAULT_DAYS)
+                  setDays(
+                    INSIGHT_DAYS.find((option) => String(option) === next) ?? DEFAULT_INSIGHT_DAYS,
+                  )
                 }
                 options={INSIGHT_DAYS.map((option) => ({
                   value: String(option),
                   label: RANGE_LABELS[option].short,
-                  title: `Last ${RANGE_LABELS[option].long}, in whole weeks`,
+                  title: `Last ${RANGE_LABELS[option].long}, in whole ${GRAIN_WORDS[INSIGHT_GRAIN[option]].many}`,
                 }))}
+              />
+              <PersonPicker
+                choices={
+                  data === undefined
+                    ? undefined
+                    : personChoices(data.people, [
+                        { login: viewer.login, avatarUrl: viewer.avatarUrl },
+                        ...(person === null ? [] : [{ login: person, avatarUrl: "" }]),
+                      ])
+                }
+                selected={person}
+                onChange={setPerson}
               />
               <CopySummary insights={data} orgName={orgName} />
             </>
@@ -267,6 +307,7 @@ export const InsightsPage = ({ org }: { org: string }) => {
                   boardHref={(repo, number) =>
                     boardCardHref(org, repoSelection.selected, { repo, number, state: "open" })
                   }
+                  onChoosePerson={setPerson}
                 />
               </>
             )}

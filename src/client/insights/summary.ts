@@ -1,9 +1,17 @@
-import type { AttentionKind, IncompleteListing, InsightDays, Insights } from "../../shared/api.ts"
+import {
+  type AttentionKind,
+  INSIGHT_GRAIN,
+  type IncompleteListing,
+  type InsightDays,
+  type Insights,
+} from "../../shared/api.ts"
 import { formatCount, formatHours, formatPercent, formatSpan } from "../charts/scale.ts"
-import { formatDate, spansYears } from "./weeks.ts"
+import { formatDate, GRAIN_WORDS, hourTitle, spansYears } from "./periods.ts"
 
 export const RANGE_LABELS: Record<InsightDays, { readonly short: string; readonly long: string }> =
   {
+    1: { short: "24h", long: "24 hours" },
+    7: { short: "7d", long: "7 days" },
     30: { short: "30d", long: "30 days" },
     90: { short: "90d", long: "90 days" },
     180: { short: "6m", long: "6 months" },
@@ -11,18 +19,31 @@ export const RANGE_LABELS: Record<InsightDays, { readonly short: string; readonl
   }
 
 /**
- * What a change against the period before compares with: a period as long as the window. The
- * window starts on a Monday and ends today, so its length is given in weeks, rounded, with the
- * first and last day counted as the header's span does.
+ * What a change against the period before compares with: a period as long as the window. Hours
+ * and days name the range. A window of weeks starts on a Monday and ends today, so its length is
+ * given in weeks, rounded, with the first and last day counted as the header's span does.
  */
-export const priorLabel = ({ start, end }: Insights["window"]) => {
-  const days = Math.round((Date.parse(end) - Date.parse(start)) / 86_400_000) + 1
-  return `vs the ${Math.round(days / 7)} weeks before`
+export const priorLabel = ({ days, window }: Pick<Insights, "days" | "window">) => {
+  if (INSIGHT_GRAIN[days] !== "week") return `vs the ${RANGE_LABELS[days].long} before`
+  const length = Math.round((Date.parse(window.end) - Date.parse(window.start)) / 86_400_000) + 1
+  return `vs the ${Math.round(length / 7)} weeks before`
 }
 
-/** The window's first day, with its year when the window ends in a later one. */
-export const formatWindowStart = ({ start, end }: Insights["window"]) =>
-  formatDate(start, spansYears([start, end]))
+/**
+ * Where the window starts: its first hour as "Nov 7, 09:00" for hours, else its first day,
+ * with its year when the window ends in a later one.
+ */
+export const formatWindowStart = ({
+  days,
+  tz,
+  window: { start, end },
+  series,
+}: Pick<Insights, "days" | "tz" | "window" | "series">) => {
+  const first = series[0]?.start
+  return INSIGHT_GRAIN[days] === "hour" && first !== undefined
+    ? hourTitle(tz)(first)
+    : formatDate(start, spansYears([start, end]))
+}
 
 export const ATTENTION_LABELS: Record<AttentionKind, string> = {
   failing_ci: "CI failing",
@@ -53,7 +74,7 @@ const signed = (value: number) => `${value > 0 ? "+" : ""}${formatCount(value)}`
 export const insightsSummary = (insights: Insights, orgName: string): string => {
   const { tiles } = insights
   const range = RANGE_LABELS[insights.days].long
-  const start = formatWindowStart(insights.window)
+  const start = formatWindowStart(insights)
   const flow = (label: string, tile: { value: number; previous: number }) =>
     `- **${label}:** ${formatCount(tile.value)} (period before: ${formatCount(tile.previous)})`
   const duration = (label: string, tile: { value: number | null; previous: number | null }) =>
@@ -66,8 +87,14 @@ export const insightsSummary = (insights: Insights, orgName: string): string => 
   const lines = [
     `# ${orgName} insights`,
     "",
-    `${insights.repoStats.length === 1 ? "1 repository" : `${insights.repoStats.length} repositories`}, last ${range} in whole weeks (${formatSpan(insights.window.start, insights.window.end)}, ${insights.tz}).`,
+    `${insights.repoStats.length === 1 ? "1 repository" : `${insights.repoStats.length} repositories`}, last ${range} in whole ${GRAIN_WORDS[INSIGHT_GRAIN[insights.days]].many} (${formatSpan(insights.window.start, insights.window.end)}, ${insights.tz}).`,
     "",
+    ...(insights.user === null
+      ? []
+      : [
+          `The numbers count the issues and pull requests that @${insights.user} opened or is assigned to, and leave CI out. Repository health covers everyone's work.`,
+          "",
+        ]),
     "## Headline numbers",
     "",
     `- **Open issues:** ${formatCount(tiles.openIssues.value)} (${signed(tiles.openIssues.value - tiles.openIssues.previous)} since ${start})`,

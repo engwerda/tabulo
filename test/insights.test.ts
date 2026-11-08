@@ -97,6 +97,7 @@ const insights = (loaded: ReadonlyArray<RepoActivity>, fields: Partial<InsightsI
     repos: loaded.map((entry) => entry.repo.name),
     days: 30,
     tz: "UTC",
+    user: null,
     now: NOW,
     loaded,
     failedRepos: [],
@@ -115,13 +116,13 @@ describe("buildInsights", () => {
     const utc = insights(loaded, { tz: "UTC" })
 
     const openedIn = (result: typeof utc) =>
-      result.weekly.filter((week) => week.issuesOpened > 0).map((week) => week.weekStart)
+      result.series.filter((week) => week.issuesOpened > 0).map((week) => week.start)
     expect(openedIn(auckland)).toEqual(["2026-11-02"])
     expect(openedIn(utc)).toEqual(["2026-10-26"])
     expect(auckland.punchcard[0]?.[12]).toBe(1)
     expect(utc.punchcard[6]?.[23]).toBe(1)
     // The window starts on Thursday 8 October; its first week starts on Monday 5 October.
-    expect(utc.weekly.map((week) => week.weekStart)).toEqual([
+    expect(utc.series.map((week) => week.start)).toEqual([
       "2026-10-05",
       "2026-10-12",
       "2026-10-19",
@@ -150,9 +151,9 @@ describe("buildInsights", () => {
 
     expect(utc.window).toEqual({ start: "2026-10-05", end: "2026-11-07" })
     expect(utc.tiles.issuesOpened).toEqual({ value: 1, previous: 2 })
-    expect(utc.weekly[0]).toMatchObject({ weekStart: "2026-10-05", issuesOpened: 1 })
+    expect(utc.series[0]).toMatchObject({ start: "2026-10-05", issuesOpened: 1 })
     expect(amsterdam.tiles.issuesOpened.value).toBe(2)
-    expect(amsterdam.weekly[0]).toMatchObject({ weekStart: "2026-10-05", issuesOpened: 2 })
+    expect(amsterdam.series[0]).toMatchObject({ start: "2026-10-05", issuesOpened: 2 })
   })
 
   it("counts the backlog at each week's end and at the window start", () => {
@@ -175,7 +176,7 @@ describe("buildInsights", () => {
 
     const result = insights(loaded)
 
-    expect(result.weekly.map((week) => week.openIssues)).toEqual([2, 1, 2, 2, 2])
+    expect(result.series.map((week) => week.openIssues)).toEqual([2, 1, 2, 2, 2])
     expect(result.tiles.openIssues).toEqual({ value: 2, previous: 2 })
     expect(result.tiles.issuesOpened).toEqual({ value: 2, previous: 0 })
     expect(result.tiles.issuesClosed).toEqual({ value: 2, previous: 1 })
@@ -194,7 +195,7 @@ describe("buildInsights", () => {
     expect(result.tiles.openIssues.value).toBe(1)
     expect(result.tiles.openPulls.value).toBe(1)
     expect(result.tiles.pullsMerged.value).toBe(1)
-    expect(result.weekly.at(-1)).toMatchObject({ issuesOpened: 0, pullsOpened: 2, pullsMerged: 1 })
+    expect(result.series.at(-1)).toMatchObject({ issuesOpened: 0, pullsOpened: 2, pullsMerged: 1 })
     expect(result.issueAge.reduce((total, bucket) => total + bucket.count, 0)).toBe(1)
   })
 
@@ -244,8 +245,8 @@ describe("buildInsights", () => {
     expect(withCi.ci).toMatchObject({ runs: 4, medianDurationMinutes: 20 })
     expect(withCi.ci?.successRate).toBeCloseTo(2 / 3)
     expect(withCi.tiles.ciSuccessRate.previous).toBe(0)
-    expect(withCi.ci?.weekly.at(-1)).toEqual({
-      weekStart: "2026-11-02",
+    expect(withCi.ci?.series.at(-1)).toEqual({
+      start: "2026-11-02",
       success: 2,
       failure: 1,
       other: 1,
@@ -401,6 +402,186 @@ describe("buildInsights", () => {
   })
 })
 
+describe("buildInsights in hours and days", () => {
+  const hourStarts = (first: number, count: number) =>
+    Array.from({ length: count }, (_, index) => new Date(first + index * 3_600_000).toISOString())
+  const opened = (created: ReadonlyArray<string>) => [
+    activity({ open: created.map((at, index) => issue(index + 1, { created_at: at })) }),
+  ]
+
+  it("counts 24 hours in 25 whole hours, from the start of the hour 24 hours ago", () => {
+    const result = insights(
+      opened([
+        "2026-11-07T08:45:00Z",
+        // The window's first instant.
+        "2026-11-06T09:00:00Z",
+        // A minute earlier, in the window before.
+        "2026-11-06T08:59:00Z",
+      ]),
+      { days: 1 },
+    )
+
+    expect(result.series.map((hour) => hour.start)).toEqual(
+      hourStarts(Date.UTC(2026, 10, 6, 9), 25),
+    )
+    expect(result.window).toEqual({ start: "2026-11-06", end: "2026-11-07" })
+    expect(result.series[0]?.issuesOpened).toBe(1)
+    expect(result.series[23]).toMatchObject({ start: "2026-11-07T08:00:00.000Z", issuesOpened: 1 })
+    expect(result.series[24]?.issuesOpened).toBe(0)
+    expect(result.series.map((hour) => hour.openIssues)).toEqual([
+      ...Array.from({ length: 23 }, () => 2),
+      3,
+      3,
+    ])
+    expect(result.tiles.issuesOpened).toEqual({ value: 2, previous: 1 })
+  })
+
+  it("starts each hour on the local hour in a zone half an hour off UTC", () => {
+    // 09:00 UTC is 14:30 in Kolkata (UTC+05:30): the window starts at 14:00 yesterday, 08:30
+    // UTC, and the window before is as long, 24 hours and 30 minutes.
+    const result = insights(
+      opened([
+        "2026-11-07T08:45:00Z",
+        "2026-11-06T08:30:00Z",
+        "2026-11-06T08:29:00Z",
+        "2026-11-05T08:00:00Z",
+        "2026-11-05T07:59:00Z",
+      ]),
+      { days: 1, tz: "Asia/Kolkata" },
+    )
+
+    expect(result.series.map((hour) => hour.start)).toEqual(
+      hourStarts(Date.UTC(2026, 10, 6, 8, 30), 25),
+    )
+    expect(result.series[0]?.issuesOpened).toBe(1)
+    expect(result.series.at(-1)?.issuesOpened).toBe(1)
+    expect(result.tiles.issuesOpened).toEqual({ value: 2, previous: 2 })
+  })
+
+  it("counts 7 days in 8 whole days, from midnight 7 days ago", () => {
+    const result = insights(
+      opened(["2026-10-31T00:00:00Z", "2026-10-30T23:59:00Z", "2026-11-07T08:00:00Z"]),
+      { days: 7 },
+    )
+
+    expect(result.series.map((day) => day.start)).toEqual([
+      "2026-10-31",
+      "2026-11-01",
+      "2026-11-02",
+      "2026-11-03",
+      "2026-11-04",
+      "2026-11-05",
+      "2026-11-06",
+      "2026-11-07",
+    ])
+    expect(result.window).toEqual({ start: "2026-10-31", end: "2026-11-07" })
+    expect(result.series.map((day) => day.issuesOpened)).toEqual([1, 0, 0, 0, 0, 0, 0, 1])
+    expect(result.tiles.issuesOpened).toEqual({ value: 2, previous: 1 })
+  })
+
+  it("counts the events of a 25-hour day in that day", () => {
+    // Amsterdam leaves summer time at 01:00 UTC on Sunday 25 October 2026, so that day runs
+    // from 22:00 UTC on the 24th to 23:00 UTC on the 25th.
+    const result = insights(
+      opened([
+        // 00:30 on the 25th, summer time.
+        "2026-10-24T22:30:00Z",
+        // 23:30 on the 25th, winter time.
+        "2026-10-25T22:30:00Z",
+        // 00:30 on the 26th.
+        "2026-10-25T23:30:00Z",
+      ]),
+      { days: 7, tz: "Europe/Amsterdam", now: Date.UTC(2026, 9, 28, 9) },
+    )
+
+    expect(result.series.map((day) => day.start)).toEqual([
+      "2026-10-21",
+      "2026-10-22",
+      "2026-10-23",
+      "2026-10-24",
+      "2026-10-25",
+      "2026-10-26",
+      "2026-10-27",
+      "2026-10-28",
+    ])
+    expect(result.series.map((day) => day.issuesOpened)).toEqual([0, 0, 0, 0, 2, 1, 0, 0])
+  })
+})
+
+describe("buildInsights for one person", () => {
+  const loaded = [
+    activity({
+      open: [
+        issue(1, { user: person("Ada") }),
+        issue(2, { user: person("grace"), assignees: [person("ADA")] }),
+        issue(3, { user: person("grace") }),
+        // Idle for 18 days, and not Ada's.
+        pull(4, "2026-10-02T08:00:00Z", null, {
+          user: person("grace"),
+          updated_at: "2026-10-20T08:00:00Z",
+        }),
+      ],
+      closed: [
+        pull(5, "2026-11-01T08:00:00Z", "2026-11-03T08:00:00Z", {
+          user: person("grace"),
+          assignees: [person("ada")],
+        }),
+        pull(6, "2026-11-01T08:00:00Z", "2026-11-02T08:00:00Z", { user: person("alan") }),
+      ],
+      runs: [run("failure", "2026-11-06T10:00:00Z", 5), run("success", "2026-11-05T10:00:00Z", 5)],
+      milestones: [
+        { id: 8, title: "1.0", open_issues: 2, closed_issues: 3, due_on: "2026-11-01T00:00:00Z" },
+      ],
+    }),
+  ]
+  const everyone = insights(loaded)
+  const ada = insights(loaded, { user: "ada" })
+
+  it("counts the issues and pull requests the person opened or is assigned to, in any case", () => {
+    expect(ada.user).toBe("ada")
+    expect(ada.tiles.openIssues).toEqual({ value: 2, previous: 2 })
+    expect(everyone.tiles.openIssues.value).toBe(3)
+    expect(ada.tiles.openPulls.value).toBe(0)
+    expect(ada.tiles.pullsMerged.value).toBe(1)
+    expect(ada.pullMergeTime.p50).toBe(48)
+    expect(ada.series.map((week) => week.openIssues)).toEqual([2, 2, 2, 2, 2])
+    expect(ada.series.reduce((total, week) => total + week.pullsMerged, 0)).toBe(1)
+    expect(ada.repoStats[0]).toMatchObject({
+      openIssues: 2,
+      openPulls: 0,
+      issuesClosed: 0,
+      pullsMerged: 1,
+    })
+    expect(ada.contributors.map((entry) => entry.login)).toEqual(["grace"])
+    expect(insights(loaded, { user: "ADA" }).tiles).toEqual(ada.tiles)
+  })
+
+  it("lists everyone involved, whatever the filter, once each and by login", () => {
+    expect(everyone.people.map((entry) => entry.login)).toEqual(["ada", "alan", "grace"])
+    expect(ada.people).toEqual(everyone.people)
+  })
+
+  it("keeps health, milestones, failing CI, and each repository's CI repository-wide", () => {
+    expect(ada.repoStats[0]?.health).toEqual(everyone.repoStats[0]?.health)
+    expect(ada.repoStats[0]?.health.reasons).toContain("1 pull request idle for a week or more")
+    expect(ada.repoStats[0]?.ci).toEqual(everyone.repoStats[0]?.ci)
+    expect(ada.repoStats[0]?.ci?.runs).toBe(2)
+    expect(ada.milestones).toEqual(everyone.milestones)
+    expect(ada.attention.map((item) => item.kind)).toEqual(["failing_ci", "overdue_milestone"])
+    expect(everyone.attention.map((item) => item.kind)).toEqual([
+      "failing_ci",
+      "overdue_milestone",
+      "stale_pull",
+    ])
+  })
+
+  it("leaves out the CI summary and pass rate, which cannot be narrowed", () => {
+    expect(everyone.ci?.runs).toBe(2)
+    expect(ada.ci).toBeNull()
+    expect(ada.tiles.ciSuccessRate).toEqual({ value: null, previous: null })
+  })
+})
+
 describe("quantile", () => {
   it("interpolates between ranks", () => {
     expect(quantile([4, 1, 3, 2], 0.5)).toBe(2.5)
@@ -424,7 +605,12 @@ describe("repoHealth", () => {
   }
 
   it("is strong with no reasons when no rule applies", () => {
-    expect(repoHealth(healthy)).toEqual({ score: 100, status: "strong", reasons: [] })
+    expect(repoHealth(healthy)).toEqual({
+      score: 100,
+      status: "strong",
+      reasons: [],
+      unscored: [],
+    })
   })
 
   it("subtracts each rule's penalty and lists the largest first", () => {
@@ -436,6 +622,16 @@ describe("repoHealth", () => {
         "Open issues grew from 10 to 16",
         "2 pull requests idle for a week or more",
       ],
+      unscored: [],
+    })
+  })
+
+  it("names the rules that had nothing to read", () => {
+    expect(repoHealth({ ...healthy, ciSuccessRate: null, medianMergeHours: null })).toEqual({
+      score: 100,
+      status: "strong",
+      reasons: [],
+      unscored: ["ci", "merges"],
     })
   })
 

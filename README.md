@@ -243,16 +243,17 @@ cards; others see the board read-only. Cards of archived repositories cannot be 
 ## Use the insights
 
 Open **Insights** in the header, choose an organization, and choose its repositories, as for
-the board. Pick a period of 30 days, 90 days, 6 months, or a year. The address is
-`/insights/<org>?repos=<repo>,<repo>&days=<days>`, so a view can be bookmarked or shared.
-Weeks start on Monday and hours are read in your browser's time zone. A period starts on the
-Monday of its first week, so the page shows whole weeks; the current week is drawn lighter
-because it is still in progress.
+the board. Pick a period of 24 hours, 7 days (the default), 30 days, 90 days, 6 months, or a
+year. The address is `/insights/<org>?repos=<repo>,<repo>&days=<days>`, so a view can be
+bookmarked or shared. The page counts 24 hours per hour, 7 days per day, and longer periods per week. Weeks
+start on Monday, and hours, days, and weeks are read in your browser's time zone. A period
+starts at the beginning of its first hour, day, or week, so the page shows whole ones; the
+current one is drawn lighter because it is still in progress.
 
 - **Stat tiles** show open issues and pull requests, issues opened and closed, pull requests
   merged, median times to close and merge, and the CI pass rate, each with its change from the
   period before.
-- **Charts** show weekly throughput, the open issue backlog, time to merge, CI outcomes, when
+- **Charts** show throughput, the open issue backlog, time to merge, CI outcomes, when
   work happens by weekday and hour, the age of open issues, the top labels, contributors, and
   milestone progress. Each chart has a **Table** button that shows its numbers.
 - **Needs attention** lists CI that fails on the default branch, overdue milestones, pull
@@ -260,6 +261,12 @@ because it is still in progress.
   weeks. Each entry links to Forgejo.
 - **Repositories** gives each repository a health score from 0 to 100 with the reasons it lost
   points. Expand a row to read them.
+
+To see one person's work, choose them in the **Everyone** menu beside the period, or click a
+name under **Contributors**. The address gains `&user=<login>`. The numbers then count the
+issues and pull requests that person opened or is assigned to. Milestones, languages,
+repository health, failing CI, and overdue milestones still cover the whole repositories. CI
+numbers are left out, because a CI run has no author or assignee.
 
 **Copy summary** copies a Markdown report of the page, for a chat message or a status update.
 

@@ -12,10 +12,16 @@ type BarListRow = {
   readonly segments: ReadonlyArray<BarSegment>
   /** The value printed at the bar's tip. */
   readonly display: ReactNode
+  /** A page in Forgejo that the name opens in a new tab. */
   readonly href?: string | undefined
+  /** Makes the name a button that acts on the page itself; `label` says what it does. */
+  readonly choose?: { readonly label: string; readonly onChoose: () => void } | undefined
 }
 
 const total = (row: BarListRow) => row.segments.reduce((sum, segment) => sum + segment.value, 0)
+
+const nameTarget =
+  "min-w-0 rounded hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
 
 /**
  * Ranked horizontal bars on one baseline, largest first. Rows with several segments stack them
@@ -56,18 +62,23 @@ export const BarList = ({
           return (
             <li key={row.key}>
               <div className="flex items-center justify-between gap-3">
-                {row.href === undefined ? (
-                  name
-                ) : (
-                  <a
-                    href={row.href}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="min-w-0 rounded hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
-                  >
+                {row.href !== undefined ? (
+                  <a href={row.href} target="_blank" rel="noreferrer" className={nameTarget}>
                     {name}
                     <span className="sr-only"> (opens in Forgejo)</span>
                   </a>
+                ) : row.choose !== undefined ? (
+                  <button
+                    type="button"
+                    onClick={row.choose.onChoose}
+                    title={row.choose.label}
+                    className={`${nameTarget} text-left`}
+                  >
+                    {name}
+                    <span className="sr-only">: {row.choose.label}</span>
+                  </button>
+                ) : (
+                  name
                 )}
                 <span
                   className="shrink-0 text-xs font-medium text-zinc-700 tabular-nums dark:text-zinc-300"

@@ -273,9 +273,100 @@ describe("GET /api/insights", () => {
     expect(reads.length).toBeLessThan(1000)
   })
 
+  it("shows the last 7 days when the request names no range", async () => {
+    const { call, cookie } = await setup()
+    const response = await call("/api/insights?org=acme&repos=api&tz=UTC", { headers: { cookie } })
+    expect(response.status).toBe(200)
+    const insights = (await response.json()) as Insights
+    expect(insights.days).toBe(7)
+    expect(insights.series).toHaveLength(8)
+  })
+
+  it("counts the last 24 hours per hour and the last 7 days per day", async () => {
+    const { forgejo, call, cookie } = await setup()
+    const read = async (days: number) => {
+      const response = await call(`/api/insights?org=acme&repos=api&days=${days}&tz=UTC`, {
+        headers: { cookie },
+      })
+      expect(response.status).toBe(200)
+      return (await response.json()) as Insights
+    }
+    const closedSince = () =>
+      forgejo.requests
+        .filter(
+          (request) =>
+            request.path === "/api/v1/repos/acme/api/issues" &&
+            request.query.get("state") === "closed",
+        )
+        .map((request) => request.query.get("since"))
+
+    const lastDay = await read(1)
+
+    expect(lastDay.days).toBe(1)
+    expect(lastDay.series).toHaveLength(25)
+    expect(lastDay.series[0]?.start).toBe("2026-11-06T09:00:00.000Z")
+    expect(lastDay.ci?.runs).toBe(1)
+    expect(lastDay.ci?.series.flatMap((hour) => (hour.success > 0 ? [hour.start] : []))).toEqual([
+      "2026-11-06T10:00:00.000Z",
+    ])
+    // The window before is the 24 hours before 09:00 yesterday.
+    expect(closedSince()).toEqual(["2026-11-05T09:00:00.000Z"])
+
+    const lastWeek = await read(7)
+
+    expect(lastWeek.series.map((day) => day.start)).toEqual([
+      "2026-10-31",
+      "2026-11-01",
+      "2026-11-02",
+      "2026-11-03",
+      "2026-11-04",
+      "2026-11-05",
+      "2026-11-06",
+      "2026-11-07",
+    ])
+    expect(lastWeek.tiles.issuesClosed.value).toBe(1)
+    expect(lastWeek.tiles.pullsMerged.value).toBe(1)
+    expect(lastWeek.series.find((day) => day.pullsMerged > 0)?.start).toBe("2026-11-03")
+    expect(closedSince().at(-1)).toBe("2026-10-23T15:00:00.000Z")
+  })
+
+  it("narrows the numbers to one person, matching the login in any case", async () => {
+    const { call, cookie } = await setup()
+
+    const response = await call("/api/insights?org=acme&repos=api,web&days=30&tz=UTC&user=Grace", {
+      headers: { cookie },
+    })
+
+    expect(response.status).toBe(200)
+    const insights = (await response.json()) as Insights
+    expect(insights.user).toBe("Grace")
+    expect(insights.people.map((person) => person.login)).toEqual(["ada", "grace"])
+    expect(insights.tiles).toMatchObject({
+      openIssues: { value: 0 },
+      issuesClosed: { value: 1 },
+      pullsMerged: { value: 1 },
+      ciSuccessRate: { value: null, previous: null },
+    })
+    expect(insights.ci).toBeNull()
+    expect(insights.repoStats.map((repo) => [repo.name, repo.openIssues, repo.ci?.runs])).toEqual([
+      ["api", 0, 3],
+      ["web", 0, undefined],
+    ])
+    expect(insights.milestones.map((milestone) => milestone.title)).toEqual(["1.0"])
+
+    const longest = await call(
+      `/api/insights?org=acme&repos=api&days=30&tz=UTC&user=${"a.b-c_".repeat(6)}abcd`,
+      { headers: { cookie } },
+    )
+    expect(longest.status).toBe(200)
+  })
+
   it.each([
-    ["days=7&tz=UTC", "days must be one of 30, 90, 180, 365"],
+    ["days=2&tz=UTC", "days must be one of 1, 7, 30, 90, 180, 365"],
     ["days=30&tz=Mars/Olympus_Mons", "tz is not a known time zone"],
+    ["days=30&tz=UTC&user=ada%20lovelace", "user is not a Forgejo login"],
+    ["days=30&tz=UTC&user=../ada", "user is not a Forgejo login"],
+    [`days=30&tz=UTC&user=${"a".repeat(41)}`, "user is not a Forgejo login"],
   ])("answers 400 to %s", async (query, error) => {
     const { forgejo, call, cookie } = await setup()
 
