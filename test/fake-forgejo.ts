@@ -78,6 +78,13 @@ export type FakeRepo = {
   writers: ReadonlyArray<string>
   /** Logins who may write issues without push access, as a triage team can. */
   triagers: ReadonlyArray<string>
+  /** Logins that Forgejo answers 404 for every read of the repository, as it does without access. */
+  hiddenFrom?: ReadonlyArray<string>
+  /**
+   * Logins that can read the repository but not its issues, as a team with only the code unit
+   * can: Forgejo answers 404 for its issue endpoints.
+   */
+  issuesHiddenFrom?: ReadonlyArray<string>
   /** Repository-level labels, beside the organization's. */
   labels: ReadonlyArray<FakeLabel>
   /** Open and closed milestones. None when left out. */
@@ -630,7 +637,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     if (repoRead === null) return undefined
     const [, owner = "", name = "", what] = repoRead
     const repo = findRepo(owner, name)
-    if (repo === undefined) return notFound()
+    if (repo === undefined || repo.hiddenFrom?.includes(login)) return notFound()
     if (what === "languages") return json(repo.languages ?? {})
     if (repo.actionRuns === undefined) return notFound()
     const limit = Math.min(Number(query.get("limit") ?? 30) || 30, fixtures.maxPageSize)
@@ -717,7 +724,9 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
       return what === "labels"
         ? paged(org.labels, query)
         : paged(
-            org.repos.map((repo) => repoJson(org.name, repo, login)),
+            org.repos
+              .filter((repo) => repo.hiddenFrom?.includes(login) !== true)
+              .map((repo) => repoJson(org.name, repo, login)),
             query,
           )
     }
@@ -729,6 +738,8 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
       const org = findOrg(owner)
       const repo = findRepo(owner, name)
       if (org === undefined || repo === undefined) return notFound()
+      if (repo.hiddenFrom?.includes(login)) return notFound()
+      if (rest.startsWith("/issues") && repo.issuesHiddenFrom?.includes(login)) return notFound()
       if (rest === "") return json(repoJson(owner, repo, login))
       if (rest === "/labels") return paged(repo.labels, query)
       if (rest === "/milestones") {

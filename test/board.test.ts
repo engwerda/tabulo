@@ -1022,6 +1022,38 @@ describe("card order", () => {
     expect(writes(forgejo)).toEqual([])
     expect(await rankRows()).toEqual(before)
   })
+
+  // A member who cannot read a repository must not learn, from a move's answer, which of its
+  // issues exist or which column they are in.
+  it.each([
+    ["a repository the user cannot see", { hiddenFrom: ["grace"] }],
+    ["a repository whose issues the user cannot read", { issuesHiddenFrom: ["grace"] }],
+  ])("answers a neighbour in %s as one without a rank", async (_, access) => {
+    const org = orderOrg()
+    org.repos.push(
+      boardRepo("secret", { ...access, issues: [boardIssue("secret", 1, { title: "Plans" })] }),
+    )
+    const { forgejo, move, board, call } = await boardSession({ orgs: [org] })
+    await board(undefined, "api,web,secret")
+    const graceCookie = await signIn(call, forgejo, "grace")
+    const before = await rankRows()
+    expect(before.find((row) => row.issue_key === "acme/secret#1")).toMatchObject({
+      column_key: "todo",
+    })
+
+    const statuses = []
+    for (const afterKey of ["acme/secret#1", "acme/secret#2"]) {
+      const response = await move(
+        { repo: "api", number: 1, toColumn: "todo", afterKey },
+        graceCookie,
+      )
+      statuses.push(response.status)
+    }
+
+    expect(statuses).toEqual([409, 409])
+    expect(writes(forgejo)).toEqual([])
+    expect(await rankRows()).toEqual(before)
+  })
 })
 
 type CardResult = {

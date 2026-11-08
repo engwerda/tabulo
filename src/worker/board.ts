@@ -175,14 +175,24 @@ export const toBoardCard = (
 })
 
 const NAME = /^[A-Za-z0-9_.-]+$/
-const CARD_KEY = /^[a-z0-9_.-]+\/[a-z0-9_.-]+#[1-9][0-9]*$/
+const CARD_KEY = /^([a-z0-9_.-]+)\/([a-z0-9_.-]+)#([1-9][0-9]{0,9})$/
 const MAX_CARD_KEY_LENGTH = 200
+
+/** The issue a card key names, or undefined when the key is not one. */
+const cardIssue = (key: string) => {
+  const [, owner, name, number] = CARD_KEY.exec(key) ?? []
+  return owner === undefined || name === undefined || name === "." || name === ".."
+    ? undefined
+    : { repo: { owner, name }, number: Number(number) }
+}
 
 /** A card key of `org` from a request, lowercased, or null when the request names none. */
 export const parseCardKey = (org: string, what: string, value: string | null) => {
   if (value === null) return Effect.succeed(null)
   const key = value.toLowerCase()
-  return key.length <= MAX_CARD_KEY_LENGTH && CARD_KEY.test(key) && key.startsWith(`${org}/`)
+  return key.length <= MAX_CARD_KEY_LENGTH &&
+    cardIssue(key) !== undefined &&
+    key.startsWith(`${org}/`)
     ? Effect.succeed(key)
     : Effect.fail(new BoardRequestInvalid({ message: `${what} is not a card of ${org}` }))
 }
@@ -512,11 +522,25 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
         message: `Only members of ${org} can arrange its board`,
       })
     }
-    const [repo, issue, orgLabels] = yield* Effect.all(
+    // The stored order spans repositories the user may not read. A neighbour of one must answer
+    // as a card without a rank does, or the answer would tell which of its issues exist.
+    const canRead = (key: string | null) => {
+      const neighbour = key === null ? undefined : cardIssue(key)
+      return neighbour === undefined
+        ? Effect.succeed(true)
+        : forgejo.issue(token, neighbour.repo, neighbour.number).pipe(
+            Effect.as(true),
+            Effect.catchTag(["ForgejoNotFound", "ForgejoForbidden"], () => Effect.succeed(false)),
+          )
+    }
+    const [repo, issue, orgLabels, neighboursReadable] = yield* Effect.all(
       [
         forgejo.repo(token, repoRef),
         forgejo.issue(token, repoRef, request.number),
         readOrgLabels(token, org),
+        Effect.all([canRead(afterKey), canRead(beforeKey)], { concurrency: "unbounded" }).pipe(
+          Effect.map((readable) => readable.every(Boolean)),
+        ),
       ],
       { concurrency: "unbounded" },
     )
@@ -537,6 +561,7 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
     // A card that left the column the client saw was moved by someone else; acting on the
     // stale view would undo their status change in Forgejo.
     if (layout.columnOf(issue) !== request.fromColumn) return yield* new BoardChanged()
+    if (!neighboursReadable) return yield* new BoardChanged()
 
     const ranks = yield* CardRanks
     const rank = rankForDrop(yield* ranks.forOrg(org), {
