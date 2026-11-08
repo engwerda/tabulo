@@ -148,11 +148,12 @@ export class ForgejoClient extends Context.Service<
       budget?: PageBudget,
     ) => Effect.Effect<Listing<ForgejoLabel>, ForgejoError>
     readonly repo: (token: AccessToken, repo: RepoRef) => Effect.Effect<ForgejoRepo, ForgejoError>
+    /** The issues, as far as 100 pages reach. */
     readonly repoIssues: (
       token: AccessToken,
       repo: RepoRef,
       listing: IssueListing,
-    ) => Effect.Effect<ReadonlyArray<ForgejoRepoIssue>, ForgejoError>
+    ) => Effect.Effect<Listing<ForgejoRepoIssue>, ForgejoError>
     readonly repoEpicIssues: (
       token: AccessToken,
       repo: RepoRef,
@@ -587,9 +588,7 @@ export const makeForgejoClient = (
     repo: (token, repo) =>
       api(token, repoPath(repo), {}, ForgejoRepo).pipe(Effect.map(({ body }) => body)),
     repoIssues: (token, repo, issues) =>
-      listRepoIssues(token, repo, issues, ForgejoRepoIssue, { remaining: MAX_PAGES }).pipe(
-        Effect.map(({ items }) => items),
-      ),
+      listRepoIssues(token, repo, issues, ForgejoRepoIssue, { remaining: MAX_PAGES }),
     repoEpicIssues: (token, repo, issues, budget) =>
       listRepoIssues(token, repo, issues, ForgejoEpicIssue, budget),
     issue: (token, repo, number) =>

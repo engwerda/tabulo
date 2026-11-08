@@ -275,7 +275,13 @@ export const listOrgRepos = (token: AccessToken, org: string) =>
   )
 
 type RepoCards =
-  | { readonly _tag: "Loaded"; readonly repo: string; readonly cards: ReadonlyArray<UnrankedCard> }
+  | {
+      readonly _tag: "Loaded"
+      readonly repo: string
+      readonly cards: ReadonlyArray<UnrankedCard>
+      /** Whether both listings were read to their end. */
+      readonly complete: boolean
+    }
   | { readonly _tag: "Failed"; readonly repo: string; readonly message: string }
 
 /**
@@ -333,9 +339,10 @@ export const loadBoard = (
           ([repo, open, closed]): RepoCards => ({
             _tag: "Loaded",
             repo: name,
-            cards: [...open, ...closed.filter(closedInWindow)].map((issue) =>
+            cards: [...open.items, ...closed.items.filter(closedInWindow)].map((issue) =>
               toBoardCard(layout, query.org, repo, issue),
             ),
+            complete: open.complete && closed.complete,
           }),
         ),
         Effect.catchTag(FORGEJO_READ_ERRORS, (error) =>
@@ -358,10 +365,10 @@ export const loadBoard = (
       stored,
       loaded.flatMap((result) => result.cards),
     )
-    // Rows of issues that a loaded repository no longer lists: closed before the Done window,
-    // deleted, or transferred. Rows of other repositories belong to other boards.
+    // Rows of issues that a repository read to its end no longer lists: closed before the Done
+    // window, deleted, or transferred. Rows of other repositories belong to other boards.
     const listed = new Set([...kept, ...fresh].map((card) => card.key))
-    const loadedRepos = new Set(loaded.map((result) => result.repo))
+    const loadedRepos = new Set(loaded.flatMap((result) => (result.complete ? [result.repo] : [])))
     const removed = [...stored.keys()].filter(
       (key) =>
         !listed.has(key) && loadedRepos.has(key.slice(query.org.length + 1, key.lastIndexOf("#"))),

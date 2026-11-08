@@ -895,6 +895,25 @@ const orderOrg = () =>
   ])
 
 describe("card order", () => {
+  it("keeps the ranks of a repository whose issues do not fit in the pages it reads", async () => {
+    const issues = Array.from({ length: 101 }, (_, index) => boardIssue("api", index + 1))
+    const { board } = await boardSession({
+      orgs: [acme([boardRepo("api", { issues })])],
+      maxPageSize: 1,
+    })
+    await env.DB.prepare(
+      `INSERT INTO card_ranks (org, issue_key, column_key, rank, updated_at, updated_by)
+       VALUES ('acme', 'acme/api#101', 'todo', 'a0', 0, 'ada')`,
+    ).run()
+
+    const shown = await board(undefined, "api")
+
+    expect(shown.cards.map((card) => card.key)).not.toContain("acme/api#101")
+    expect(await rankRows()).toContainEqual(
+      expect.objectContaining({ issue_key: "acme/api#101", column_key: "todo", rank: "a0" }),
+    )
+  })
+
   it("ranks unranked cards on read after the organization's stored order, newest first", async () => {
     const { board } = await boardSession({ orgs: [orderOrg()] })
 
