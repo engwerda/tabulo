@@ -10,14 +10,14 @@ export const RANGE_LABELS: Record<InsightDays, { readonly short: string; readonl
   }
 
 /**
- * The days the window covers, counting its first and last day as the header's span does. It
- * starts on a Monday, so a 30-day period covers 30 to 36 days.
+ * What a change against the period before compares with: a period as long as the window. The
+ * window starts on a Monday and ends today, so its length is given in weeks, rounded, with the
+ * first and last day counted as the header's span does.
  */
-export const windowDays = ({ start, end }: Insights["window"]) =>
-  Math.round((Date.parse(end) - Date.parse(start)) / 86_400_000) + 1
-
-/** What a change against the period before compares with: a period as long as the window. */
-export const priorLabel = (window: Insights["window"]) => `vs prior ${windowDays(window)} days`
+export const priorLabel = ({ start, end }: Insights["window"]) => {
+  const days = Math.round((Date.parse(end) - Date.parse(start)) / 86_400_000) + 1
+  return `vs the ${Math.round(days / 7)} weeks before`
+}
 
 export const ATTENTION_LABELS: Record<AttentionKind, string> = {
   failing_ci: "CI failing",

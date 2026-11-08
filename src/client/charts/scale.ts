@@ -76,7 +76,7 @@ const PERCENT_MIN_BASE = 10
 /**
  * The change from `previous` to `value` with its sign: "+12%", "−4" in the value's own `format`,
  * or "+3 pts" for ratios. A percentage falls back to the difference when the earlier value is
- * under 10.
+ * under 10, and then names that value ("+100 from 7") so it does not read as a percentage.
  */
 export const formatChange = (
   value: number,
@@ -86,9 +86,13 @@ export const formatChange = (
 ) => {
   const change = value - previous
   const sign = change > 0 ? "+" : "−"
-  if (mode === "points") return `${sign}${Math.abs(Math.round(change * 100))} pts`
-  if (mode === "percent" && Math.abs(previous) >= PERCENT_MIN_BASE) {
+  if (mode === "points") {
+    const points = Math.abs(Math.round(change * 100))
+    return `${sign}${points} ${points === 1 ? "pt" : "pts"}`
+  }
+  if (mode === "absolute") return `${sign}${format(Math.abs(change))}`
+  if (Math.abs(previous) >= PERCENT_MIN_BASE) {
     return `${sign}${Math.abs(Math.round((change / previous) * 100))}%`
   }
-  return `${sign}${format(Math.abs(change))}`
+  return `${sign}${format(Math.abs(change))} from ${format(previous)}`
 }

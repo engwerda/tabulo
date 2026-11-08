@@ -138,23 +138,30 @@ describe("chart scale", () => {
     expect(formatSpan("2025-11-03", "2026-11-07")).toBe("Nov 3, 2025 to Nov 7, 2026")
   })
 
-  it("shows a change as a percentage only from an earlier value of 10", () => {
-    expect(formatChange(81, 3, "percent")).toBe("+78")
-    expect(formatChange(107, 7, "percent")).toBe("+100")
-    expect(formatChange(5, 0, "percent")).toBe("+5")
+  it("shows a change as a percentage only from an earlier value of 10, else names that value", () => {
+    expect(formatChange(81, 3, "percent")).toBe("+78 from 3")
+    expect(formatChange(107, 7, "percent")).toBe("+100 from 7")
+    expect(formatChange(5, 0, "percent")).toBe("+5 from 0")
+    expect(formatChange(4, 9, "percent")).toBe("−5 from 9")
     expect(formatChange(15, 10, "percent")).toBe("+50%")
     expect(formatChange(30, 40, "percent")).toBe("−25%")
     expect(formatChange(30, 4, "absolute")).toBe("+26")
-    expect(formatChange(8, 5, "percent", formatHours)).toBe("+3h")
+    expect(formatChange(8, 5, "percent", formatHours)).toBe("+3h from 5h")
     expect(formatChange(130, 80, "percent", formatHours)).toBe("+63%")
     expect(formatChange(0.88, 0.75, "points")).toBe("+13 pts")
+    expect(formatChange(0.87, 0.88, "points")).toBe("−1 pt")
   })
 })
 
 describe("priorLabel", () => {
-  it("names the days the window covers, which start on a Monday", () => {
-    expect(priorLabel({ start: "2026-10-05", end: "2026-11-08" })).toBe("vs prior 35 days")
-    expect(priorLabel({ start: "2025-11-03", end: "2026-11-08" })).toBe("vs prior 371 days")
-    expect(priorLabel({ start: "2026-03-23", end: "2026-04-05" })).toBe("vs prior 14 days")
+  it("names the window's length in weeks, which start on a Monday", () => {
+    expect(priorLabel({ start: "2026-10-05", end: "2026-11-08" })).toBe("vs the 5 weeks before")
+    expect(priorLabel({ start: "2025-11-03", end: "2026-11-08" })).toBe("vs the 53 weeks before")
+    expect(priorLabel({ start: "2026-03-23", end: "2026-04-05" })).toBe("vs the 2 weeks before")
+  })
+
+  it("rounds a window that ends partway through its last week", () => {
+    expect(priorLabel({ start: "2026-10-05", end: "2026-11-06" })).toBe("vs the 5 weeks before")
+    expect(priorLabel({ start: "2026-10-05", end: "2026-11-04" })).toBe("vs the 4 weeks before")
   })
 })

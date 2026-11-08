@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
-import { type ReactNode, useState } from "react"
+import { useState } from "react"
 import { useSearchParams } from "wouter"
 import { INSIGHT_DAYS, type InsightDays, type Insights } from "../../shared/api.ts"
 import { browserTimeZone, fetchInsights } from "../api.ts"
@@ -8,6 +8,7 @@ import { relativeTime } from "../format.ts"
 import { ChooseRepos } from "../scope/ChooseRepos.tsx"
 import { ScopeBar } from "../scope/ScopeBar.tsx"
 import { useRepoSelection } from "../scope/use-repo-selection.ts"
+import { ErrorNotice } from "../ui/ErrorNotice.tsx"
 import { PageTitle } from "../ui/PageTitle.tsx"
 import { buttonClass, cardClass, Segmented } from "../ui/primitives.tsx"
 import { InsightsDashboard } from "./InsightsDashboard.tsx"
@@ -123,74 +124,9 @@ const Skeleton = () => (
   </div>
 )
 
-const ChartsIcon = () => (
-  <svg viewBox="0 0 16 16" className="size-4" fill="none" aria-hidden="true">
-    <path
-      d="M3 13V8.5M6.5 13V4M10 13V7M13.5 13V2.5"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-    />
-  </svg>
-)
-
-const AlertIcon = () => (
-  <svg viewBox="0 0 16 16" className="size-4 shrink-0" fill="none" aria-hidden="true">
-    <path
-      d="M8 5v3.5M8 11h.01M14 8A6 6 0 112 8a6 6 0 0112 0z"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-    />
-  </svg>
-)
-
-/** A compact block for a page that has nothing to chart: one icon, a title, and a sentence. */
-const Notice = ({ title, children }: { readonly title: string; readonly children: string }) => (
-  <section className={`${cardClass} flex items-start gap-3 px-4 py-4 sm:px-5`}>
-    <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-      <ChartsIcon />
-    </span>
-    <div className="min-w-0">
-      <h2 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">{title}</h2>
-      <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">{children}</p>
-    </div>
-  </section>
-)
-
-/** A problem with the data on the page, with its explanation and an optional retry. */
-const Problem = ({
-  tone,
-  children,
-  onRetry,
-  retrying = false,
-}: {
-  readonly tone: "error" | "warning"
-  readonly children: ReactNode
-  readonly onRetry?: () => void
-  readonly retrying?: boolean
-}) => (
-  <div role="alert" className={`${cardClass} flex items-center gap-3 px-4 py-2.5 text-sm sm:px-5`}>
-    <span
-      className={
-        tone === "error" ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"
-      }
-    >
-      <AlertIcon />
-    </span>
-    <p className="min-w-0 flex-1 text-zinc-700 dark:text-zinc-300">{children}</p>
-    {onRetry !== undefined && (
-      <button
-        type="button"
-        onClick={onRetry}
-        disabled={retrying}
-        className={`${buttonClass.secondary} shrink-0`}
-      >
-        Retry
-      </button>
-    )}
-  </div>
-)
+/** The repositories that failed to load, each with Forgejo's reason. */
+const failures = (failed: Insights["failedRepos"]) =>
+  failed.map(({ repo, message }) => `${repo} (${message})`).join(", ")
 
 export const InsightsPage = ({ org }: { org: string }) => {
   const repoSelection = useRepoSelection(org)
@@ -264,14 +200,13 @@ export const InsightsPage = ({ org }: { org: string }) => {
           </ChooseRepos>
         ) : data === undefined ? (
           insights.isError ? (
-            <Problem
-              tone="error"
+            <ErrorNotice
+              title="Could not load insights"
               onRetry={() => void insights.refetch()}
               retrying={insights.isFetching}
             >
-              Could not load insights.{" "}
-              <span className="text-zinc-500 dark:text-zinc-400">{insights.error.message}</span>
-            </Problem>
+              {insights.error.message}
+            </ErrorNotice>
           ) : (
             <Skeleton />
           )
@@ -280,31 +215,41 @@ export const InsightsPage = ({ org }: { org: string }) => {
             className={`flex flex-col gap-4 transition-opacity ${insights.isPlaceholderData ? "opacity-60" : ""}`}
           >
             {insights.isError && (
-              <Problem
-                tone="error"
+              <ErrorNotice
+                title="Could not refresh insights"
                 onRetry={() => void insights.refetch()}
                 retrying={insights.isFetching}
               >
-                Could not refresh; showing the last loaded numbers.{" "}
-                <span className="text-zinc-500 dark:text-zinc-400">{insights.error.message}</span>
-              </Problem>
-            )}
-            {data.failedRepos.length > 0 && (
-              <Problem tone="warning">
-                Left out because they failed to load:{" "}
-                {data.failedRepos.map((failed) => `${failed.repo} (${failed.message})`).join(", ")}
-              </Problem>
-            )}
-            {data.incomplete.length > 0 && (
-              <Problem tone="warning">{incompleteNotice(data.incomplete)}</Problem>
+                Showing the last loaded numbers. {insights.error.message}
+              </ErrorNotice>
             )}
             {data.repoStats.length === 0 ? (
-              <Notice title="No repository loaded">
-                Every chosen repository failed to load. Check that you can still open them in
-                Forgejo, then reload.
-              </Notice>
+              <ErrorNotice
+                title="No repository loaded"
+                onRetry={() => void insights.refetch()}
+                retrying={insights.isFetching}
+              >
+                Every chosen repository failed to load: {failures(data.failedRepos)}. Check that you
+                can still open them in Forgejo.
+              </ErrorNotice>
             ) : (
-              <InsightsDashboard insights={data} />
+              <>
+                {data.failedRepos.length > 0 && (
+                  <ErrorNotice
+                    tone="warning"
+                    title={`${data.failedRepos.length === 1 ? "1 repository" : `${data.failedRepos.length} repositories`} left out`}
+                  >
+                    {data.failedRepos.length === 1 ? "It" : "They"} failed to load:{" "}
+                    {failures(data.failedRepos)}.
+                  </ErrorNotice>
+                )}
+                {data.incomplete.length > 0 && (
+                  <ErrorNotice tone="warning" title="Some numbers are incomplete">
+                    {incompleteNotice(data.incomplete)}
+                  </ErrorNotice>
+                )}
+                <InsightsDashboard insights={data} />
+              </>
             )}
           </div>
         )}

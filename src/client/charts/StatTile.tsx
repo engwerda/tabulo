@@ -9,7 +9,7 @@ type StatProps = {
   /** Whether a rise is good news, which colors the change. */
   readonly goodWhen: "up" | "down" | "neutral"
   readonly deltaMode?: ChangeMode
-  /** What the change compares with, such as "vs prior 90 days". */
+  /** What the change compares with, such as "vs the 13 weeks before". */
   readonly comparison: string
 }
 

@@ -242,7 +242,7 @@ const UserMenu = ({ user, logout }: { user: User; logout: ReturnType<typeof useS
             disabled={logout.isPending}
             className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-700 transition hover:bg-zinc-100 disabled:opacity-60 dark:text-zinc-300 dark:hover:bg-zinc-800"
           >
-            <SignOutIcon className="size-4 text-zinc-400" />
+            <SignOutIcon className="size-4 text-zinc-500 dark:text-zinc-400" />
             {logout.isPending ? "Signing out…" : "Sign out"}
           </button>
         </div>
