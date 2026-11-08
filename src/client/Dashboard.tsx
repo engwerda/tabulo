@@ -246,7 +246,8 @@ export const DashboardView = () => {
           <div className="flex items-center gap-1">
             {dashboard.dataUpdatedAt > 0 && (
               <span className="hidden text-xs text-zinc-500 sm:inline dark:text-zinc-400">
-                Updated {relativeTime(new Date(dashboard.dataUpdatedAt).toISOString())}
+                {dashboard.isError ? "Refresh failed, last loaded" : "Updated"}{" "}
+                {relativeTime(new Date(dashboard.dataUpdatedAt).toISOString())}
               </span>
             )}
             {/* With nothing loaded, the error notice's Retry is the one way to try again. */}
@@ -293,13 +294,26 @@ export const DashboardView = () => {
           <SkeletonGrid />
         )
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-          {COLUMNS.map((column) => (
-            <div key={column.join()} className="flex min-w-0 flex-col gap-4">
-              {column.map((key) => renderSection(key, data))}
-            </div>
-          ))}
-        </div>
+        <>
+          {dashboard.isError && (
+            <ErrorNotice
+              tone="warning"
+              title="Could not refresh your dashboard"
+              onRetry={retry}
+              retrying={dashboard.isFetching}
+              className="mb-4"
+            >
+              {`These items were loaded ${relativeTime(new Date(dashboard.dataUpdatedAt).toISOString())}. ${dashboard.error.message}`}
+            </ErrorNotice>
+          )}
+          <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+            {COLUMNS.map((column) => (
+              <div key={column.join()} className="flex min-w-0 flex-col gap-4">
+                {column.map((key) => renderSection(key, data))}
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       <div className="mt-4">

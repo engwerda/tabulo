@@ -2,6 +2,9 @@ import type { ReactNode } from "react"
 import { AlertIcon } from "./icons.tsx"
 import { buttonClass, cardClass } from "./primitives.tsx"
 
+/** Server messages often end without a full stop; every notice reads as sentences. */
+const sentence = (text: string) => (/[.!?…)]$/.test(text.trim()) ? text : `${text.trim()}.`)
+
 /**
  * How every view says something failed or is incomplete: an icon tile, a title, the reason, and
  * "Retry" when trying again can help. `bare` drops the card surface for use inside a card.
@@ -42,7 +45,9 @@ export const ErrorNotice = ({
       <div className="min-w-0">
         <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">{title}</p>
         {children !== undefined && (
-          <p className="mt-0.5 text-sm break-words text-zinc-500 dark:text-zinc-400">{children}</p>
+          <p className="mt-0.5 text-sm break-words text-zinc-500 dark:text-zinc-400">
+            {typeof children === "string" ? sentence(children) : children}
+          </p>
         )}
       </div>
     </div>

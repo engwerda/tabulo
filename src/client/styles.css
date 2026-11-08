@@ -198,12 +198,13 @@
 .prose-forgejo li.task-list-item {
   @apply -ml-5 list-none;
 }
-/* Task list boxes read as status marks, not as disabled inputs. */
+/* Task list boxes read as status marks, not as inputs. */
 .prose-forgejo input[type="checkbox"] {
   @apply mr-1.5 inline-grid size-3.5 appearance-none place-content-center rounded border border-zinc-300 bg-white align-[-2px] dark:border-zinc-600 dark:bg-zinc-900;
 }
+/* Grey, not the indigo of real controls: these record state in Forgejo and cannot be ticked here. */
 .prose-forgejo input[type="checkbox"]:checked {
-  @apply border-indigo-600 bg-indigo-600 dark:border-indigo-500 dark:bg-indigo-500;
+  @apply border-zinc-500 bg-zinc-500 dark:border-zinc-500 dark:bg-zinc-500;
 }
 .prose-forgejo input[type="checkbox"]:checked::after {
   content: "";

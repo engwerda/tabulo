@@ -5,6 +5,7 @@ import { CalendarHeatmap } from "./charts/CalendarHeatmap.tsx"
 import { TableToggle } from "./charts/ChartCard.tsx"
 import { DataTable, HiddenTable } from "./charts/DataTable.tsx"
 import { formatCount, formatLongDay } from "./charts/scale.ts"
+import { relativeTime } from "./format.ts"
 import { ErrorNotice } from "./ui/ErrorNotice.tsx"
 import { cardClass } from "./ui/primitives.tsx"
 
@@ -133,6 +134,18 @@ export const ActivityCard = () => {
           <TableToggle pressed={showTable} onToggle={() => setShowTable((current) => !current)} />
         </span>
       </Heading>
+      {activity.isError && (
+        <ErrorNotice
+          bare
+          tone="warning"
+          title="Could not refresh your activity"
+          onRetry={() => void activity.refetch()}
+          retrying={activity.isFetching}
+          className="mt-3"
+        >
+          {`Shown as loaded ${relativeTime(new Date(activity.dataUpdatedAt).toISOString())}. ${activity.error.message}`}
+        </ErrorNotice>
+      )}
       <div className="mt-3 flex flex-col gap-5 lg:flex-row lg:gap-8">
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4 lg:w-56 lg:shrink-0 lg:grid-cols-2 lg:content-start">
           <Stat label="Contributions" value={formatCount(data.total)} />
