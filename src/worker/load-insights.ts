@@ -1,6 +1,7 @@
 import { Clock, Effect } from "effect"
 import {
   type Activity,
+  DEFAULT_INSIGHT_DAYS,
   INSIGHT_DAYS,
   type IncompleteListing,
   type InsightDays,
@@ -33,7 +34,10 @@ export const parseTimeZone = (value: string | undefined) =>
       : Effect.fail(new BoardRequestInvalid({ message: "tz is not a known time zone" }))
 
 const parseDays = (value: string | undefined) => {
-  const days = INSIGHT_DAYS.find((allowed) => String(allowed) === (value ?? "90"))
+  const days =
+    value === undefined
+      ? DEFAULT_INSIGHT_DAYS
+      : INSIGHT_DAYS.find((allowed) => String(allowed) === value)
   return days === undefined
     ? Effect.fail(
         new BoardRequestInvalid({ message: `days must be one of ${INSIGHT_DAYS.join(", ")}` }),

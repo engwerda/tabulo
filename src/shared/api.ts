@@ -252,6 +252,7 @@ export type AddCommentResult = typeof AddCommentResult.Type
 
 export const INSIGHT_DAYS = [1, 7, 30, 90, 180, 365] as const
 export type InsightDays = (typeof INSIGHT_DAYS)[number]
+export const DEFAULT_INSIGHT_DAYS: InsightDays = 7
 export type InsightGrain = "hour" | "day" | "week"
 /** The period each range is counted in. */
 export const INSIGHT_GRAIN: Record<InsightDays, InsightGrain> = {

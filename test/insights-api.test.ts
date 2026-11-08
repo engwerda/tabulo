@@ -273,6 +273,15 @@ describe("GET /api/insights", () => {
     expect(reads.length).toBeLessThan(1000)
   })
 
+  it("shows the last 7 days when the request names no range", async () => {
+    const { call, cookie } = await setup()
+    const response = await call("/api/insights?org=acme&repos=api&tz=UTC", { headers: { cookie } })
+    expect(response.status).toBe(200)
+    const insights = (await response.json()) as Insights
+    expect(insights.days).toBe(7)
+    expect(insights.series).toHaveLength(8)
+  })
+
   it("counts the last 24 hours per hour and the last 7 days per day", async () => {
     const { forgejo, call, cookie } = await setup()
     const read = async (days: number) => {

@@ -1,7 +1,13 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { useState } from "react"
 import { useSearchParams } from "wouter"
-import { INSIGHT_DAYS, INSIGHT_GRAIN, type InsightDays, type Insights } from "../../shared/api.ts"
+import {
+  DEFAULT_INSIGHT_DAYS,
+  INSIGHT_DAYS,
+  INSIGHT_GRAIN,
+  type InsightDays,
+  type Insights,
+} from "../../shared/api.ts"
 import { browserTimeZone, fetchInsights, fetchOrgs } from "../api.ts"
 import { formatSpan } from "../charts/scale.ts"
 import { boardCardHref } from "../epics/epics-view.ts"
@@ -20,7 +26,6 @@ import { personChoices } from "./people.ts"
 import { GRAIN_WORDS, windowNote } from "./periods.ts"
 import { incompleteNotice, insightsSummary, RANGE_LABELS } from "./summary.ts"
 
-const DEFAULT_DAYS: InsightDays = 90
 const STALE_TIME_MS = 5 * 60 * 1000
 
 /** One parameter of the address, which a change replaces in history; null removes it. */
@@ -41,8 +46,9 @@ const useParam = (name: string) => {
 
 const useRange = () => {
   const [param, setParam] = useParam("days")
-  const days = INSIGHT_DAYS.find((allowed) => String(allowed) === param) ?? DEFAULT_DAYS
-  const setDays = (next: InsightDays) => setParam(next === DEFAULT_DAYS ? null : String(next))
+  const days = INSIGHT_DAYS.find((allowed) => String(allowed) === param) ?? DEFAULT_INSIGHT_DAYS
+  const setDays = (next: InsightDays) =>
+    setParam(next === DEFAULT_INSIGHT_DAYS ? null : String(next))
   return [days, setDays] as const
 }
 
@@ -208,7 +214,9 @@ export const InsightsPage = ({ org }: { org: string }) => {
                 label="Period"
                 value={String(days)}
                 onChange={(next) =>
-                  setDays(INSIGHT_DAYS.find((option) => String(option) === next) ?? DEFAULT_DAYS)
+                  setDays(
+                    INSIGHT_DAYS.find((option) => String(option) === next) ?? DEFAULT_INSIGHT_DAYS,
+                  )
                 }
                 options={INSIGHT_DAYS.map((option) => ({
                   value: String(option),

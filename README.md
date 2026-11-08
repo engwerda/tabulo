@@ -243,9 +243,9 @@ cards; others see the board read-only. Cards of archived repositories cannot be 
 ## Use the insights
 
 Open **Insights** in the header, choose an organization, and choose its repositories, as for
-the board. Pick a period of 24 hours, 7 days, 30 days, 90 days, 6 months, or a year. The
-address is `/insights/<org>?repos=<repo>,<repo>&days=<days>`, so a view can be bookmarked or
-shared. The page counts 24 hours per hour, 7 days per day, and longer periods per week. Weeks
+the board. Pick a period of 24 hours, 7 days (the default), 30 days, 90 days, 6 months, or a
+year. The address is `/insights/<org>?repos=<repo>,<repo>&days=<days>`, so a view can be
+bookmarked or shared. The page counts 24 hours per hour, 7 days per day, and longer periods per week. Weeks
 start on Monday, and hours, days, and weeks are read in your browser's time zone. A period
 starts at the beginning of its first hour, day, or week, so the page shows whole ones; the
 current one is drawn lighter because it is still in progress.

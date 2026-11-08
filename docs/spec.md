@@ -312,7 +312,7 @@ streak that has no contribution yet today still counts until the day ends.
 
 | Endpoint | Result |
 |---|---|
-| `GET /api/insights?org=&repos=a,b&days=90&tz=Europe/Amsterdam&user=ada` | The `Insights` payload in `src/shared/api.ts`. `days` is 1, 7, 30, 90, 180, or 365 and defaults to 90. `tz` is an IANA time zone and defaults to UTC. `user` is a login of 1 to 40 letters, digits, `-`, `_`, or `.`, and narrows the numbers to that person; without it they count everyone. Other values answer 400. At most 20 repositories. |
+| `GET /api/insights?org=&repos=a,b&days=7&tz=Europe/Amsterdam&user=ada` | The `Insights` payload in `src/shared/api.ts`. `days` is 1, 7, 30, 90, 180, or 365 and defaults to 7. `tz` is an IANA time zone and defaults to UTC. `user` is a login of 1 to 40 letters, digits, `-`, `_`, or `.`, and narrows the numbers to that person; without it they count everyone. Other values answer 400. At most 20 repositories. |
 | `GET /api/activity?tz=Europe/Amsterdam` | The signed-in user's days with contributions, total, current and longest streak, and busiest day. |
 
 ### Epics
