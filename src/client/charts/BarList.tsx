@@ -1,5 +1,5 @@
 import { type ReactNode, useState } from "react"
-import { touchTarget } from "../ui/primitives.tsx"
+import { ShowAll } from "./ShowAll.tsx"
 import { useEntrance } from "./use-entrance.ts"
 
 type BarSegment = { readonly label: string; readonly value: number; readonly color: string }
@@ -101,14 +101,11 @@ export const BarList = ({
         })}
       </ul>
       {rows.length > limit && (
-        <button
-          type="button"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((current) => !current)}
-          className={`mt-3 self-start rounded-md text-xs font-medium text-zinc-600 hover:text-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 dark:text-zinc-400 dark:hover:text-zinc-100 ${touchTarget}`}
-        >
-          {expanded ? "Show fewer" : `Show all ${rows.length}`}
-        </button>
+        <ShowAll
+          total={rows.length}
+          expanded={expanded}
+          onToggle={() => setExpanded((current) => !current)}
+        />
       )}
     </div>
   )

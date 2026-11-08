@@ -1,4 +1,4 @@
-import { type ReactNode, useId, useState } from "react"
+import { type ReactNode, type Ref, useId, useState } from "react"
 import { cardClass, touchTarget } from "../ui/primitives.tsx"
 
 type ChartCardProps = {
@@ -9,6 +9,7 @@ type ChartCardProps = {
   /** The chart's table view. Screen readers always get it; sighted readers can switch to it. */
   readonly table?: ReactNode
   readonly className?: string
+  readonly ref?: Ref<HTMLElement>
   readonly children: ReactNode
 }
 
@@ -39,7 +40,7 @@ export const TableToggle = ({
     aria-pressed={pressed}
     title={pressed ? "Show the chart" : "Show as a table"}
     onClick={onToggle}
-    className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border px-2 text-xs font-medium whitespace-nowrap transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 ${
+    className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border px-2 text-xs pointer-coarse:h-11 pointer-coarse:px-3 font-medium whitespace-nowrap transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 ${
       pressed
         ? "border-zinc-300 bg-zinc-100 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-50"
         : "border-zinc-200 text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-100"
@@ -56,12 +57,14 @@ export const ChartCard = ({
   actions,
   table,
   className = "",
+  ref,
   children,
 }: ChartCardProps) => {
   const headingId = useId()
   const [showTable, setShowTable] = useState(false)
   return (
     <section
+      ref={ref}
       aria-labelledby={headingId}
       className={`${cardClass} flex min-w-0 flex-col p-4 sm:p-5 ${className}`}
     >

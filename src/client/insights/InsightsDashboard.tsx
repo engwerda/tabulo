@@ -10,6 +10,7 @@ import { Legend } from "../charts/Legend.tsx"
 import { Meter } from "../charts/Meter.tsx"
 import { Punchcard } from "../charts/Punchcard.tsx"
 import { SegmentedBar } from "../charts/SegmentedBar.tsx"
+import { ShowAll } from "../charts/ShowAll.tsx"
 import { StatFigure, StatTile } from "../charts/StatTile.tsx"
 import {
   formatCount,
@@ -18,12 +19,13 @@ import {
   formatMinutes,
   formatPercent,
 } from "../charts/scale.ts"
+import { useWidth } from "../charts/use-width.ts"
 import { cardClass, Segmented } from "../ui/primitives.tsx"
 import { AllClear, AttentionList } from "./AttentionList.tsx"
 import { type Cell, packRows, type Row } from "./layout.ts"
 import { RepoHealthTable } from "./RepoHealthTable.tsx"
-import { ScrollFade } from "./ScrollFade.tsx"
 import { RANGE_LABELS } from "./summary.ts"
+import { bucketTotals, formatDate, type Grain, spansYears, timeBuckets } from "./weeks.ts"
 
 const SERIES = {
   opened: "var(--chart-1)",
@@ -52,18 +54,41 @@ const DAY_NAMES = [
   "Sundays",
 ]
 
-/** The last week of `weeks` is the current one, still in progress. */
-const weekTitle = (weeks: ReadonlyArray<{ readonly weekStart: string }>, index: number) =>
-  `Week of ${formatDay(weeks[index]?.weekStart ?? "")}${index === weeks.length - 1 ? ", so far" : ""}`
-
-const weekCategories = (weeks: ReadonlyArray<{ readonly weekStart: string }>) =>
-  weeks.map((week, index) => ({
-    key: week.weekStart,
-    label: formatDay(week.weekStart),
-    partial: index === weeks.length - 1,
-  }))
-
 const sum = (values: ReadonlyArray<number>) => values.reduce((total, value) => total + value, 0)
+
+// The card's padding and the column chart's axis margin, which the plot does not get.
+const CARD_CHROME = 74
+
+/**
+ * Columns for a weekly chart in the card `ref` measures: one per week, or one per month when
+ * the card is too narrow for weekly columns of at least `minBand` pixels, as a year is on a phone.
+ */
+const useTimeBuckets = (weeks: ReadonlyArray<{ readonly weekStart: string }>, minBand: number) => {
+  const [ref, width] = useWidth<HTMLElement>()
+  const grain: Grain =
+    width > 0 && (width - CARD_CHROME) / Math.max(weeks.length, 1) < minBand ? "month" : "week"
+  const buckets = timeBuckets(
+    weeks.map((week) => week.weekStart),
+    grain,
+  )
+  return { ref, grain, buckets }
+}
+
+/** The legend under a weekly chart, with the grain of its columns at the right. */
+const TimeLegend = ({
+  grain,
+  items,
+}: {
+  readonly grain: Grain
+  readonly items: Parameters<typeof Legend>[0]["items"]
+}) => (
+  <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+    <Legend items={items} />
+    <span className="ml-auto text-2xs text-zinc-500 dark:text-zinc-400">
+      {grain === "week" ? "Per week" : "Per month"}
+    </span>
+  </div>
+)
 
 const Headline = ({ insights }: { readonly insights: Insights }) => {
   const { tiles, weekly } = insights
@@ -168,24 +193,28 @@ const Throughput = ({
   readonly className: string
 }) => {
   const [kind, setKind] = useState<"issues" | "pulls">("issues")
+  const { ref, grain, buckets } = useTimeBuckets(insights.weekly, 8)
   const opened = {
     label: "opened",
     color: SERIES.opened,
-    values: insights.weekly.map((week) =>
-      kind === "issues" ? week.issuesOpened : week.pullsOpened,
+    values: bucketTotals(
+      buckets,
+      insights.weekly.map((week) => (kind === "issues" ? week.issuesOpened : week.pullsOpened)),
     ),
   }
   const done = {
     label: kind === "issues" ? "closed" : "merged",
     color: SERIES.closed,
-    values: insights.weekly.map((week) =>
-      kind === "issues" ? week.issuesClosed : week.pullsMerged,
+    values: bucketTotals(
+      buckets,
+      insights.weekly.map((week) => (kind === "issues" ? week.issuesClosed : week.pullsMerged)),
     ),
   }
   const noun = kind === "issues" ? "issues" : "pull requests"
   const [openedTotal, doneTotal] = [sum(opened.values), sum(done.values)]
   return (
     <ChartCard
+      ref={ref}
       title="Throughput"
       description={`${formatCount(openedTotal)} ${noun} opened, ${formatCount(doneTotal)} ${done.label}`}
       className={className}
@@ -211,30 +240,35 @@ const Throughput = ({
       }
       table={
         <DataTable
-          caption={`${noun} opened and ${done.label} per week`}
-          columns={["Week", "Opened", kind === "issues" ? "Closed" : "Merged"]}
-          rows={insights.weekly.map((week, index) => ({
-            key: week.weekStart,
-            cells: [weekTitle(insights.weekly, index), opened.values[index], done.values[index]],
-          }))}
+          caption={`${noun} opened and ${done.label} per ${grain}, newest first`}
+          columns={[
+            grain === "week" ? "Week" : "Month",
+            "Opened",
+            kind === "issues" ? "Closed" : "Merged",
+          ]}
+          rows={buckets
+            .map((bucket, index) => ({
+              key: bucket.key,
+              cells: [bucket.title, opened.values[index], done.values[index]],
+            }))
+            .reverse()}
         />
       }
     >
       <GroupedColumns
-        categories={weekCategories(insights.weekly)}
+        categories={buckets}
         series={[opened, done]}
         height={220}
-        ariaLabel={`Weekly ${noun}: ${openedTotal} opened and ${doneTotal} ${done.label} over ${insights.weekly.length} weeks.`}
-        tooltipTitle={(index) => weekTitle(insights.weekly, index)}
+        ariaLabel={`${noun} per ${grain}: ${openedTotal} opened and ${doneTotal} ${done.label} over ${insights.weekly.length} weeks.`}
+        tooltipTitle={(index) => buckets[index]?.title ?? ""}
       />
-      <div className="mt-3">
-        <Legend
-          items={[
-            { label: "Opened", color: opened.color },
-            { label: kind === "issues" ? "Closed" : "Merged", color: done.color },
-          ]}
-        />
-      </div>
+      <TimeLegend
+        grain={grain}
+        items={[
+          { label: "Opened", color: opened.color },
+          { label: kind === "issues" ? "Closed" : "Merged", color: done.color },
+        ]}
+      />
     </ChartCard>
   )
 }
@@ -262,37 +296,46 @@ const Backlog = ({
   readonly insights: Insights
   readonly className: string
 }) => {
-  const values = insights.weekly.map((week) => week.openIssues)
-  const first = values[0] ?? 0
-  const last = values.at(-1) ?? 0
-  const change = last - first
+  // The same baseline as the headline tile: the count when the window opened, then the count
+  // each Monday as the week before it closed, then now.
+  const { start, end } = insights.window
+  const { value: now, previous: atStart } = insights.tiles.openIssues
+  const dates = [...insights.weekly.map((week) => week.weekStart), end]
+  const values = [atStart, ...insights.weekly.map((week) => week.openIssues)]
+  values[values.length - 1] = now
+  const withYear = spansYears(dates)
+  const pointTitle = (index: number) =>
+    index === dates.length - 1 ? "Now" : formatDate(dates[index] ?? "", withYear)
+  const change = now - atStart
   return (
     <ChartCard
       title="Open issues"
-      description={`${formatCount(last)} open now, ${
+      description={`${formatCount(now)} open now, ${
         change === 0
           ? "no change"
           : `${change > 0 ? "up" : "down"} ${formatCount(Math.abs(change))}`
-      } since ${formatDay(insights.weekly[0]?.weekStart ?? "")}`}
+      } since ${formatDay(start)}`}
       className={className}
       table={
         <DataTable
-          caption="Open issues at the end of each week"
-          columns={["Week", "Open issues"]}
-          rows={insights.weekly.map((week, index) => ({
-            key: week.weekStart,
-            cells: [weekTitle(insights.weekly, index), week.openIssues],
-          }))}
+          caption="Open issues now and at the start of each week, newest first"
+          columns={["Date", "Open issues"]}
+          rows={values
+            .map((count, index) => ({
+              key: `${index}`,
+              cells: [pointTitle(index), count],
+            }))
+            .reverse()}
         />
       }
     >
       <AreaChart
-        labels={insights.weekly.map((week) => formatDay(week.weekStart))}
+        labels={dates.map((date) => formatDay(date))}
         values={values}
         seriesLabel="open issues"
         partialLast
-        ariaLabel={`Open issues went from ${first} to ${last} over ${values.length} weeks.`}
-        tooltipTitle={(index) => weekTitle(insights.weekly, index)}
+        ariaLabel={`Open issues went from ${atStart} on ${formatDay(start)} to ${now} now.`}
+        tooltipTitle={pointTitle}
       />
     </ChartCard>
   )
@@ -370,93 +413,99 @@ const CiHealth = ({
   readonly ci: NonNullable<Insights["ci"]>
   readonly days: Insights["days"]
   readonly className: string
-}) => (
-  <ChartCard
-    title="CI health"
-    description={`${formatCount(ci.runs)} workflow runs in the last ${RANGE_LABELS[days].long}`}
-    className={className}
-    table={
-      <DataTable
-        caption="Workflow runs per week by outcome"
-        columns={["Week", "Passed", "Failed", "Other"]}
-        rows={ci.weekly.map((week, index) => ({
-          key: week.weekStart,
-          cells: [weekTitle(ci.weekly, index), week.success, week.failure, week.other],
-        }))}
+}) => {
+  const { ref, grain, buckets } = useTimeBuckets(ci.weekly, 6)
+  const outcomes = [
+    { label: "passed", color: SERIES.success, values: ci.weekly.map((week) => week.success) },
+    { label: "failed", color: SERIES.failure, values: ci.weekly.map((week) => week.failure) },
+    { label: "other", color: SERIES.other, values: ci.weekly.map((week) => week.other) },
+  ].map((series) => ({ ...series, values: bucketTotals(buckets, series.values) }))
+  return (
+    <ChartCard
+      ref={ref}
+      title="CI health"
+      description={`${formatCount(ci.runs)} workflow runs in the last ${RANGE_LABELS[days].long}`}
+      className={className}
+      table={
+        <DataTable
+          caption={`Workflow runs per ${grain} by outcome, newest first`}
+          columns={[grain === "week" ? "Week" : "Month", "Passed", "Failed", "Other"]}
+          rows={buckets
+            .map((bucket, index) => ({
+              key: bucket.key,
+              cells: [bucket.title, ...outcomes.map((series) => series.values[index])],
+            }))
+            .reverse()}
+        />
+      }
+    >
+      <dl className="mb-4 flex gap-6">
+        {ci.successRate !== null && (
+          <div>
+            <dt className="text-xs text-zinc-500 dark:text-zinc-400">Pass rate</dt>
+            <dd className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+              {formatPercent(ci.successRate)}
+            </dd>
+          </div>
+        )}
+        {ci.medianDurationMinutes !== null && (
+          <div>
+            <dt className="text-xs text-zinc-500 dark:text-zinc-400">Median run</dt>
+            <dd className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+              {formatMinutes(ci.medianDurationMinutes)}
+            </dd>
+          </div>
+        )}
+      </dl>
+      <StackedColumns
+        categories={buckets}
+        series={outcomes}
+        height={160}
+        ariaLabel={`CI runs per ${grain}: ${sum(ci.weekly.map((week) => week.success))} passed, ${sum(ci.weekly.map((week) => week.failure))} failed.`}
+        tooltipTitle={(index) => buckets[index]?.title ?? ""}
       />
-    }
-  >
-    <dl className="mb-4 flex gap-6">
-      {ci.successRate !== null && (
-        <div>
-          <dt className="text-xs text-zinc-500 dark:text-zinc-400">Pass rate</dt>
-          <dd className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            {formatPercent(ci.successRate)}
-          </dd>
-        </div>
-      )}
-      {ci.medianDurationMinutes !== null && (
-        <div>
-          <dt className="text-xs text-zinc-500 dark:text-zinc-400">Median run</dt>
-          <dd className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            {formatMinutes(ci.medianDurationMinutes)}
-          </dd>
-        </div>
-      )}
-    </dl>
-    <StackedColumns
-      categories={weekCategories(ci.weekly)}
-      series={[
-        { label: "passed", color: SERIES.success, values: ci.weekly.map((week) => week.success) },
-        { label: "failed", color: SERIES.failure, values: ci.weekly.map((week) => week.failure) },
-        { label: "other", color: SERIES.other, values: ci.weekly.map((week) => week.other) },
-      ]}
-      height={160}
-      ariaLabel={`Weekly CI runs: ${sum(ci.weekly.map((week) => week.success))} passed, ${sum(ci.weekly.map((week) => week.failure))} failed.`}
-      tooltipTitle={(index) => weekTitle(ci.weekly, index)}
-    />
-    <div className="mt-3">
-      <Legend
+      <TimeLegend
+        grain={grain}
         items={[
           { label: "Passed", color: SERIES.success },
           { label: "Failed", color: SERIES.failure },
           { label: "Cancelled or skipped", color: SERIES.other },
         ]}
       />
-    </div>
-    {ci.slowestWorkflows.length > 0 && (
-      <div className="mt-4 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-        <h3 className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
-          Slowest workflows, median run
-        </h3>
-        <ul className="flex flex-col gap-1.5 text-xs">
-          {ci.slowestWorkflows.map((workflow) => (
-            <li
-              key={`${workflow.repo}/${workflow.name}`}
-              className="flex items-center justify-between gap-3"
-            >
-              <span className="min-w-0 truncate">
-                <span className="font-medium text-zinc-800 dark:text-zinc-200">
-                  {workflow.name}
-                </span>{" "}
-                <span className="text-zinc-500 dark:text-zinc-400">{workflow.repo}</span>
-              </span>
-              <span className="shrink-0 tabular-nums">
-                <span className="font-medium text-zinc-800 dark:text-zinc-200">
-                  {formatMinutes(workflow.medianDurationMinutes)}
+      {ci.slowestWorkflows.length > 0 && (
+        <div className="mt-4 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+          <h3 className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
+            Slowest workflows, median run
+          </h3>
+          <ul className="flex flex-col gap-1.5 text-xs">
+            {ci.slowestWorkflows.map((workflow) => (
+              <li
+                key={`${workflow.repo}/${workflow.name}`}
+                className="flex items-center justify-between gap-3"
+              >
+                <span className="min-w-0 truncate">
+                  <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                    {workflow.name}
+                  </span>{" "}
+                  <span className="text-zinc-500 dark:text-zinc-400">{workflow.repo}</span>
                 </span>
-                <span className="text-zinc-500 dark:text-zinc-400">
-                  {" · "}
-                  {formatCount(workflow.runs)} runs
+                <span className="shrink-0 tabular-nums">
+                  <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                    {formatMinutes(workflow.medianDurationMinutes)}
+                  </span>
+                  <span className="text-zinc-500 dark:text-zinc-400">
+                    {" · "}
+                    {formatCount(workflow.runs)} runs
+                  </span>
                 </span>
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    )}
-  </ChartCard>
-)
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </ChartCard>
+  )
+}
 
 const busiestSlot = (punchcard: Insights["punchcard"]) =>
   punchcard.reduce<{ day: number; hour: number; count: number }>(
@@ -615,6 +664,8 @@ const Contributors = ({
   </ChartCard>
 )
 
+const MILESTONE_LIMIT = 5
+
 const dueFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" })
 
 const Milestones = ({
@@ -625,67 +676,72 @@ const Milestones = ({
   readonly className: string
 }) => {
   const now = Date.parse(insights.generatedAt)
+  const [expanded, setExpanded] = useState(false)
+  const { milestones } = insights
   return (
     <ChartCard
       title="Milestones"
-      description={`${insights.milestones.length} open, nearest due date first`}
+      description={`${milestones.length} open, nearest due date first`}
       className={className}
     >
-      <ScrollFade className="-mr-2 pr-2 md:max-h-72">
-        <ul className="flex flex-col gap-3.5">
-          {insights.milestones.map((milestone) => {
-            const total = milestone.openIssues + milestone.closedIssues
-            const overdue =
-              milestone.dueOn !== null &&
-              Date.parse(milestone.dueOn) < now &&
-              milestone.openIssues > 0
-            return (
-              <li key={milestone.url}>
-                <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
-                  <a
-                    href={milestone.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="min-w-0 truncate hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
-                  >
-                    <span className="text-zinc-800 dark:text-zinc-200">{milestone.title}</span>{" "}
-                    <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                      {milestone.repo}
+      <ul className="flex flex-col gap-3.5">
+        {(expanded ? milestones : milestones.slice(0, MILESTONE_LIMIT)).map((milestone) => {
+          const total = milestone.openIssues + milestone.closedIssues
+          const overdue =
+            milestone.dueOn !== null &&
+            Date.parse(milestone.dueOn) < now &&
+            milestone.openIssues > 0
+          return (
+            <li key={milestone.url}>
+              <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
+                <a
+                  href={milestone.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="min-w-0 truncate hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
+                >
+                  <span className="text-zinc-800 dark:text-zinc-200">{milestone.title}</span>{" "}
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400">{milestone.repo}</span>
+                </a>
+                {total > 0 && (
+                  <span className="shrink-0 text-xs font-medium text-zinc-700 tabular-nums dark:text-zinc-300">
+                    {Math.round((milestone.closedIssues / total) * 100)}%
+                  </span>
+                )}
+              </div>
+              <Meter
+                value={milestone.closedIssues}
+                max={total}
+                tone={overdue ? "danger" : "accent"}
+                ariaLabel={
+                  total === 0
+                    ? `${milestone.title}: no issues yet`
+                    : `${milestone.title}: ${milestone.closedIssues} of ${total} issues closed`
+                }
+              />
+              <p className="mt-1 text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
+                {total === 0 ? "No issues yet" : `${milestone.closedIssues} of ${total} closed`}
+                {milestone.dueOn !== null && (
+                  <>
+                    {" · "}
+                    <span className={overdue ? "font-medium text-red-700 dark:text-red-400" : ""}>
+                      {overdue ? "overdue since" : "due"}{" "}
+                      {dueFormat.format(new Date(milestone.dueOn))}
                     </span>
-                  </a>
-                  {total > 0 && (
-                    <span className="shrink-0 text-xs font-medium text-zinc-700 tabular-nums dark:text-zinc-300">
-                      {Math.round((milestone.closedIssues / total) * 100)}%
-                    </span>
-                  )}
-                </div>
-                <Meter
-                  value={milestone.closedIssues}
-                  max={total}
-                  tone={overdue ? "danger" : "accent"}
-                  ariaLabel={
-                    total === 0
-                      ? `${milestone.title}: no issues yet`
-                      : `${milestone.title}: ${milestone.closedIssues} of ${total} issues closed`
-                  }
-                />
-                <p className="mt-1 text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
-                  {total === 0 ? "No issues yet" : `${milestone.closedIssues} of ${total} closed`}
-                  {milestone.dueOn !== null && (
-                    <>
-                      {" · "}
-                      <span className={overdue ? "font-medium text-red-700 dark:text-red-400" : ""}>
-                        {overdue ? "overdue since" : "due"}{" "}
-                        {dueFormat.format(new Date(milestone.dueOn))}
-                      </span>
-                    </>
-                  )}
-                </p>
-              </li>
-            )
-          })}
-        </ul>
-      </ScrollFade>
+                  </>
+                )}
+              </p>
+            </li>
+          )
+        })}
+      </ul>
+      {milestones.length > MILESTONE_LIMIT && (
+        <ShowAll
+          total={milestones.length}
+          expanded={expanded}
+          onToggle={() => setExpanded((current) => !current)}
+        />
+      )}
     </ChartCard>
   )
 }

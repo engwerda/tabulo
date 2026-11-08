@@ -5,6 +5,7 @@ import { INSIGHT_DAYS, type InsightDays, type Insights } from "../../shared/api.
 import { browserTimeZone, fetchInsights } from "../api.ts"
 import { formatSpan } from "../charts/scale.ts"
 import { relativeTime } from "../format.ts"
+import { ChooseRepos } from "../scope/ChooseRepos.tsx"
 import { ScopeBar } from "../scope/ScopeBar.tsx"
 import { useRepoSelection } from "../scope/use-repo-selection.ts"
 import { PageTitle } from "../ui/PageTitle.tsx"
@@ -251,11 +252,13 @@ export const InsightsPage = ({ org }: { org: string }) => {
         <p className="sr-only" aria-live="polite">
           {insights.isFetching ? "Loading insights" : ""}
         </p>
-        {!chosen ? (
-          <Notice title="Choose repositories">
-            Pick one or more repositories above to see their throughput, backlog, CI health, and
-            what needs attention.
-          </Notice>
+        {repoSelection.resolving ? (
+          <Skeleton />
+        ) : !chosen ? (
+          <ChooseRepos org={org} view="insights" repoSelection={repoSelection}>
+            Pick one or more repositories to see their throughput, backlog, CI health, and what
+            needs attention.
+          </ChooseRepos>
         ) : data === undefined ? (
           insights.isError ? (
             <Problem
