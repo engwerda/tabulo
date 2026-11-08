@@ -1,0 +1,12 @@
+// Copy to wrangler.deploy.jsonc. `npm run build` merges its values over wrangler.jsonc.
+{
+  "routes": [{ "pattern": "tabulo.example.com", "custom_domain": true }],
+  "vars": {
+    "APP_URL": "https://tabulo.example.com",
+    "FORGEJO_URL": "https://forgejo.example.com",
+    "FORGEJO_CLIENT_ID": "replace-with-your-oauth-client-id"
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_id": "replace-with-the-id-from-wrangler-d1-create" }
+  ]
+}
