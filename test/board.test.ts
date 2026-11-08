@@ -1613,6 +1613,33 @@ describe("POST /api/board/comment", () => {
     expect(forgejo.issue("acme", "api", 1)?.comments).toBe(1)
   })
 
+  // Forgejo rejects a token that expires between the comment and its render; Tabulo then
+  // refreshes the token and runs the request again, which must not post the comment twice.
+  it("posts the comment once when Forgejo rejects the token while rendering it", async () => {
+    let renders = 0
+    const { forgejo, post } = await boardSession({
+      intercept: (method, path) =>
+        method === "POST" && path === "/api/v1/markdown" && renders++ === 0
+          ? new Response(null, { status: 401 })
+          : undefined,
+    })
+
+    const response = await post("/api/board/comment", {
+      org: "acme",
+      repo: "api",
+      number: 1,
+      body: "Once <only>",
+    })
+
+    expect(response.status).toBe(200)
+    expect(
+      writes(forgejo).filter((write) => write.path === "/api/v1/repos/acme/api/issues/1/comments"),
+    ).toHaveLength(1)
+    expect(((await response.json()) as { comment: { bodyHtml: string } }).comment.bodyHtml).toBe(
+      "<p>Once &lt;only&gt;</p>",
+    )
+  })
+
   it("lets someone outside the organization comment when Forgejo allows it", async () => {
     const { forgejo, call, post } = await boardSession()
     const outsiderCookie = await signIn(call, forgejo, "linus")

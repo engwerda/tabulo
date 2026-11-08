@@ -844,14 +844,23 @@ const toCardComment = (comment: ForgejoComment, bodyHtml: string): CardComment =
   bodyHtml,
 })
 
-/** Comments as the user who owns `token`; Forgejo decides who may comment. */
+const escapeHtml = (text: string) =>
+  text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+
+/**
+ * Comments as the user who owns `token`; Forgejo decides who may comment. A failure to render
+ * the posted comment answers with its text, because failing would make the session refresh its
+ * token and run the request again, which would post the comment twice.
+ */
 export const addComment = (token: AccessToken, _login: string, request: AddCommentRequest) =>
   Effect.gen(function* () {
     const repoRef = yield* parseRepoQuery(request.org, request.repo)
     yield* editableIssue(token, repoRef, request.number)
     const forgejo = yield* ForgejoClient
     const comment = yield* forgejo.createComment(token, repoRef, request.number, request.body)
-    const bodyHtml = yield* renderIssueMarkdown(token, repoRef, comment.body)
+    const bodyHtml = yield* renderIssueMarkdown(token, repoRef, comment.body).pipe(
+      Effect.catch(() => Effect.succeed(`<p>${escapeHtml(comment.body)}</p>`)),
+    )
     return { comment: toCardComment(comment, bodyHtml) } satisfies AddCommentResult
   })
 

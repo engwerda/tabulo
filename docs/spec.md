@@ -207,7 +207,9 @@ the board shows it, with its stored rank or the rank a board read would give it.
   which clears it. Forgejo answers 403 when the user cannot write the repository's issues and
   500 (Tabulo answers 502) for a milestone the repository does not have.
 - `comment` takes `{ body }`, trimmed text of 1 to 65,535 characters, and answers with the new
-  comment, its body rendered as in `GET /api/board/issue`. Anyone who can read the repository
+  comment, its body rendered as in `GET /api/board/issue`. When the render fails after the
+  comment is posted, the answer carries the comment's text as escaped HTML instead, so that a
+  token refresh does not post it twice. Anyone who can read the repository
   may comment unless Forgejo has locked the issue.
 
 `GET /api/board/issue` reads the issue's description and its comments and has Forgejo render
