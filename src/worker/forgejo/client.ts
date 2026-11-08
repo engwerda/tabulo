@@ -139,12 +139,8 @@ export class ForgejoClient extends Context.Service<
       token: AccessToken,
       org: string,
     ) => Effect.Effect<ReadonlyArray<ForgejoRepo>, ForgejoError>
-    /** Whether `login` is a member of the organization. Ask only about the token's own user. */
-    readonly isOrgMember: (
-      token: AccessToken,
-      org: string,
-      login: string,
-    ) => Effect.Effect<boolean, ForgejoError>
+    /** Whether the token's user is a member of the organization. */
+    readonly isOrgMember: (token: AccessToken, org: string) => Effect.Effect<boolean, ForgejoError>
     /** The labels, as far as `budget` reaches (100 pages by default). */
     readonly orgLabels: (
       token: AccessToken,
@@ -579,16 +575,12 @@ export const makeForgejoClient = (
       ),
     userOrgs: (token) => all(token, "/user/orgs", {}, ForgejoOrg),
     orgRepos: (token, org) => all(token, `/orgs/${encodeURIComponent(org)}/repos`, {}, ForgejoRepo),
-    // 204 for a member and 404 otherwise. Forgejo redirects a non-member asking about
-    // themselves to the public_members check, which fetch follows and which also answers 404.
-    isOrgMember: (token, org, login) =>
-      request(
-        token,
-        `/orgs/${encodeURIComponent(org)}/members/${encodeURIComponent(login)}`,
-        {},
-      ).pipe(
-        Effect.as(true),
-        Effect.catchTag("ForgejoNotFound", () => Effect.succeed(false)),
+    // The token's own organizations, not /orgs/{org}/members/{login}: that asks about a login,
+    // which can name someone else once the user is renamed, and Forgejo answers a non-member
+    // asking about someone else with the public membership of that user.
+    isOrgMember: (token, org) =>
+      all(token, "/user/orgs", {}, ForgejoOrg).pipe(
+        Effect.map((orgs) => orgs.some(({ name }) => name.toLowerCase() === org.toLowerCase())),
       ),
     orgLabels: (token, org, budget = { remaining: MAX_PAGES }) =>
       listing(token, `/orgs/${encodeURIComponent(org)}/labels`, {}, ForgejoLabel, budget),

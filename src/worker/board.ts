@@ -310,7 +310,7 @@ export const loadBoard = (
     const settings = yield* BoardConfig
     const forgejo = yield* ForgejoClient
     const [layout, viewerCanArrange] = yield* Effect.all(
-      [loadLayout(token, query.org), forgejo.isOrgMember(token, query.org, login)],
+      [loadLayout(token, query.org), forgejo.isOrgMember(token, query.org)],
       { concurrency: "unbounded" },
     )
     const windowStart = (yield* Clock.currentTimeMillis) - settings.doneDays * DAY_MS
@@ -517,7 +517,7 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
     }
 
     const forgejo = yield* ForgejoClient
-    if (!(yield* forgejo.isOrgMember(token, org, login))) {
+    if (!(yield* forgejo.isOrgMember(token, org))) {
       return yield* new BoardWriteForbidden({
         message: `Only members of ${org} can arrange its board`,
       })
@@ -634,7 +634,7 @@ export const createCard = (token: AccessToken, login: string, request: CreateCar
     const repoRef = { owner: org, name: yield* parseName("repository", request.repo) }
     const settings = yield* BoardConfig
     const forgejo = yield* ForgejoClient
-    if (!(yield* forgejo.isOrgMember(token, org, login))) {
+    if (!(yield* forgejo.isOrgMember(token, org))) {
       return yield* new BoardWriteForbidden({
         message: `Only members of ${org} can add cards to its board`,
       })

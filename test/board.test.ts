@@ -756,6 +756,26 @@ describe("POST /api/board/move", () => {
     expect((await board()).viewerCanArrange).toBe(true)
   })
 
+  it("decides membership by the signed-in user, not by the login they had at sign-in", async () => {
+    const { forgejo, call, move } = await boardSession()
+    const outsiderCookie = await signIn(call, forgejo, "linus")
+    // The outsider leaves their login behind, and a member takes it.
+    forgejo.renameUser("linus", "linus-old")
+    forgejo.renameUser("grace", "linus")
+
+    const shown = await call("/api/board?org=acme&repos=api,web", {
+      headers: { cookie: outsiderCookie },
+    })
+    const before = await rankRows()
+    const reorder = await move({ repo: "api", number: 1, toColumn: "todo" }, outsiderCookie)
+
+    expect(shown.status).toBe(200)
+    expect(((await shown.json()) as BoardBody).viewerCanArrange).toBe(false)
+    expect(reorder.status).toBe(403)
+    expect(writes(forgejo)).toEqual([])
+    expect(await rankRows()).toEqual(before)
+  })
+
   it("shows the cards of an archived repository read-only and refuses to move them", async () => {
     const org = boardOrg()
     org.repos.push(

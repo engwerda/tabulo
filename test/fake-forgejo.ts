@@ -705,16 +705,22 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
         headers: { "x-total-count": String(fixtures.totals[filter] ?? items.length) },
       })
     }
-    // Forgejo redirects a non-member to the public_members check, which answers 404 unless
-    // the membership is public; Tabulo only ever asks about the signed-in user.
+    // Forgejo 17's IsMember: a member learns whether another user is a member, a non-member
+    // asking about themselves gets 404, and a non-member asking about someone else is
+    // redirected to the public_members check.
     const memberPath = /^\/api\/v1\/orgs\/([^/]+)\/members\/([^/]+)$/.exec(path)
     if (memberPath !== null) {
       const [, orgName = "", member = ""] = memberPath
       const org = findOrg(orgName)
       if (org === undefined) return notFound()
-      return org.members.includes(member) && org.members.includes(login)
-        ? new Response(null, { status: 204 })
-        : notFound()
+      if (org.members.includes(login)) {
+        return org.members.includes(member) ? new Response(null, { status: 204 }) : notFound()
+      }
+      if (member === login) return notFound()
+      return new Response(null, {
+        status: 303,
+        headers: { location: `${FORGEJO_URL}/api/v1/orgs/${org.name}/public_members/${member}` },
+      })
     }
     const orgPath = /^\/api\/v1\/orgs\/([^/]+)\/(repos|labels)$/.exec(path)
     if (orgPath !== null) {
@@ -834,5 +840,16 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     issue: (owner: string, repo: string, number: number) =>
       findRepo(owner, repo)?.issues.find((issue) => issue.number === number),
     revokeAccessTokens: () => validAccessTokens.clear(),
+    /** Renames a user. As in Forgejo, their tokens and memberships follow them. */
+    renameUser: (from: string, to: string) => {
+      const index = users.findIndex((user) => user.login === from)
+      const user = users[index]
+      if (user === undefined) throw new Error(`no user ${from}`)
+      users[index] = { ...user, login: to }
+      for (const tokens of [validAccessTokens, validRefreshTokens]) {
+        for (const [token, login] of tokens) if (login === from) tokens.set(token, to)
+      }
+      for (const org of orgs) org.members = org.members.map((name) => (name === from ? to : name))
+    },
   }
 }
