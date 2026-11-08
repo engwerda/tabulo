@@ -63,9 +63,12 @@ starts with all of them chosen; clearing the choice is remembered too.
 ### Sign-in
 
 1. `GET /auth/login` stores a random `state` and a PKCE verifier, then redirects to Forgejo's
-   authorize endpoint.
-2. `GET /auth/callback` checks `state`, exchanges the code for access and refresh tokens, reads
-   the Forgejo user, and creates a session. It deletes the session the browser already had.
+   authorize endpoint. It asks for the scopes `read:user read:organization read:repository
+   write:issue read:notification read:misc`. Forgejo keeps the scopes of a user's first grant to
+   the application, so a grant made before Tabulo asked for scopes keeps every scope.
+2. `GET /auth/callback` checks that `state` is the one in the browser's state cookie before it
+   uses the stored state up, exchanges the code for access and refresh tokens, reads the Forgejo
+   user, and creates a session. It deletes the session the browser already had.
 3. The session cookie is random, `HttpOnly`, `Secure`, and `SameSite=Lax`. The database stores
    only its SHA-256 hash.
 4. Tokens are encrypted with AES-GCM before they reach the database. They never reach the browser.

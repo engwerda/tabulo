@@ -26,6 +26,9 @@ describe("GET /auth/login", () => {
     expect(location.searchParams.get("code_challenge_method")).toBe("S256")
     expect(location.searchParams.get("code_challenge")).toMatch(/^[A-Za-z0-9_-]{43}$/)
     expect(location.searchParams.get("state")).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(location.searchParams.get("scope")).toBe(
+      "read:user read:organization read:repository write:issue read:notification read:misc",
+    )
   })
 })
 
@@ -99,6 +102,20 @@ describe("GET /auth/callback", () => {
     expect(rejected.status).toBe(400)
     expect(setCookies(rejected).has(SESSION_COOKIE)).toBe(false)
     expect(await sessionCount()).toBe(1)
+  })
+
+  it("leaves the state usable when a callback comes from a browser without it", async () => {
+    const forgejo = createFakeForgejo()
+    const call = tabulo(forgejo.fetch)
+    const login = await startLogin(call)
+    const code = forgejo.approve(login.codeChallenge)
+
+    const foreign = await callback(call, { code: "other", state: login.state }, "")
+    const own = await callback(call, { code, state: login.state }, login.browserState)
+
+    expect(foreign.status).toBe(400)
+    expect(own.status).toBe(302)
+    expect(setCookies(own).has(SESSION_COOKIE)).toBe(true)
   })
 
   it("rejects a state issued to another browser", async () => {

@@ -338,6 +338,19 @@ const knownTotal = <A>(page: {
 const PAGE_SIZE = 50
 const MAX_PAGES = 100
 
+/**
+ * The token scopes Tabulo asks for: what its reads and issue writes need, and no more. Forgejo
+ * keeps the scopes of a user's first grant, so a grant made without scopes keeps every scope.
+ */
+export const OAUTH_SCOPES = [
+  "read:user",
+  "read:organization",
+  "read:repository",
+  "write:issue",
+  "read:notification",
+  "read:misc",
+].join(" ")
+
 const repoPath = (repo: RepoRef) =>
   `/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`
 
@@ -542,6 +555,7 @@ export const makeForgejoClient = (
         redirect_uri: config.redirectUri,
         response_type: "code",
         state,
+        scope: OAUTH_SCOPES,
         code_challenge: codeChallenge,
         code_challenge_method: "S256",
       })}`,
