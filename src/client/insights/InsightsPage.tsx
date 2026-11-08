@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { useState } from "react"
 import { useSearchParams } from "wouter"
-import { INSIGHT_DAYS, type InsightDays, type Insights } from "../../shared/api.ts"
+import { INSIGHT_DAYS, INSIGHT_GRAIN, type InsightDays, type Insights } from "../../shared/api.ts"
 import { browserTimeZone, fetchInsights, fetchOrgs } from "../api.ts"
 import { formatSpan } from "../charts/scale.ts"
 import { boardCardHref } from "../epics/epics-view.ts"
@@ -14,6 +14,7 @@ import { ErrorNotice } from "../ui/ErrorNotice.tsx"
 import { PageTitle } from "../ui/PageTitle.tsx"
 import { buttonClass, cardClass, pageContainer, Segmented } from "../ui/primitives.tsx"
 import { InsightsDashboard } from "./InsightsDashboard.tsx"
+import { GRAIN_WORDS, windowNote } from "./periods.ts"
 import { incompleteNotice, insightsSummary, RANGE_LABELS } from "./summary.ts"
 
 const DEFAULT_DAYS: InsightDays = 90
@@ -165,10 +166,7 @@ export const InsightsPage = ({ org }: { org: string }) => {
               `The last ${RANGE_LABELS[days].long}`
             ) : (
               <>
-                <span
-                  className="tabular-nums"
-                  title={`From the Monday of the week ${data.days} days ago, so every week is whole`}
-                >
+                <span className="tabular-nums" title={windowNote(data.days)}>
                   {formatSpan(data.window.start, data.window.end)}
                 </span>
                 {" · "}
@@ -193,7 +191,7 @@ export const InsightsPage = ({ org }: { org: string }) => {
                 options={INSIGHT_DAYS.map((option) => ({
                   value: String(option),
                   label: RANGE_LABELS[option].short,
-                  title: `Last ${RANGE_LABELS[option].long}, in whole weeks`,
+                  title: `Last ${RANGE_LABELS[option].long}, in whole ${GRAIN_WORDS[INSIGHT_GRAIN[option]].many}`,
                 }))}
               />
               <CopySummary insights={data} orgName={orgName} />

@@ -1,10 +1,11 @@
 import { Fragment, type ReactNode, useState } from "react"
-import type { HealthStatus, Language, RepoInsight } from "../../shared/api.ts"
+import type { HealthStatus, InsightGrain, Language, RepoInsight } from "../../shared/api.ts"
 import { SegmentedBar } from "../charts/SegmentedBar.tsx"
 import { Sparkline } from "../charts/Sparkline.tsx"
 import { formatCount, formatPercent } from "../charts/scale.ts"
 import { relativeTime } from "../format.ts"
 import { touchTarget } from "../ui/primitives.tsx"
+import { GRAIN_WORDS } from "./periods.ts"
 
 const STATUS: Record<
   HealthStatus,
@@ -100,9 +101,12 @@ const FROM = {
  */
 export const RepoHealthTable = ({
   repos,
+  grain,
   languageColor,
 }: {
   readonly repos: ReadonlyArray<RepoInsight>
+  /** What each point of a repository's activity counts. */
+  readonly grain: InsightGrain
   readonly languageColor: (language: Language) => string
 }) => {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
@@ -171,7 +175,7 @@ export const RepoHealthTable = ({
           values={repo.activity}
           width={88}
           height={22}
-          ariaLabel={`Weekly activity in ${repo.name}: ${repo.activity.join(", ")}`}
+          ariaLabel={`${GRAIN_WORDS[grain].adjective} activity in ${repo.name}: ${repo.activity.join(", ")}`}
         />
       ),
     },

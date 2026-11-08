@@ -26,7 +26,7 @@ const insights: Insights = {
     medianPullMergeHours: { value: null, previous: null },
     ciSuccessRate: { value: 0.75, previous: 0.5 },
   },
-  weekly: [],
+  series: [],
   pullMergeTime: { p50: null, p75: null, p90: null, buckets: [] },
   issueAge: [],
   labels: [],
@@ -122,10 +122,65 @@ describe("insightsSummary across a new year", () => {
   })
 })
 
+const period = (start: string): Insights["series"][number] => ({
+  start,
+  issuesOpened: 0,
+  issuesClosed: 0,
+  pullsOpened: 0,
+  pullsMerged: 0,
+  openIssues: 0,
+})
+
+/** The fixture over the last 24 hours, whose first hour starts at 10:00 in Amsterdam. */
+const lastDay: Insights = {
+  ...insights,
+  days: 1,
+  window: { start: "2026-11-06", end: "2026-11-07" },
+  series: [period("2026-11-06T09:00:00.000Z"), period("2026-11-06T10:00:00.000Z")],
+}
+
+/** The fixture over the last 7 days. */
+const lastWeek: Insights = {
+  ...insights,
+  days: 7,
+  window: { start: "2026-10-31", end: "2026-11-07" },
+  series: [period("2026-10-31"), period("2026-11-01")],
+}
+
+describe("insightsSummary in hours and days", () => {
+  it("counts in whole hours since the first hour of the last 24", () => {
+    const summary = insightsSummary(lastDay, "acme")
+
+    expect(summary).toContain(
+      "2 repositories, last 24 hours in whole hours (Nov 6 to Nov 7, 2026, Europe/Amsterdam).",
+    )
+    expect(summary).toContain("- **Open issues:** 12 (+3 since Nov 6, 10:00)")
+  })
+
+  it("counts in whole days since the first of the last 7", () => {
+    const summary = insightsSummary(lastWeek, "acme")
+
+    expect(summary).toContain(
+      "2 repositories, last 7 days in whole days (Oct 31 to Nov 7, 2026, Europe/Amsterdam).",
+    )
+    expect(summary).toContain("- **Open issues:** 12 (+3 since Oct 31)")
+  })
+})
+
 describe("formatWindowStart", () => {
   it("names the start's year only when the window ends in a later year", () => {
-    expect(formatWindowStart({ start: "2026-10-05", end: "2026-11-07" })).toBe("Oct 5")
-    expect(formatWindowStart({ start: "2025-11-03", end: "2026-11-08" })).toBe("Nov 3, 2025")
+    expect(
+      formatWindowStart({ ...insights, window: { start: "2026-10-05", end: "2026-11-07" } }),
+    ).toBe("Oct 5")
+    expect(
+      formatWindowStart({ ...insights, window: { start: "2025-11-03", end: "2026-11-08" } }),
+    ).toBe("Nov 3, 2025")
+  })
+
+  it("names the first hour of an hourly window in its time zone", () => {
+    expect(formatWindowStart(lastDay)).toBe("Nov 6, 10:00")
+    expect(formatWindowStart({ ...lastDay, tz: "Asia/Kolkata" })).toBe("Nov 6, 14:30")
+    expect(formatWindowStart(lastWeek)).toBe("Oct 31")
   })
 })
 
@@ -191,14 +246,21 @@ describe("chart scale", () => {
 })
 
 describe("priorLabel", () => {
+  const weeks = (start: string, end: string) => priorLabel({ days: 30, window: { start, end } })
+
   it("names the window's length in weeks, which start on a Monday", () => {
-    expect(priorLabel({ start: "2026-10-05", end: "2026-11-08" })).toBe("vs the 5 weeks before")
-    expect(priorLabel({ start: "2025-11-03", end: "2026-11-08" })).toBe("vs the 53 weeks before")
-    expect(priorLabel({ start: "2026-03-23", end: "2026-04-05" })).toBe("vs the 2 weeks before")
+    expect(weeks("2026-10-05", "2026-11-08")).toBe("vs the 5 weeks before")
+    expect(weeks("2025-11-03", "2026-11-08")).toBe("vs the 53 weeks before")
+    expect(weeks("2026-03-23", "2026-04-05")).toBe("vs the 2 weeks before")
   })
 
   it("rounds a window that ends partway through its last week", () => {
-    expect(priorLabel({ start: "2026-10-05", end: "2026-11-06" })).toBe("vs the 5 weeks before")
-    expect(priorLabel({ start: "2026-10-05", end: "2026-11-04" })).toBe("vs the 4 weeks before")
+    expect(weeks("2026-10-05", "2026-11-06")).toBe("vs the 5 weeks before")
+    expect(weeks("2026-10-05", "2026-11-04")).toBe("vs the 4 weeks before")
+  })
+
+  it("names the range of a window counted in hours or days", () => {
+    expect(priorLabel(lastDay)).toBe("vs the 24 hours before")
+    expect(priorLabel(lastWeek)).toBe("vs the 7 days before")
   })
 })

@@ -232,12 +232,17 @@ answers 404 for an issue the user cannot see. The client sanitizes the HTML agai
 showing it.
 ### Insights
 
-Insights aggregate the chosen repositories of one organization over a window that ends now and
-starts at midnight on the Monday of the week 30, 90, 180, or 365 days ago. Every week in it is
-whole except the current one, which the page marks as in progress. Every number has the same
-number for the window before it, which is as long, so the page can show a change. Weeks start
-on Monday and days and hours are read in the time zone the browser sends. Pull requests are counted apart from issues everywhere. `buildInsights` in
-`src/worker/insights.ts` computes every aggregate from decoded Forgejo data; loading only reads.
+Insights aggregate the chosen repositories of one organization over a window that ends now. A
+range of 1, 7, 30, 90, 180, or 365 days is counted in periods: hours for 1 day, days for 7, and
+weeks for the rest. `INSIGHT_GRAIN` in `src/shared/api.ts` is that table. The window starts at
+the beginning of the hour, day, or week that holds the moment the range's days before now. Every
+period in it is whole except the current one, which the page marks as in progress, so 24 hours
+have 25 periods and 7 days have 8. Every number has the same number for the window before it,
+which is as long, so the page can show a change. Weeks start on Monday, and hours, days, and
+weeks are read in the time zone the browser sends. An hour is named by the instant it starts,
+because a daylight saving change repeats a wall-clock hour. Pull requests are counted apart from
+issues everywhere. `buildInsights` in `src/worker/insights.ts` computes every aggregate from
+decoded Forgejo data; loading only reads.
 
 For each repository Tabulo reads, as the user, the repository, its open issues and pull
 requests, the issues and pull requests closed and updated since the previous window started,
@@ -254,8 +259,8 @@ copied summary say which numbers are too low.
 
 - **Backlog.** An issue is open at a time when it was created before it and not closed by it.
   An issue whose state is closed closed at its `closed_at`, or at its last update when Forgejo
-  sends no `closed_at`. The weekly backlog counts the issues open at the end of each week, or now for the current
-  week.
+  sends no `closed_at`. The backlog counts the issues open at the end of each period, or now
+  for the current period.
 - **Merge and close times.** Hours from creation to merge or close, for pull requests merged
   and issues closed in the window. The page shows the median and, for merges, the 75th and
   90th percentiles.
@@ -292,7 +297,7 @@ streak that has no contribution yet today still counts until the day ends.
 
 | Endpoint | Result |
 |---|---|
-| `GET /api/insights?org=&repos=a,b&days=90&tz=Europe/Amsterdam` | The `Insights` payload in `src/shared/api.ts`. `days` is 30, 90, 180, or 365 and defaults to 90. `tz` is an IANA time zone and defaults to UTC. Other values answer 400. At most 20 repositories. |
+| `GET /api/insights?org=&repos=a,b&days=90&tz=Europe/Amsterdam` | The `Insights` payload in `src/shared/api.ts`. `days` is 1, 7, 30, 90, 180, or 365 and defaults to 90. `tz` is an IANA time zone and defaults to UTC. Other values answer 400. At most 20 repositories. |
 | `GET /api/activity?tz=Europe/Amsterdam` | The signed-in user's days with contributions, total, current and longest streak, and busiest day. |
 
 ### Epics

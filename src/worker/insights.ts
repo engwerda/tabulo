@@ -1,14 +1,16 @@
-import type {
-  AttentionItem,
-  AttentionKind,
-  Bucket,
-  CiSummary,
-  HealthStatus,
-  IncompleteListing,
-  InsightDays,
-  Insights,
-  Language,
-  RepoInsight,
+import {
+  type AttentionItem,
+  type AttentionKind,
+  type Bucket,
+  type CiSummary,
+  type HealthStatus,
+  INSIGHT_GRAIN,
+  type IncompleteListing,
+  type InsightDays,
+  type InsightGrain,
+  type Insights,
+  type Language,
+  type RepoInsight,
 } from "../shared/api.ts"
 import {
   type ForgejoActionRun,
@@ -18,9 +20,10 @@ import {
   type ForgejoMilestone,
   labelHexColor,
 } from "./forgejo/schemas.ts"
-import { addDays, DAY_MS, startOfDay, weekStart, zonedTime } from "./time-zone.ts"
+import { addDays, DAY_MS, startOfDay, weekStart, type ZonedTime, zonedTime } from "./time-zone.ts"
 
-const HOUR_MS = 60 * 60 * 1000
+const MINUTE_MS = 60 * 1000
+const HOUR_MS = 60 * MINUTE_MS
 
 /** What Tabulo reads from Forgejo for one repository. */
 export type RepoActivity = {
@@ -343,24 +346,76 @@ const failingWorkflows = (repo: ForgejoInsightRepo, runs: ReadonlyArray<Run>, no
   })
 }
 
+/** Where one period of a series starts; `key` is the `start` that the payload shows. */
+type PeriodStart = { readonly key: string; readonly start: number }
+
+/** For each grain, the period that holds an instant and the period after a period, in `tz`. */
+const grainSteps = (
+  tz: string,
+  zoned: (time: number) => ZonedTime,
+): Record<
+  InsightGrain,
+  {
+    readonly holding: (time: number) => PeriodStart
+    readonly next: (period: PeriodStart) => PeriodStart
+  }
+> => {
+  const dayStart = startOfDay(tz)
+  const hour = (start: number) => ({ key: new Date(start).toISOString(), start })
+  const day = (date: string) => ({ key: date, start: dayStart(date) })
+  return {
+    hour: {
+      // Offsets are whole minutes, so local seconds are UTC seconds.
+      holding: (time) => hour(time - zoned(time).minute * MINUTE_MS - (time % MINUTE_MS)),
+      next: (period) => hour(period.start + HOUR_MS),
+    },
+    day: {
+      holding: (time) => day(zoned(time).date),
+      next: (period) => day(addDays(period.key, 1)),
+    },
+    week: {
+      holding: (time) => day(weekStart(zoned(time))),
+      next: (period) => day(addDays(period.key, 7)),
+    },
+  }
+}
+
 /**
- * The shown window runs from midnight on the Monday of the week `days` days ago, in `tz`, to
- * now. `first` is that Monday. The window before it is as long and ends where it starts.
+ * The shown window runs from the start of the hour, day, or week (`INSIGHT_GRAIN`) that holds
+ * the moment `days` days ago, in `tz`, to now, so every period in it is whole but the current
+ * one. `periods` lists them oldest first and `first` is the window's first date. The window
+ * before it is as long and ends where it starts.
  */
 export const insightPeriods = (now: number, days: InsightDays, tz: string) => {
-  const first = weekStart(zonedTime(tz)(now - days * DAY_MS))
-  const start = startOfDay(tz, first)
+  const grain = INSIGHT_GRAIN[days]
+  const zoned = zonedTime(tz)
+  const { holding, next } = grainSteps(tz, zoned)[grain]
+  const oldest = holding(now - days * DAY_MS)
+  const periods = [oldest]
+  for (let period = next(oldest); period.start <= now; period = next(period)) periods.push(period)
+  const { start } = oldest
   const window: Period = { start, end: Number.POSITIVE_INFINITY }
   const previous: Period = { start: start - (now - start), end: start }
-  return { first, window, previous }
+  return { grain, periods, window, previous, first: zoned(start).date }
+}
+
+/** The index of the period that holds `time`, or -1 before the first. */
+const periodIndex = (starts: ReadonlyArray<number>, time: number) => {
+  let low = 0
+  let high = starts.length
+  while (low < high) {
+    const middle = (low + high) >>> 1
+    if ((starts[middle] ?? 0) <= time) low = middle + 1
+    else high = middle
+  }
+  return low - 1
 }
 
 /** Every aggregate on the insights page, from the repositories Tabulo read. */
 export const buildInsights = (input: InsightsInput): Insights => {
   const { now, days } = input
-  const { first, window, previous } = insightPeriods(now, days, input.tz)
+  const { periods, first, window, previous } = insightPeriods(now, days, input.tz)
   const zoned = zonedTime(input.tz)
-  const weekOf = (time: number) => weekStart(zoned(time))
   const ageDays = (time: number) => Math.floor((now - time) / DAY_MS)
 
   const repos = input.loaded.map((activity) => {
@@ -405,41 +460,27 @@ export const buildInsights = (input: InsightsInput): Insights => {
     previous: roundedOrNull(measure(previous)),
   })
 
-  // Weeks, Monday first, from the window's first week to the current one.
-  const weeks: Array<string> = []
-  for (let week = first; week <= weekOf(now); week = addDays(week, 7)) {
-    weeks.push(week)
-  }
-  const weekIndex = new Map(weeks.map((week, index) => [week, index] as const))
-  const perWeek = (times: ReadonlyArray<number | null>) => {
-    const counts = weeks.map(() => 0)
+  const starts = periods.map((period) => period.start)
+  const perPeriod = (times: ReadonlyArray<number | null>) => {
+    const counts = periods.map(() => 0)
     for (const time of times) {
       if (!within(window, time)) continue
-      const index = weekIndex.get(weekOf(time))
-      if (index !== undefined) counts[index] = (counts[index] ?? 0) + 1
+      const index = periodIndex(starts, time)
+      counts[index] = (counts[index] ?? 0) + 1
     }
     return counts
   }
-  // An issue counts toward a week's backlog when it was created by the week's end and closed
-  // after it. Week keys compare as strings.
-  const issueWeeks = issues.map((item) => ({
-    created: weekOf(item.created),
-    closed: item.closed === null ? null : weekOf(item.closed),
-  }))
-  const issuesOpened = perWeek(issues.map((item) => item.created))
-  const issuesClosed = perWeek(issues.map((item) => item.closed))
-  const pullsOpened = perWeek(pulls.map((item) => item.created))
-  const pullsMerged = perWeek(pulls.map((item) => item.merged))
-  const weekly = weeks.map((week, index) => ({
-    weekStart: week,
+  const issuesOpened = perPeriod(issues.map((item) => item.created))
+  const issuesClosed = perPeriod(issues.map((item) => item.closed))
+  const pullsOpened = perPeriod(pulls.map((item) => item.created))
+  const pullsMerged = perPeriod(pulls.map((item) => item.merged))
+  const series = periods.map((period, index) => ({
+    start: period.key,
     issuesOpened: issuesOpened[index] ?? 0,
     issuesClosed: issuesClosed[index] ?? 0,
     pullsOpened: pullsOpened[index] ?? 0,
     pullsMerged: pullsMerged[index] ?? 0,
-    openIssues: count(
-      issueWeeks,
-      ({ created, closed }) => created <= week && (closed === null || closed > week),
-    ),
+    openIssues: openAt(issues, starts[index + 1] ?? now),
   }))
 
   const windowMergeHours = mergeHours(window)
@@ -489,16 +530,16 @@ export const buildInsights = (input: InsightsInput): Insights => {
         medianDurationMinutes: roundedOrNull(
           median(windowRuns.flatMap((run) => run.durationMinutes ?? [])),
         ),
-        weekly: (() => {
+        series: (() => {
           const outcomes = (outcome: RunOutcome) =>
-            perWeek(windowRuns.flatMap((run) => (run.outcome === outcome ? [run.created] : [])))
+            perPeriod(windowRuns.flatMap((run) => (run.outcome === outcome ? [run.created] : [])))
           const [success, failure, other] = [
             outcomes("success"),
             outcomes("failure"),
             outcomes("other"),
           ]
-          return weeks.map((week, index) => ({
-            weekStart: week,
+          return periods.map((period, index) => ({
+            start: period.key,
             success: success[index] ?? 0,
             failure: failure[index] ?? 0,
             other: other[index] ?? 0,
@@ -610,7 +651,7 @@ export const buildInsights = (input: InsightsInput): Insights => {
         repoWindowRuns === null
           ? null
           : { runs: repoWindowRuns.length, successRate: successRate(repoWindowRuns) },
-      activity: perWeek(repoItems.flatMap((item) => [item.created, item.closed])),
+      activity: perPeriod(repoItems.flatMap((item) => [item.created, item.closed])),
       health: repoHealth(facts),
     }
   })
@@ -637,7 +678,7 @@ export const buildInsights = (input: InsightsInput): Insights => {
           }
         : { value: null, previous: null },
     },
-    weekly,
+    series,
     pullMergeTime: {
       p50: roundedOrNull(quantile(windowMergeHours, 0.5)),
       p75: roundedOrNull(quantile(windowMergeHours, 0.75)),

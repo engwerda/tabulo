@@ -1,5 +1,5 @@
 import { type ReactNode, useState } from "react"
-import type { Insights, Language } from "../../shared/api.ts"
+import { INSIGHT_GRAIN, type Insights, type Language } from "../../shared/api.ts"
 import { Avatar } from "../Avatar.tsx"
 import { AreaChart } from "../charts/AreaChart.tsx"
 import { BarList } from "../charts/BarList.tsx"
@@ -17,9 +17,16 @@ import { useWidth } from "../charts/use-width.ts"
 import { cardClass, Segmented } from "../ui/primitives.tsx"
 import { AllClear, AttentionList, type BoardHref } from "./AttentionList.tsx"
 import { type Cell, packRows, type Row } from "./layout.ts"
+import {
+  bucketTotals,
+  COLUMN_WORDS,
+  type ColumnGrain,
+  GRAIN_WORDS,
+  periodPoints,
+  timeBuckets,
+} from "./periods.ts"
 import { RepoHealthTable } from "./RepoHealthTable.tsx"
 import { formatWindowStart, priorLabel } from "./summary.ts"
-import { axisDay, bucketTotals, formatDate, type Grain, spansYears, timeBuckets } from "./weeks.ts"
 
 const SERIES = {
   opened: "var(--chart-1)",
@@ -54,40 +61,49 @@ const sum = (values: ReadonlyArray<number>) => values.reduce((total, value) => t
 const CARD_CHROME = 74
 
 /**
- * Columns for a weekly chart in the card `ref` measures: one per week, or one per month when
- * the card is too narrow for weekly columns of at least `minBand` pixels, as a year is on a phone.
+ * Columns for a chart of `insights`' periods in the card `ref` measures: one per period, or for
+ * weeks one per month when the card is too narrow for weekly columns of at least `minBand`
+ * pixels, as a year is on a phone.
  */
-const useTimeBuckets = (weeks: ReadonlyArray<{ readonly weekStart: string }>, minBand: number) => {
+const useTimeBuckets = (
+  insights: Insights,
+  series: ReadonlyArray<{ readonly start: string }>,
+  minBand: number,
+) => {
   const [ref, width] = useWidth<HTMLElement>()
-  const grain: Grain =
-    width > 0 && (width - CARD_CHROME) / Math.max(weeks.length, 1) < minBand ? "month" : "week"
+  const grain = INSIGHT_GRAIN[insights.days]
+  const column: ColumnGrain =
+    grain === "week" && width > 0 && (width - CARD_CHROME) / Math.max(series.length, 1) < minBand
+      ? "month"
+      : grain
   const buckets = timeBuckets(
-    weeks.map((week) => week.weekStart),
-    grain,
+    series.map((period) => period.start),
+    column,
+    insights.tz,
   )
-  return { ref, grain, buckets }
+  return { ref, column, buckets }
 }
 
-/** The legend under a weekly chart, with the grain of its columns at the right. */
+/** The legend under a chart over time, with what its columns count at the right. */
 const TimeLegend = ({
-  grain,
+  column,
   items,
 }: {
-  readonly grain: Grain
+  readonly column: ColumnGrain
   readonly items: Parameters<typeof Legend>[0]["items"]
 }) => (
   <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
     <Legend items={items} />
     <span className="ml-auto text-2xs text-zinc-500 dark:text-zinc-400">
-      {grain === "week" ? "Per week" : "Weeks grouped by month"}
+      {COLUMN_WORDS[column].legend}
     </span>
   </div>
 )
 
 const Headline = ({ insights }: { readonly insights: Insights }) => {
-  const { tiles, weekly } = insights
-  const since = `since ${formatWindowStart(insights.window)}`
-  const prior = priorLabel(insights.window)
+  const { tiles, series } = insights
+  const since = `since ${formatWindowStart(insights)}`
+  const prior = priorLabel(insights)
   const secondary = [
     <StatFigure
       key="opened"
@@ -142,7 +158,7 @@ const Headline = ({ insights }: { readonly insights: Insights }) => {
           goodWhen="down"
           deltaMode="absolute"
           comparison={since}
-          trend={weekly.map((week) => week.openIssues)}
+          trend={series.map((period) => period.openIssues)}
         />
         <StatTile
           label="Open pull requests"
@@ -158,7 +174,7 @@ const Headline = ({ insights }: { readonly insights: Insights }) => {
           previous={tiles.issuesClosed.previous}
           goodWhen="up"
           comparison={prior}
-          trend={weekly.map((week) => week.issuesClosed)}
+          trend={series.map((period) => period.issuesClosed)}
         />
         <StatTile
           label="Pull requests merged"
@@ -166,7 +182,7 @@ const Headline = ({ insights }: { readonly insights: Insights }) => {
           previous={tiles.pullsMerged.previous}
           goodWhen="up"
           comparison={prior}
-          trend={weekly.map((week) => week.pullsMerged)}
+          trend={series.map((period) => period.pullsMerged)}
         />
       </dl>
       <div className="flex flex-col gap-3 border-t border-zinc-200/80 px-4 py-3 sm:flex-row sm:items-end sm:justify-between sm:px-5 dark:border-zinc-800">
@@ -187,13 +203,15 @@ const Throughput = ({
   readonly className: string
 }) => {
   const [kind, setKind] = useState<"issues" | "pulls">("issues")
-  const { ref, grain, buckets } = useTimeBuckets(insights.weekly, 8)
+  const { ref, column, buckets } = useTimeBuckets(insights, insights.series, 8)
   const opened = {
     label: "opened",
     color: SERIES.opened,
     values: bucketTotals(
       buckets,
-      insights.weekly.map((week) => (kind === "issues" ? week.issuesOpened : week.pullsOpened)),
+      insights.series.map((period) =>
+        kind === "issues" ? period.issuesOpened : period.pullsOpened,
+      ),
     ),
   }
   const done = {
@@ -201,7 +219,9 @@ const Throughput = ({
     color: SERIES.closed,
     values: bucketTotals(
       buckets,
-      insights.weekly.map((week) => (kind === "issues" ? week.issuesClosed : week.pullsMerged)),
+      insights.series.map((period) =>
+        kind === "issues" ? period.issuesClosed : period.pullsMerged,
+      ),
     ),
   }
   const noun = kind === "issues" ? "issues" : "pull requests"
@@ -234,12 +254,8 @@ const Throughput = ({
       }
       table={
         <DataTable
-          caption={`${noun} opened and ${done.label} per ${grain}, newest first`}
-          columns={[
-            grain === "week" ? "Week" : "Month",
-            "Opened",
-            kind === "issues" ? "Closed" : "Merged",
-          ]}
+          caption={`${noun} opened and ${done.label} per ${COLUMN_WORDS[column].one}, newest first`}
+          columns={[COLUMN_WORDS[column].header, "Opened", kind === "issues" ? "Closed" : "Merged"]}
           rows={buckets
             .map((bucket, index) => ({
               key: bucket.key,
@@ -253,11 +269,11 @@ const Throughput = ({
         categories={buckets}
         series={[opened, done]}
         height={220}
-        ariaLabel={`${noun} per ${grain}: ${openedTotal} opened and ${doneTotal} ${done.label} over ${insights.weekly.length} weeks.`}
+        ariaLabel={`${noun} per ${COLUMN_WORDS[column].one}: ${openedTotal} opened and ${doneTotal} ${done.label} over ${insights.series.length} ${GRAIN_WORDS[INSIGHT_GRAIN[insights.days]].many}.`}
         tooltipTitle={(index) => buckets[index]?.title ?? ""}
       />
       <TimeLegend
-        grain={grain}
+        column={column}
         items={[
           { label: "Opened", color: opened.color },
           { label: kind === "issues" ? "Closed" : "Merged", color: done.color },
@@ -293,15 +309,19 @@ const Backlog = ({
   readonly className: string
 }) => {
   // The same baseline as the headline tile: the count when the window opened, then the count
-  // each Monday as the week before it closed, then now.
-  const { end } = insights.window
+  // at the start of each period as the one before it closed, then now.
+  const grain = INSIGHT_GRAIN[insights.days]
   const { value: now, previous: atStart } = insights.tiles.openIssues
-  const dates = [...insights.weekly.map((week) => week.weekStart), end]
-  const values = [atStart, ...insights.weekly.map((week) => week.openIssues)]
+  const points = periodPoints(
+    insights.series.map((period) => period.start),
+    grain,
+    insights.tz,
+    insights.window.end,
+  )
+  const values = [atStart, ...insights.series.map((period) => period.openIssues)]
   values[values.length - 1] = now
-  const withYear = spansYears(dates)
-  const pointTitle = (index: number) =>
-    index === dates.length - 1 ? "Now" : formatDate(dates[index] ?? "", withYear)
+  const pointTitle = (index: number) => points.titles[index] ?? ""
+  const since = formatWindowStart(insights)
   const change = now - atStart
   return (
     <ChartCard
@@ -310,11 +330,11 @@ const Backlog = ({
         change === 0
           ? "no change"
           : `${change > 0 ? "up" : "down"} ${formatCount(Math.abs(change))}`
-      } since ${formatWindowStart(insights.window)}`}
+      } since ${since}`}
       className={className}
       table={
         <DataTable
-          caption="Open issues now and at the start of each week, newest first"
+          caption={`Open issues now and at the start of each ${GRAIN_WORDS[grain].one}, newest first`}
           columns={["Date", "Open issues"]}
           rows={values
             .map((count, index) => ({
@@ -326,11 +346,11 @@ const Backlog = ({
       }
     >
       <AreaChart
-        labels={dates.map((date) => axisDay(date, dates))}
+        labels={points.labels}
         values={values}
         seriesLabel="open issues"
         partialLast
-        ariaLabel={`Open issues went from ${atStart} on ${formatWindowStart(insights.window)} to ${now} now.`}
+        ariaLabel={`Open issues went from ${atStart} on ${since} to ${now} now.`}
         tooltipTitle={pointTitle}
       />
     </ChartCard>
@@ -403,29 +423,29 @@ const MergeTime = ({
 
 const CiHealth = ({
   ci,
-  period,
+  insights,
   className,
 }: {
   readonly ci: NonNullable<Insights["ci"]>
-  readonly period: Insights["window"]
+  readonly insights: Insights
   readonly className: string
 }) => {
-  const { ref, grain, buckets } = useTimeBuckets(ci.weekly, 6)
+  const { ref, column, buckets } = useTimeBuckets(insights, ci.series, 6)
   const outcomes = [
-    { label: "passed", color: SERIES.success, values: ci.weekly.map((week) => week.success) },
-    { label: "failed", color: SERIES.failure, values: ci.weekly.map((week) => week.failure) },
-    { label: "other", color: SERIES.other, values: ci.weekly.map((week) => week.other) },
+    { label: "passed", color: SERIES.success, values: ci.series.map((period) => period.success) },
+    { label: "failed", color: SERIES.failure, values: ci.series.map((period) => period.failure) },
+    { label: "other", color: SERIES.other, values: ci.series.map((period) => period.other) },
   ].map((series) => ({ ...series, values: bucketTotals(buckets, series.values) }))
   return (
     <ChartCard
       ref={ref}
       title="CI health"
-      description={`${formatCount(ci.runs)} workflow runs since ${formatWindowStart(period)}`}
+      description={`${formatCount(ci.runs)} workflow runs since ${formatWindowStart(insights)}`}
       className={className}
       table={
         <DataTable
-          caption={`Workflow runs per ${grain} by outcome, newest first`}
-          columns={[grain === "week" ? "Week" : "Month", "Passed", "Failed", "Other"]}
+          caption={`Workflow runs per ${COLUMN_WORDS[column].one} by outcome, newest first`}
+          columns={[COLUMN_WORDS[column].header, "Passed", "Failed", "Other"]}
           rows={buckets
             .map((bucket, index) => ({
               key: bucket.key,
@@ -457,11 +477,11 @@ const CiHealth = ({
         categories={buckets}
         series={outcomes}
         height={160}
-        ariaLabel={`CI runs per ${grain}: ${sum(ci.weekly.map((week) => week.success))} passed, ${sum(ci.weekly.map((week) => week.failure))} failed.`}
+        ariaLabel={`CI runs per ${COLUMN_WORDS[column].one}: ${sum(ci.series.map((period) => period.success))} passed, ${sum(ci.series.map((period) => period.failure))} failed.`}
         tooltipTitle={(index) => buckets[index]?.title ?? ""}
       />
       <TimeLegend
-        grain={grain}
+        column={column}
         items={[
           { label: "Passed", color: SERIES.success },
           { label: "Failed", color: SERIES.failure },
@@ -806,7 +826,11 @@ const Repositories = ({ insights }: { readonly insights: Insights }) => {
           </ul>
         </div>
       )}
-      <RepoHealthTable repos={insights.repoStats} languageColor={languageColor} />
+      <RepoHealthTable
+        repos={insights.repoStats}
+        grain={INSIGHT_GRAIN[insights.days]}
+        languageColor={languageColor}
+      />
     </ChartCard>
   )
 }
@@ -919,12 +943,7 @@ export const InsightsDashboard = ({
               empty: insights.ci.runs === 0 ? "CI health (no runs)" : null,
               render: (className: string) =>
                 insights.ci === null ? null : (
-                  <CiHealth
-                    key="ci"
-                    ci={insights.ci}
-                    period={insights.window}
-                    className={className}
-                  />
+                  <CiHealth key="ci" ci={insights.ci} insights={insights} className={className} />
                 ),
             },
           },
