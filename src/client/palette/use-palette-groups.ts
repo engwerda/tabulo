@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { useEffect, useMemo, useState } from "react"
 import { useRoute, useSearchParams } from "wouter"
-import type { DashboardItem } from "../../shared/api.ts"
+import type { BoardCard, DashboardItem } from "../../shared/api.ts"
 import {
   fetchBoard,
   fetchDashboard,
@@ -105,6 +105,23 @@ const openExternal = (url: string) => window.open(url, "_blank", "noopener,noref
  */
 type BoardHref = (item: DashboardItem) => string | null
 
+/**
+ * What makes a row the same issue whichever group lists it, and the references a query may
+ * name it by exactly: `#66`, `66`, `web#66`, `acme/web#66`.
+ */
+const issueNames = (fullName: string, number: number) => {
+  const reference = `${fullName}#${number}`
+  return {
+    identity: reference.toLowerCase(),
+    aliases: [
+      `#${number}`,
+      `${number}`,
+      `${fullName.slice(fullName.indexOf("/") + 1)}#${number}`,
+      reference,
+    ],
+  }
+}
+
 const issueItem = (
   item: DashboardItem,
   id: string,
@@ -115,6 +132,7 @@ const issueItem = (
     id,
     title: item.title,
     subtitle: `${item.repo}#${item.number}`,
+    ...issueNames(item.repo, item.number),
     icon: item.kind,
     kind: { type: item.kind, state: item.state },
     ...extra,
@@ -173,20 +191,29 @@ export const usePaletteGroups = (query: string, active: boolean) => {
   })
   const boardData = onBoard ? board.data : undefined
   const pageSearch = params.toString()
-  const boardHref = useMemo((): BoardHref => {
-    if (viewOrg === undefined) return () => null
-    const selected = parseRepos(selection)
-    if (boardData === undefined) return (item) => boardCardHref(viewOrg, selected, item)
-    // The board on screen also knows which issues are its cards, and keeps its filters open.
-    const cards = new Map(boardData.cards.map((card) => [card.key.toLowerCase(), card]))
-    return (item) => {
-      const card = cards.get(`${item.repo}#${item.number}`.toLowerCase())
-      if (card === undefined || boardCardHref(viewOrg, selected, item) === null) return null
+  // A card of the board on screen opens in its side panel and keeps the board's filters.
+  const cardHref = useMemo(() => {
+    if (viewOrg === undefined || boardData === undefined) return undefined
+    return (card: BoardCard) => {
       const next = new URLSearchParams(pageSearch)
       next.set("card", `${card.repo}#${card.number}`)
       return `/board/${encodeURIComponent(viewOrg)}?${next}`
     }
-  }, [viewOrg, selection, boardData, pageSearch])
+  }, [viewOrg, boardData, pageSearch])
+  const boardHref = useMemo((): BoardHref => {
+    if (viewOrg === undefined) return () => null
+    const selected = parseRepos(selection)
+    if (boardData === undefined || cardHref === undefined) {
+      return (item) => boardCardHref(viewOrg, selected, item)
+    }
+    // The board on screen also knows which issues are its cards.
+    const cards = new Map(boardData.cards.map((card) => [card.key.toLowerCase(), card]))
+    return (item) => {
+      const card = cards.get(`${item.repo}#${item.number}`.toLowerCase())
+      if (card === undefined || boardCardHref(viewOrg, selected, item) === null) return null
+      return cardHref(card)
+    }
+  }, [viewOrg, selection, boardData, cardHref])
 
   const text = query.trim()
   const debounced = useDebounced(text)
@@ -293,6 +320,29 @@ export const usePaletteGroups = (query: string, active: boolean) => {
       }
     }
 
+    // The board's own cards, matched with no request; an issue that is also your work or a
+    // search result shows once, as its card.
+    const cards: ReadonlyArray<PaletteItem> =
+      boardData === undefined || cardHref === undefined
+        ? []
+        : boardData.cards.map((card) => {
+            const column = boardData.columns.find(({ key }) => key === card.column)
+            const href = cardHref(card)
+            return {
+              id: `card:${card.key}`,
+              title: card.title,
+              subtitle: `${card.repo}#${card.number}`,
+              ...issueNames(card.key.slice(0, card.key.lastIndexOf("#")), card.number),
+              icon: "issue",
+              kind: { type: "issue", state: card.state },
+              ...(column === undefined ? {} : { hint: column.title }),
+              enterLabel: "Open on the board",
+              alternate: { label: "Open in Forgejo", run: () => openExternal(card.url) },
+              remember: true,
+              run: ({ navigate }) => navigate(href),
+            }
+          })
+
     const work: Array<PaletteItem> = []
     const seen = new Set<string>()
     for (const { key, label } of WORK_SECTIONS) {
@@ -359,13 +409,14 @@ export const usePaletteGroups = (query: string, active: boolean) => {
       },
     ]
 
-    const issues: ReadonlyArray<PaletteItem> = (searchItems ?? []).map((item) => ({
-      ...issueItem(item, `issue:${item.url}`, boardHref, { remember: false }),
-      ...(seen.has(item.url) ? { sameAs: `work:${item.url}` } : {}),
-    }))
+    const issues: ReadonlyArray<PaletteItem> = (searchItems ?? []).map((item) =>
+      issueItem(item, `issue:${item.url}`, boardHref, { remember: false }),
+    )
 
     return [
       ...pageGroups,
+      // Before "Your work", so that an issue in both shows as its card.
+      { id: "cards", heading: "Cards", items: cards, limit: 6, emptyLimit: 0, filter: true },
       {
         id: "navigation",
         heading: "Navigation",
@@ -403,6 +454,8 @@ export const usePaletteGroups = (query: string, active: boolean) => {
     searchItems,
     currentTheme,
     boardHref,
+    boardData,
+    cardHref,
     pageGroups,
   ])
 

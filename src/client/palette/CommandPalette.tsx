@@ -328,8 +328,11 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
   }
 
   const issueCount = sections.find((section) => section.id === "issues")?.rows.length ?? 0
-  // The search can find only issues that "Your work" already lists, which then show there alone.
-  const foundAbove = (groups.find((group) => group.id === "issues")?.items.length ?? 0) > 0
+  // The search may find only issues that a board card or "Your work" already shows, which then
+  // show there alone; with issues above, "no issues match" would read as a contradiction.
+  const foundAbove =
+    (groups.find((group) => group.id === "issues")?.items.length ?? 0) > 0 ||
+    rows.some((row) => row.item.kind !== undefined)
   const searching = issueCount === 0 && searchStatus === "loading"
   const searchFailed = issueCount === 0 && searchStatus === "error"
   const nothingFound = rows.length === 0 && !searching && !searchFailed && query.trim() !== ""

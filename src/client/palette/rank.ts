@@ -7,8 +7,16 @@ export type Searchable = {
   readonly subtitle?: string | undefined
   /** Matched but never shown, so "theme" finds "Dark". */
   readonly keywords?: string | undefined
-  /** The id of an item in another group that this one repeats; it is left out when that one shows. */
-  readonly sameAs?: string | undefined
+  /**
+   * Other names that the query may equal exactly, such as an issue's `#66`. An item whose title
+   * or alias the query equals comes before every other match.
+   */
+  readonly aliases?: ReadonlyArray<string> | undefined
+  /**
+   * What the item is, for an item that several groups list, such as an issue that is both a board
+   * card and your work: only the row of the earliest group in the list of groups shows.
+   */
+  readonly identity?: string | undefined
 }
 
 export type GroupSpec<T> = {
@@ -54,6 +62,36 @@ const qualityOrder = (a: FieldsMatch, b: FieldsMatch) =>
 /** Negative when `a` is the better match: by quality, then by an earlier start. */
 const compareMatches = (a: FieldsMatch, b: FieldsMatch) => qualityOrder(a, b) || b.score - a.score
 
+type Scored<T> = { readonly row: Row<T>; readonly match: FieldsMatch; readonly exact: boolean }
+
+/** Negative when `a` is the better match: an exact name first, then as `compareMatches`. */
+const compareScored = <T>(a: Scored<T>, b: Scored<T>) =>
+  Number(b.exact) - Number(a.exact) || compareMatches(a.match, b.match)
+
+const isExact = (name: string, item: Searchable) =>
+  [item.title, ...(item.aliases ?? [])].some((candidate) => candidate.toLowerCase() === name)
+
+/**
+ * Takes up to `limit` entries in order, leaving out any whose item's identity an entry taken
+ * earlier, in this call or a previous one, already has.
+ */
+const identityFilter = () => {
+  const claimed = new Set<string>()
+  return <E>(entries: ReadonlyArray<E>, item: (entry: E) => Searchable, limit: number) => {
+    const taken: Array<E> = []
+    for (const entry of entries) {
+      if (taken.length >= limit) break
+      const { identity } = item(entry)
+      if (identity !== undefined && claimed.has(identity)) continue
+      if (identity !== undefined) claimed.add(identity)
+      taken.push(entry)
+    }
+    return taken
+  }
+}
+
+const itself = <T>(item: T) => item
+
 const none: ReadonlyArray<number> = []
 
 const plainRow = <T extends Searchable>(item: T): Row<T> => ({
@@ -81,10 +119,19 @@ export const rankSections = <T extends Searchable>(
 ): ReadonlyArray<Section<T>> => {
   if (query.trim() === "") {
     const byId = new Map(groups.flatMap((group) => group.items.map((item) => [item.id, item])))
-    const recent = recentIds.flatMap((id) => byId.get(id) ?? []).slice(0, RECENT_LIMIT)
+    const take = identityFilter()
+    const recent = take(
+      recentIds.flatMap((id) => byId.get(id) ?? []),
+      itself,
+      RECENT_LIMIT,
+    )
     const taken = new Set(recent.map((item) => item.id))
     const firstItems = (group: GroupSpec<T>): ReadonlyArray<Section<T>> => {
-      const items = group.items.filter((item) => !taken.has(item.id)).slice(0, group.emptyLimit)
+      const items = take(
+        group.items.filter((item) => !taken.has(item.id)),
+        itself,
+        group.emptyLimit,
+      )
       return items.length === 0
         ? []
         : [{ id: group.id, heading: group.heading, rows: items.map(plainRow) }]
@@ -98,9 +145,11 @@ export const rankSections = <T extends Searchable>(
     ]
   }
 
+  const name = query.trim().toLowerCase()
+  const take = identityFilter()
   const local = groups.flatMap((group, order) => {
     if (!group.filter) return []
-    const scored = group.items.flatMap((item) => {
+    const scored = group.items.flatMap((item): ReadonlyArray<Scored<T>> => {
       const match = fuzzyMatchFields(
         query,
         [item.title, item.subtitle ?? "", item.keywords ?? ""],
@@ -110,18 +159,18 @@ export const rankSections = <T extends Searchable>(
       )
       if (match === null) return []
       const [titleIndices = none, subtitleIndices = none] = match.indices
-      return [{ match, row: { item, titleIndices, subtitleIndices } }]
+      return [{ match, exact: isExact(name, item), row: { item, titleIndices, subtitleIndices } }]
     })
-    scored.sort((a, b) => compareMatches(a.match, b.match))
-    const best = scored[0]?.match
+    scored.sort(compareScored)
+    const shown = take(scored, ({ row }) => row.item, group.limit)
+    const best = shown[0]
     if (best === undefined) return []
-    const rows = scored.slice(0, group.limit).map(({ row }) => row)
     return [
       {
         order,
         best,
         contextual: group.contextual === true,
-        section: { id: group.id, heading: group.heading, rows },
+        section: { id: group.id, heading: group.heading, rows: shown.map(({ row }) => row) },
       },
     ]
   })
@@ -129,20 +178,17 @@ export const rankSections = <T extends Searchable>(
   // a tie after the page's own commands do.
   local.sort(
     (a, b) =>
-      qualityOrder(a.best, b.best) ||
+      Number(b.best.exact) - Number(a.best.exact) ||
+      qualityOrder(a.best.match, b.best.match) ||
       Number(b.contextual) - Number(a.contextual) ||
-      compareMatches(a.best, b.best) ||
+      compareMatches(a.best.match, b.best.match) ||
       a.order - b.order,
   )
-  const shown = new Set(local.flatMap((entry) => entry.section.rows.map((row) => row.item.id)))
   // Server results come last and keep every item the server returned, except repeats of a row
   // already shown above.
   const remote = groups.flatMap((group) => {
     if (group.filter) return []
-    const rows = group.items
-      .filter((item) => item.sameAs === undefined || !shown.has(item.sameAs))
-      .slice(0, group.limit)
-      .map((item) => highlightedRow(query, item))
+    const rows = take(group.items, itself, group.limit).map((item) => highlightedRow(query, item))
     return [{ id: group.id, heading: group.heading, rows }]
   })
   return [...local.map((entry) => entry.section), ...remote]

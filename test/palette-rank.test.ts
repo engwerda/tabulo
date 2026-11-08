@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest"
 import { type GroupSpec, rankSections } from "../src/client/palette/rank.ts"
 
-type Item = { id: string; title: string; subtitle?: string; keywords?: string; sameAs?: string }
+type Item = {
+  id: string
+  title: string
+  subtitle?: string
+  keywords?: string
+  aliases?: ReadonlyArray<string>
+  identity?: string
+}
 
 const group = (
   id: string,
@@ -145,14 +152,14 @@ describe("rankSections", () => {
 
   it("leaves out a server result that repeats a row shown above, and only then", () => {
     const work = group("work", [
-      { id: "work:1", title: "Public API docs" },
-      { id: "work:2", title: "Rotate keys" },
+      { id: "work:1", title: "Public API docs", identity: "api#1" },
+      { id: "work:2", title: "Rotate keys", identity: "api#2" },
     ])
     const issues = group(
       "issues",
       [
-        { id: "issue:1", title: "Public API docs", sameAs: "work:1" },
-        { id: "issue:2", title: "Rotate keys", sameAs: "work:2" },
+        { id: "issue:1", title: "Public API docs", identity: "api#1" },
+        { id: "issue:2", title: "Rotate keys", identity: "api#2" },
         { id: "issue:3", title: "Public status page" },
       ],
       { filter: false, limit: 2 },
@@ -161,6 +168,90 @@ describe("rankSections", () => {
     expect(ids(rankSections("public", [work, issues], []))).toEqual([
       ["work", ["work:1"]],
       ["issues", ["issue:2", "issue:3"]],
+    ])
+  })
+
+  const card = (repo: string, number: number, title: string): Item => ({
+    id: `card:${repo}#${number}`,
+    title,
+    subtitle: `${repo}#${number}`,
+    aliases: [`#${number}`, `${number}`, `${repo}#${number}`, `acme/${repo}#${number}`],
+    identity: `acme/${repo}#${number}`,
+  })
+
+  it("puts an item whose number or title the query names exactly before closer fuzzy ties", () => {
+    const cards = group("cards", [
+      card("web", 66, "Support Firefox"),
+      card("web", 6, "Drag cards between columns"),
+      card("api", 7, "Drag"),
+    ])
+
+    expect(ids(rankSections("6", [cards], []))).toEqual([["cards", ["card:web#6", "card:web#66"]]])
+    expect(ids(rankSections("#66", [cards], []))[0]).toEqual(["cards", ["card:web#66"]])
+    expect(ids(rankSections("WEB#6", [cards], []))[0]?.[1]?.[0]).toBe("card:web#6")
+    expect(ids(rankSections("drag", [cards], []))).toEqual([
+      ["cards", ["card:api#7", "card:web#6"]],
+    ])
+  })
+
+  it("puts the group of an exact match first", () => {
+    const repositories = group("repositories", [{ id: "repo:web66", title: "web66" }])
+    const cards = group("cards", [card("web", 66, "Support Firefox")])
+
+    expect(ids(rankSections("66", [repositories, cards], [])).map(([id]) => id)).toEqual([
+      "cards",
+      "repositories",
+    ])
+  })
+
+  it("shows an issue listed by several groups once, in the earliest group that shows it", () => {
+    const cards = group(
+      "cards",
+      [card("web", 1, "Support Firefox"), card("web", 2, "Firefox drag")],
+      {
+        limit: 1,
+      },
+    )
+    const work = group("work", [
+      { ...card("web", 1, "Support Firefox"), id: "work:1", keywords: "Assigned" },
+      { ...card("web", 2, "Firefox drag"), id: "work:2", keywords: "Assigned" },
+    ])
+    const issues = group(
+      "issues",
+      [
+        { ...card("web", 1, "Support Firefox"), id: "issue:1" },
+        { ...card("web", 3, "Firefox crash"), id: "issue:3" },
+      ],
+      { filter: false },
+    )
+
+    expect(ids(rankSections("support", [cards, work, issues], []))).toEqual([
+      ["cards", ["card:web#1"]],
+      ["issues", ["issue:3"]],
+    ])
+    // The card that the group's limit leaves out still shows, as your work.
+    expect(ids(rankSections("firefox", [cards, work, issues], []))).toEqual([
+      ["cards", ["card:web#2"]],
+      ["work", ["work:1"]],
+      ["issues", ["issue:3"]],
+    ])
+    // Only your work matches its hidden keyword, so its row shows.
+    expect(ids(rankSections("assigned", [cards, work], []))).toEqual([
+      ["work", ["work:1", "work:2"]],
+    ])
+  })
+
+  it("lists every item of your work while the query is empty, unless it is a recent card", () => {
+    const cards = group("cards", [card("web", 1, "Support Firefox")], { emptyLimit: 0 })
+    const work = group("work", [
+      { ...card("web", 1, "Support Firefox"), id: "work:1" },
+      { ...card("web", 2, "Firefox drag"), id: "work:2" },
+    ])
+
+    expect(ids(rankSections("", [cards, work], []))).toEqual([["work", ["work:1", "work:2"]]])
+    expect(ids(rankSections("", [cards, work], ["card:web#1"]))).toEqual([
+      ["recent", ["card:web#1"]],
+      ["work", ["work:2"]],
     ])
   })
 

@@ -561,11 +561,11 @@ export const BoardColumns = ({
                 <>
                   {column.title}
                   <span
-                    className={
+                    className={`text-2xs ${
                       index === inView
                         ? "text-zinc-600 dark:text-zinc-300"
                         : "text-zinc-600 dark:text-zinc-400"
-                    }
+                    }`}
                   >
                     {columnCards(board.cards, column.key).filter(visible).length}
                   </span>
@@ -573,7 +573,8 @@ export const BoardColumns = ({
               ),
             }))}
             size="sm"
-            className="min-w-full [&>button]:h-8 [&>button]:grow pointer-coarse:[&>button]:h-11"
+            // Tight segments fit five columns on a 390px phone; the fades cover boards with more.
+            className="min-w-full [&>button]:h-8 [&>button]:grow [&>button]:gap-1 [&>button]:px-1.5 pointer-coarse:[&>button]:h-11 pointer-coarse:[&>button]:px-1.5"
           />
         </div>
         <div className={`relative flex min-h-0 flex-1 ${panelOpen ? "lg:mr-[32rem]" : ""}`}>

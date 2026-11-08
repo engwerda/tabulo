@@ -314,15 +314,12 @@ const CommentBox = ({
   draftKey,
   ready,
   onSubmit,
-  onEscape,
 }: {
   /** Where the unsent text is kept, so closing the panel or stepping to another card keeps it. */
   draftKey: string
   /** False until the comments have loaded, so a new one cannot land before the ones it follows. */
   ready: boolean
   onSubmit: (body: string) => Promise<unknown>
-  /** Escape leaves the box and keeps the text; the panel decides where focus goes. */
-  onEscape: () => void
 }) => {
   const [body, setBodyState] = useState(() => drafts.read(draftKey))
   const setBody = (next: string) => {
@@ -331,6 +328,7 @@ const CommentBox = ({
   }
   const [pending, setPending] = useState(false)
   const input = useRef<HTMLTextAreaElement>(null)
+  const form = useRef<HTMLFormElement>(null)
   const submit = () => {
     const trimmed = body.trim()
     if (trimmed === "" || pending || !ready) return
@@ -341,12 +339,17 @@ const CommentBox = ({
       .finally(() => setPending(false))
   }
   return (
+    // The form takes focus from the box on Escape: the reader keeps their place in the thread,
+    // the box keeps its focus border, and a second Escape closes the panel.
     <form
+      ref={form}
+      tabIndex={-1}
+      aria-label="New comment"
       onSubmit={(event) => {
         event.preventDefault()
         submit()
       }}
-      className="rounded-xl border border-zinc-200 bg-white shadow-card transition focus-within:border-indigo-400 focus-within:ring-3 focus-within:ring-indigo-500/15 dark:border-zinc-800 dark:bg-zinc-900 dark:focus-within:border-indigo-500"
+      className="rounded-xl border border-zinc-200 bg-white shadow-card transition outline-none focus-within:border-indigo-400 focus-within:ring-3 focus-within:ring-indigo-500/15 dark:border-zinc-800 dark:bg-zinc-900 dark:focus-within:border-indigo-500"
     >
       <label htmlFor="card-comment" className="sr-only">
         Add a comment
@@ -368,7 +371,7 @@ const CommentBox = ({
             event.preventDefault()
             submit()
           }
-          if (event.key === "Escape") onEscape()
+          if (event.key === "Escape") form.current?.focus({ preventScroll: true })
         }}
         className="block max-h-64 min-h-[4.5rem] w-full resize-none rounded-t-xl bg-transparent px-3 py-2.5 [field-sizing:content] text-base text-zinc-900 sm:text-sm placeholder:text-zinc-500 dark:placeholder:text-zinc-400 read-only:opacity-60 focus:outline-none dark:text-zinc-100"
       />
@@ -490,7 +493,6 @@ export const CardPanel = ({
       toast({ tone: "error", title: "Could not add the comment", detail: error.message }),
   })
   const heading = useRef<HTMLHeadingElement>(null)
-  const commentsHeading = useRef<HTMLHeadingElement>(null)
   const layer = useRef<HTMLDivElement>(null)
   const modal = !useSyncExternalStore(subscribeWide, () => wideQuery.matches)
   useInertOutside(modal, layer, () =>
@@ -961,9 +963,7 @@ export const CardPanel = ({
                 <section aria-labelledby="card-comments" className="mt-8">
                   <h3
                     id="card-comments"
-                    ref={commentsHeading}
-                    tabIndex={-1}
-                    className={`${sectionTitle} flex w-fit scroll-mt-4 items-center gap-2 rounded-sm`}
+                    className={`${sectionTitle} flex w-fit items-center gap-2`}
                   >
                     Comments
                     {detail.data !== undefined && (
@@ -1027,12 +1027,6 @@ export const CardPanel = ({
                         draftKey={commentDraftKey(card.key)}
                         ready={detail.data !== undefined}
                         onSubmit={(body) => comment.mutateAsync(body)}
-                        // The comments heading holds focus between edits, scrolled into view so the
-                        // focus stays visible; a second Escape closes the panel.
-                        onEscape={() => {
-                          commentsHeading.current?.focus({ preventScroll: true })
-                          commentsHeading.current?.scrollIntoView({ block: "nearest" })
-                        }}
                       />
                     </div>
                   )}
