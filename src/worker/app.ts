@@ -200,10 +200,11 @@ export const createApp = (dependencies: Dependencies) => {
 
   const app = new Hono<{ Bindings: Env }>()
 
-  app.use("/api/*", async (c, next) => {
+  app.use(async (c, next) => {
     await next()
     c.header("Cache-Control", "no-store")
     c.header("X-Content-Type-Options", "nosniff")
+    c.header("Strict-Transport-Security", "max-age=31536000")
   })
 
   app.use(async (c, next) => {
@@ -211,6 +212,11 @@ export const createApp = (dependencies: Dependencies) => {
     const appOrigin = URL.canParse(c.env.APP_URL) ? new URL(c.env.APP_URL).origin : undefined
     if (appOrigin === undefined || c.req.header("origin") !== appOrigin) {
       return c.json({ error: "Cross-origin request refused" }, 403)
+    }
+    // An HTML form posts from Tabulo's own origin too, but it cannot send a JSON body.
+    const type = c.req.header("content-type")
+    if (type !== undefined && !/^application\/json\s*(;|$)/i.test(type)) {
+      return c.json({ error: "Send the request body as application/json" }, 415)
     }
     return next()
   })

@@ -19,11 +19,16 @@ describe("GET /api/me", () => {
   })
 })
 
-describe("API response headers", () => {
-  it("forbids caching and MIME sniffing on API responses", async () => {
-    const response = await tabulo(unreachableForgejo)("/api/me")
+describe("Worker response headers", () => {
+  it.each([
+    ["an API response", "/api/me"],
+    ["a sign-in redirect", "/auth/login"],
+    ["a sign-in error", "/auth/callback?code=x&state=y"],
+  ])("forbid caching and MIME sniffing and require HTTPS on %s", async (_, path) => {
+    const response = await tabulo(unreachableForgejo)(path)
 
     expect(response.headers.get("cache-control")).toBe("no-store")
     expect(response.headers.get("x-content-type-options")).toBe("nosniff")
+    expect(response.headers.get("strict-transport-security")).toBe("max-age=31536000")
   })
 })

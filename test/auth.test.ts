@@ -198,6 +198,25 @@ describe("POST /auth/logout", () => {
     expect((await call("/api/me", { headers: { cookie } })).status).toBe(200)
   })
 
+  // A form in rendered Markdown would post from Tabulo's own origin; forms cannot send JSON.
+  it.each(["application/x-www-form-urlencoded", "multipart/form-data; boundary=x", "text/plain"])(
+    "refuses a %s body from Tabulo's own Origin and keeps the session",
+    async (type) => {
+      const forgejo = createFakeForgejo()
+      const call = tabulo(forgejo.fetch)
+      const cookie = await signIn(call, forgejo)
+
+      const response = await call("/auth/logout", {
+        method: "POST",
+        headers: { cookie, origin: APP_URL, "content-type": type },
+        body: "",
+      })
+
+      expect(response.status).toBe(415)
+      expect((await call("/api/me", { headers: { cookie } })).status).toBe(200)
+    },
+  )
+
   it("refuses a request without an Origin header", async () => {
     const forgejo = createFakeForgejo()
     const call = tabulo(forgejo.fetch)
@@ -286,5 +305,23 @@ describe("stored token encryption", () => {
 
     expect((await call("/api/me", { headers: { cookie } })).status).toBe(401)
     expect(await sessionCount()).toBe(0)
+  })
+})
+
+describe("state-changing requests", () => {
+  it("refuses a JSON-shaped text/plain body that a form could post as a comment", async () => {
+    const forgejo = createFakeForgejo()
+    const call = tabulo(forgejo.fetch)
+    const cookie = await signIn(call, forgejo)
+    const before = forgejo.requests.length
+
+    const response = await call("/api/board/comment", {
+      method: "POST",
+      headers: { cookie, origin: APP_URL, "content-type": "text/plain" },
+      body: JSON.stringify({ org: "acme", repo: "api", number: 1, body: "spam" }),
+    })
+
+    expect(response.status).toBe(415)
+    expect(forgejo.requests.length).toBe(before)
   })
 })

@@ -75,7 +75,11 @@ starts with all of them chosen; clearing the choice is remembered too.
    the session. Forgejo can rotate refresh tokens, so when concurrent requests refresh the same
    session, the first stored tokens win and the other requests use them.
 6. `POST /auth/logout` deletes the session. Requests that change state must carry an `Origin`
-   header equal to `APP_URL`.
+   header equal to `APP_URL`, and a body only as `application/json`; others answer 403 and 415.
+   An HTML form can post from Tabulo's own origin but cannot send JSON.
+7. Every Worker response carries `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`,
+   and `Strict-Transport-Security`. The static assets carry the CSP from `vite.config.ts`, which
+   allows no form submission and no framing.
 
 ### Board
 
