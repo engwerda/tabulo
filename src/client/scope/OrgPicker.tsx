@@ -88,16 +88,7 @@ export const OrgPicker = ({ view }: { view: OrgViewId }) => {
 }
 
 /** The view's organization, as a menu that switches to the same view of another organization. */
-export const OrgSwitcher = ({
-  org,
-  view,
-  compact = false,
-}: {
-  org: string
-  view: OrgViewId
-  /** On a phone, shows only the organization's avatar; its name stays the button's label. */
-  compact?: boolean
-}) => {
+export const OrgSwitcher = ({ org, view }: { org: string; view: OrgViewId }) => {
   const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
   const current = orgs.data?.find((candidate) => candidate.name.toLowerCase() === org.toLowerCase())
   const title = current?.fullName || current?.name || org
@@ -115,11 +106,7 @@ export const OrgSwitcher = ({
           ) : (
             <Avatar url={current?.avatarUrl ?? ""} name={title} size="sm" className="rounded-md" />
           )}
-          <span
-            className={`truncate text-base font-semibold tracking-tight ${compact ? "max-sm:sr-only" : ""}`}
-          >
-            {title}
-          </span>
+          <span className="truncate text-base font-semibold tracking-tight">{title}</span>
         </>
       }
       panelClass="w-72 p-1.5"

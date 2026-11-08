@@ -1,21 +1,21 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { type ComponentType, lazy, Suspense } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { type ComponentType, lazy, Suspense, useEffect } from "react"
 import { Link, Route, Switch, useLocation } from "wouter"
 import type { User } from "../shared/api.ts"
 import { Avatar } from "./Avatar.tsx"
-import { signOut } from "./api.ts"
+import { fetchOrgs, signOut } from "./api.ts"
 import { DashboardView } from "./Dashboard.tsx"
 import { Glyph, type GlyphName, SearchIcon } from "./palette/icons.tsx"
 import { ShortcutKeys } from "./palette/keys.tsx"
 import { PaletteProvider, usePalette } from "./palette/PaletteProvider.tsx"
-import { OrgPicker } from "./scope/OrgPicker.tsx"
+import { ORGS, OrgPicker } from "./scope/OrgPicker.tsx"
 import { useLastScope } from "./scope/remembered.ts"
 import { isOrgViewPath, ORG_VIEWS, type OrgViewId, orgViewHref } from "./scope/views.ts"
 import { SESSION_USER, useSession } from "./session.ts"
 import { ThemeControl } from "./ThemeControl.tsx"
 import { ErrorBoundary } from "./ui/ErrorBoundary.tsx"
 import { ArrowRightIcon, LogoMark, SignOutIcon } from "./ui/icons.tsx"
-import { buttonClass, Popover } from "./ui/primitives.tsx"
+import { buttonClass, Popover, touchTarget } from "./ui/primitives.tsx"
 
 /** A still life of a board, drawn with the app's own surfaces, for the sign-in page. */
 const BoardSketch = () => {
@@ -71,7 +71,38 @@ const SIGN_IN_POINTS = [
   { icon: "insights", text: "Throughput, backlog, and CI health at a glance" },
 ] as const satisfies ReadonlyArray<{ icon: GlyphName; text: string }>
 
-const SignIn = () => (
+const useDocumentTitle = (title: string) => {
+  useEffect(() => {
+    document.title = title === "" ? "Tabulo" : `${title} · Tabulo`
+  }, [title])
+}
+
+/** Names the browser tab after the view and organization, so tabs and history stay apart. */
+const useRouteTitle = () => {
+  const [path] = useLocation()
+  const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
+  const view = ORG_VIEWS.find((candidate) => isOrgViewPath(candidate, path))
+  const org = view === undefined ? undefined : decodeURIComponent(path.split("/")[2] ?? "")
+  const orgName =
+    orgs.data?.find((candidate) => candidate.name.toLowerCase() === org?.toLowerCase())?.fullName ||
+    org
+  useDocumentTitle(
+    path === "/"
+      ? "Dashboard"
+      : view === undefined
+        ? "Page not found"
+        : orgName
+          ? `${view.label} · ${orgName}`
+          : view.label,
+  )
+}
+
+const SignIn = () => {
+  useDocumentTitle("Sign in")
+  return <SignInPage />
+}
+
+const SignInPage = () => (
   <main className="relative isolate grid min-h-dvh overflow-hidden px-6 py-12 lg:grid-cols-2 lg:place-items-center lg:gap-16 lg:px-16">
     <div
       aria-hidden="true"
@@ -155,8 +186,11 @@ const useSignOut = () => {
   return useMutation({
     mutationFn: signOut,
     onSuccess: () => {
-      queryClient.clear()
+      // The session goes null first, so the app shows sign-in before the signed-in views lose
+      // their data; clearing everything first left them rendering without a viewer.
       queryClient.setQueryData(SESSION_USER, null)
+      void queryClient.cancelQueries()
+      queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== SESSION_USER[0] })
     },
   })
 }
@@ -169,7 +203,7 @@ const SearchButton = () => {
       onClick={openPalette}
       aria-haspopup="dialog"
       aria-keyshortcuts="Control+K Meta+K"
-      className="flex h-8 shrink-0 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-2 text-sm text-zinc-500 shadow-[0_1px_0_rgb(0_0_0/0.03)] transition-colors hover:border-zinc-300 hover:text-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 sm:w-52 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-none dark:hover:border-zinc-600 dark:hover:text-zinc-200"
+      className="flex h-8 shrink-0 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-2 text-sm text-zinc-500 pointer-coarse:h-10 pointer-coarse:px-3 shadow-[0_1px_0_rgb(0_0_0/0.03)] transition-colors hover:border-zinc-300 hover:text-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 sm:w-52 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-none dark:hover:border-zinc-600 dark:hover:text-zinc-200"
     >
       <SearchIcon className="size-4 shrink-0" />
       <span className="sr-only sm:not-sr-only sm:flex-1 sm:text-left">Search…</span>
@@ -185,7 +219,7 @@ const UserMenu = ({ user, logout }: { user: User; logout: ReturnType<typeof useS
     align="end"
     chevron={false}
     accessibleLabel={`Account: ${user.name}`}
-    triggerClass="flex items-center gap-2 rounded-full p-0.5 transition hover:ring-4 hover:ring-zinc-200/70 dark:hover:ring-zinc-800"
+    triggerClass={`flex items-center gap-2 rounded-full p-0.5 transition hover:ring-4 hover:ring-zinc-200/70 dark:hover:ring-zinc-800 ${touchTarget}`}
     label={<Avatar url={user.avatarUrl} name={user.name} />}
     panelClass="w-64 p-1.5"
   >
@@ -355,6 +389,7 @@ const ViewLoading = () => (
 
 const SignedIn = ({ user }: { user: User }) => {
   const [location] = useLocation()
+  useRouteTitle()
   const logout = useSignOut()
   return (
     <PaletteProvider signOut={() => logout.mutate()}>

@@ -865,7 +865,7 @@ export const BoardPage = ({ org }: { org: string }) => {
         */}
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2.5 px-4 pt-3 pb-3 sm:px-6 min-[84rem]:grid-cols-[auto_minmax(0,1fr)_auto]">
           <div className="flex min-w-0 items-center gap-1.5">
-            <OrgSwitcher org={org} view="board" compact />
+            <OrgSwitcher org={org} view="board" />
             {!orgMissing && (
               <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-700">
                 /
