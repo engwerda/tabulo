@@ -95,19 +95,32 @@ export const OrgSwitcher = ({ org, view }: { org: string; view: OrgViewId }) => 
   return (
     <Popover
       containerClass="relative -ml-1.5 min-w-0"
-      triggerClass="flex w-full min-w-0 items-center gap-2 rounded-lg py-1 pr-1.5 pl-1.5 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800/70"
+      triggerClass="flex w-full min-w-0 items-center gap-2 rounded-lg py-1 pr-1.5 pl-1.5 text-left pointer-coarse:min-h-11 transition hover:bg-zinc-100 dark:hover:bg-zinc-800/70"
       accessibleLabel={`Organization: ${title}. Switch organization`}
       label={
-        <>
-          {current === undefined && orgs.data !== undefined ? (
-            <span className="grid size-6 place-items-center rounded-md bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-              <AlertIcon className="size-3.5" />
-            </span>
-          ) : (
-            <Avatar url={current?.avatarUrl ?? ""} name={title} size="sm" className="rounded-md" />
-          )}
-          <span className="truncate text-base font-semibold tracking-tight">{title}</span>
-        </>
+        orgs.isPending ? (
+          // The login would show first and then change to the full name, moving what follows.
+          <span aria-hidden="true" className="flex min-w-0 items-center gap-2">
+            <span className="size-6 shrink-0 animate-shimmer rounded-md bg-zinc-200/70 dark:bg-zinc-800" />
+            <span className="h-4 w-36 min-w-0 animate-shimmer rounded bg-zinc-200/70 max-sm:w-24 dark:bg-zinc-800" />
+          </span>
+        ) : (
+          <>
+            {current === undefined && orgs.data !== undefined ? (
+              <span className="grid size-6 place-items-center rounded-md bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                <AlertIcon className="size-3.5" />
+              </span>
+            ) : (
+              <Avatar
+                url={current?.avatarUrl ?? ""}
+                name={title}
+                size="sm"
+                className="rounded-md"
+              />
+            )}
+            <span className="truncate text-base font-semibold tracking-tight">{title}</span>
+          </>
+        )
       }
       panelClass="w-72 p-1.5"
     >

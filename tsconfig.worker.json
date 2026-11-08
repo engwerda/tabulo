@@ -14,10 +14,12 @@
     "src/client/charts/scale.ts",
     "src/client/insights/summary.ts",
     "src/client/insights/layout.ts",
+    "src/client/insights/weeks.ts",
     "src/client/epics/epics-view.ts",
     "src/client/palette/fuzzy.ts",
     "src/client/palette/rank.ts",
     "src/client/palette/shortcuts.ts",
+    "src/client/scope/first-visit.ts",
     "test"
   ]
 }

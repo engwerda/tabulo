@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import type { DashboardItem, NotificationItem } from "../shared/api.ts"
 import { absoluteTime, relativeTime } from "./format.ts"
+import { IssueRef } from "./ui/IssueRef.tsx"
 import { BellIcon, CommentIcon, IssueOpenIcon, PullIcon } from "./ui/icons.tsx"
 import { LabelList } from "./ui/LabelChip.tsx"
 
@@ -86,9 +87,7 @@ export const ItemRow = ({ item, alsoIn }: { item: DashboardItem; alsoIn?: string
       </a>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs leading-5">
         <p className={`min-w-0 truncate ${metaClass}`}>
-          <span className={refClass}>
-            {item.repo} #{item.number}
-          </span>
+          <IssueRef repo={item.repo} number={item.number} className={refClass} />
           {alsoIn === undefined ? (
             <>
               {" "}

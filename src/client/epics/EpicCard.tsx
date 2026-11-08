@@ -2,6 +2,7 @@ import { useId, useState } from "react"
 import type { BoardColumn, Epic, EpicChild } from "../../shared/api.ts"
 import { AvatarStack } from "../Avatar.tsx"
 import { absoluteTime, relativeTime } from "../format.ts"
+import { IssueRef } from "../ui/IssueRef.tsx"
 import {
   ChevronDownIcon,
   IssueClosedIcon,
@@ -46,11 +47,16 @@ const ColumnChip = ({
   )
 }
 
+/** Open is neutral; a closed epic counts as done, in the Done column's green. */
 const StateChip = ({ state }: { state: Epic["state"] }) => (
   <span className={`${chipClass} shrink-0`}>
     <span
       aria-hidden="true"
-      className={`size-1.5 rounded-full ${state === "open" ? "bg-emerald-500" : "bg-violet-500"}`}
+      className={`size-2 rounded-full ${
+        state === "open"
+          ? "border-[1.5px] border-zinc-500 dark:border-zinc-400"
+          : "bg-chart-positive"
+      }`}
     />
     {state === "open" ? "Open" : "Closed"}
   </span>
@@ -68,7 +74,19 @@ const ChildIcon = ({ child }: { child: Extract<EpicChild, { _tag: "Issue" }> }) 
   )
 }
 
-const ChildRow = ({ child, columns }: { child: EpicChild; columns: ReadonlyArray<BoardColumn> }) =>
+/** A child in the page's organization shows its bare repository name, as the epic does. */
+const shortRepo = (org: string, repo: string) =>
+  repo.toLowerCase().startsWith(`${org.toLowerCase()}/`) ? repo.slice(org.length + 1) : repo
+
+const ChildRow = ({
+  org,
+  child,
+  columns,
+}: {
+  org: string
+  child: EpicChild
+  columns: ReadonlyArray<BoardColumn>
+}) =>
   child._tag === "Unavailable" ? (
     <li className="flex items-start gap-3 px-4 py-2.5 sm:px-5">
       <span
@@ -76,7 +94,7 @@ const ChildRow = ({ child, columns }: { child: EpicChild; columns: ReadonlyArray
         className="mt-0.5 size-4 shrink-0 rounded-full border-[1.5px] border-dashed border-zinc-300 dark:border-zinc-600"
       />
       <span className="min-w-0 text-sm text-zinc-500 dark:text-zinc-400">
-        <span className="font-mono text-xs break-all">{child.ref}</span>
+        <span className="text-xs break-all tabular-nums">{child.ref}</span>
         <span className="block text-xs">Not available to you, or not found in Forgejo</span>
       </span>
     </li>
@@ -94,9 +112,11 @@ const ChildRow = ({ child, columns }: { child: EpicChild; columns: ReadonlyArray
           {child.title}
         </a>
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="font-mono text-xs break-all text-zinc-500 dark:text-zinc-400">
-            {child.repo}#{child.number}
-          </span>
+          <IssueRef
+            repo={shortRepo(org, child.repo)}
+            number={child.number}
+            className="text-xs text-zinc-500 dark:text-zinc-400"
+          />
           <ColumnChip column={child.column} columns={columns} />
         </div>
       </div>
@@ -105,10 +125,12 @@ const ChildRow = ({ child, columns }: { child: EpicChild; columns: ReadonlyArray
   )
 
 export const EpicCard = ({
+  org,
   epic,
   columns,
   sharedLabels,
 }: {
+  org: string
   epic: Epic
   columns: ReadonlyArray<BoardColumn>
   /** Labels every epic on the page carries, such as the epic label itself: not worth repeating. */
@@ -118,7 +140,12 @@ export const EpicCard = ({
   const childrenId = useId()
   const headingId = useId()
   const unavailable = epic.children.filter((child) => child._tag === "Unavailable").length
-  const segments = columns.map((column) => ({
+  // Done first, then each column by how close it is to done, so the bar fills from the left.
+  const byProgress = [
+    ...columns.filter((column) => column._tag === "Done"),
+    ...columns.filter((column) => column._tag !== "Done").reverse(),
+  ]
+  const segments = byProgress.map((column) => ({
     key: column.key,
     title: column.title,
     count: epic.progress.byColumn[column.key] ?? 0,
@@ -138,9 +165,11 @@ export const EpicCard = ({
     <article aria-labelledby={headingId} className={`${cardClass} min-w-0 overflow-hidden`}>
       <div className="p-4 sm:p-5">
         <div className="flex items-center justify-between gap-3">
-          <span className="min-w-0 truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
-            {epic.repo}#{epic.number}
-          </span>
+          <IssueRef
+            repo={epic.repo}
+            number={epic.number}
+            className="min-w-0 truncate text-xs text-zinc-500 dark:text-zinc-400"
+          />
           <StateChip state={epic.state} />
         </div>
         <h3 id={headingId} className="mt-2 text-base/6 font-semibold tracking-tight">
@@ -262,6 +291,7 @@ export const EpicCard = ({
           >
             {epic.children.map((child) => (
               <ChildRow
+                org={org}
                 key={child._tag === "Issue" ? child.key : child.ref}
                 child={child}
                 columns={columns}

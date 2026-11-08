@@ -12,12 +12,16 @@ import { type PaletteItem, type RunContext, usePaletteGroups } from "./use-palet
 const CONFIRM_MS = 800
 
 const KIND_NAMES = { issue: "issue", pull: "PR" } as const
-const STATE_DOTS = { open: "bg-emerald-500", closed: "bg-violet-500" } as const
+// Open is neutral: green means done, and a closed issue or pull request may not be.
+const STATE_DOTS = {
+  open: "border-[1.5px] border-zinc-500 dark:border-zinc-400",
+  closed: "bg-violet-500",
+} as const
 
 /** "Open PR" or "Closed issue": an issue and a pull request of the same title never look alike. */
 const KindChip = ({ kind }: { kind: NonNullable<PaletteItem["kind"]> }) => (
   <span className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-1.5 text-2xs font-medium whitespace-nowrap text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-    <span aria-hidden="true" className={`size-1.5 rounded-full ${STATE_DOTS[kind.state]}`} />
+    <span aria-hidden="true" className={`size-2 rounded-full ${STATE_DOTS[kind.state]}`} />
     {kind.state === "open" ? "Open" : "Closed"} {KIND_NAMES[kind.type]}
   </span>
 )
@@ -48,19 +52,22 @@ const Highlight = ({ text, indices }: { text: string; indices: ReadonlyArray<num
   )
 }
 
-/** An issue's number stays visible when its long repository name is cut short. */
+/**
+ * An issue's number stays visible when its long repository name is cut short. The reference
+ * keeps `IssueRef`'s face, written out here so the matched characters can be marked.
+ */
 const Subtitle = ({ item, indices }: { item: PaletteItem; indices: ReadonlyArray<number> }) => {
   const text = item.subtitle ?? ""
   const split = item.icon === "issue" || item.icon === "pull" ? text.lastIndexOf("#") : -1
   if (split < 0) {
     return (
-      <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">
+      <span className="block min-w-0 truncate text-xs text-zinc-500 dark:text-zinc-400">
         <Highlight text={text} indices={indices} />
       </span>
     )
   }
   return (
-    <span className="flex font-mono text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="flex min-w-0 text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
       <span className="truncate">
         <Highlight text={text.slice(0, split)} indices={indices.filter((index) => index < split)} />
       </span>
@@ -109,18 +116,30 @@ const Option = ({
       <Glyph name={item.icon} className="size-4" />
     </span>
     <span className="min-w-0 flex-1">
-      <span className="block truncate text-sm text-zinc-900 dark:text-zinc-100">
+      <span className="text-sm text-zinc-900 max-sm:line-clamp-2 sm:block sm:truncate dark:text-zinc-100">
         <Highlight text={item.title} indices={titleIndices} />
       </span>
-      {item.subtitle !== undefined && item.subtitle !== "" && (
-        <Subtitle item={item} indices={subtitleIndices} />
-      )}
+      {/* Phones give the title the width: the state chip moves down beside the reference. */}
+      <span className="flex min-w-0 items-center gap-2 empty:hidden max-sm:mt-0.5">
+        {item.subtitle !== undefined && item.subtitle !== "" && (
+          <Subtitle item={item} indices={subtitleIndices} />
+        )}
+        {item.kind !== undefined && (
+          <span className="shrink-0 sm:hidden">
+            <KindChip kind={item.kind} />
+          </span>
+        )}
+      </span>
     </span>
     <span className="flex shrink-0 items-center gap-2">
       {item.hint !== undefined && (
         <span className="text-xs text-zinc-500 max-sm:hidden dark:text-zinc-400">{item.hint}</span>
       )}
-      {item.kind !== undefined && <KindChip kind={item.kind} />}
+      {item.kind !== undefined && (
+        <span className="max-sm:hidden">
+          <KindChip kind={item.kind} />
+        </span>
+      )}
       {item.current === true && (
         <span className="flex items-center gap-1 text-xs font-medium text-indigo-700 dark:text-indigo-300">
           <CheckIcon className="size-3.5" />

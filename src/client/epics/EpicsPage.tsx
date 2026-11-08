@@ -4,6 +4,7 @@ import { useSearchParams } from "wouter"
 import { Avatar } from "../Avatar.tsx"
 import { fetchEpics, fetchInstance, fetchOrgRepos } from "../api.ts"
 import { Glyph } from "../palette/icons.tsx"
+import { ChooseRepos } from "../scope/ChooseRepos.tsx"
 import { ScopeBar } from "../scope/ScopeBar.tsx"
 import { useRepoSelection } from "../scope/use-repo-selection.ts"
 import { AlertIcon, CopyIcon, ExternalIcon, SearchIcon, SortIcon, XIcon } from "../ui/icons.tsx"
@@ -15,6 +16,7 @@ import {
   MenuOption,
   Popover,
   Segmented,
+  touchTarget,
 } from "../ui/primitives.tsx"
 import { useToast } from "../ui/toast.tsx"
 import { EpicCard } from "./EpicCard.tsx"
@@ -131,26 +133,6 @@ const ChoiceMenu = <T extends string>({
     )}
   </Popover>
 )
-
-const NoSelection = ({ org, onChoose }: { org: string; onChoose: (repos: string[]) => void }) => {
-  const repos = useQuery({ queryKey: ["org-repos", org], queryFn: () => fetchOrgRepos(org) })
-  const active = (repos.data ?? []).filter((repo) => !repo.archived).map((repo) => repo.name)
-  return (
-    <div className={`${cardClass} flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3.5`}>
-      <p className="min-w-0 flex-1 text-sm text-zinc-600 dark:text-zinc-400">
-        <span className="font-medium text-zinc-900 dark:text-zinc-100">
-          No repositories chosen.
-        </span>{" "}
-        Choose the repositories whose epics you want to follow.
-      </p>
-      {active.length > 0 && (
-        <button type="button" onClick={() => onChoose(active)} className={buttonClass.secondary}>
-          Show all {active.length} repositories
-        </button>
-      )}
-    </div>
-  )
-}
 
 /** How to make an epic, with an example to copy and a way to start one in Forgejo. */
 const NoEpics = ({ org, selected }: { org: string; selected: ReadonlyArray<string> }) => {
@@ -311,8 +293,12 @@ export const EpicsPage = ({ org }: { org: string }) => {
           </Banner>
         )}
         {hasSelection && notice !== "" && <Banner tone="warning">{notice}</Banner>}
-        {!hasSelection ? (
-          <NoSelection org={org} onChoose={repoSelection.setSelected} />
+        {repoSelection.resolving ? (
+          <LoadingEpics />
+        ) : !hasSelection ? (
+          <ChooseRepos org={org} view="epics" repoSelection={repoSelection}>
+            Pick the repositories whose epics you want to follow.
+          </ChooseRepos>
         ) : epics.data === undefined ? (
           epics.isError ? null : (
             <LoadingEpics />
@@ -424,7 +410,7 @@ export const EpicsPage = ({ org }: { org: string }) => {
                       align="end"
                       value={filters.sort}
                       onChange={(value) => set("sort", value === "updated" ? "" : value)}
-                      triggerClass={buttonClass.ghost}
+                      triggerClass={`${buttonClass.ghost} ${touchTarget}`}
                       label={
                         <>
                           <SortIcon className="size-4 text-zinc-500 dark:text-zinc-400" />
@@ -445,6 +431,7 @@ export const EpicsPage = ({ org }: { org: string }) => {
                 {shown.map((epic) => (
                   <EpicCard
                     key={epic.key}
+                    org={org}
                     epic={epic}
                     columns={epics.data.columns}
                     sharedLabels={sharedLabels}
