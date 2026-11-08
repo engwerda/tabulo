@@ -149,7 +149,9 @@ const Row = ({
     )
   }
   return (
-    <div className="flex items-start">
+    // Like an epic's child: the Forgejo link waits for hover or focus, so only rows that go to
+    // Forgejo show a ↗ at rest.
+    <div className="group/row flex items-start">
       <Link href={onBoard} className={rowClass}>
         <KindIcon kind={item.kind} />
         <ItemText item={item} />
@@ -161,7 +163,7 @@ const Row = ({
         rel="noreferrer"
         aria-label={`Open ${item.title} in Forgejo`}
         title="Open in Forgejo"
-        className="mt-1.5 grid size-7 shrink-0 place-items-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 focus-visible:outline-2 focus-visible:outline-indigo-500 pointer-coarse:size-11 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+        className="mt-1.5 grid size-7 shrink-0 place-items-center rounded-md text-zinc-400 opacity-0 transition group-focus-within/row:opacity-100 group-hover/row:opacity-100 [@media(hover:none)]:opacity-100 hover:bg-zinc-100 hover:text-zinc-700 focus-visible:outline-2 focus-visible:outline-indigo-500 pointer-coarse:size-11 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
       >
         <ExternalIcon className="size-3.5" />
       </a>

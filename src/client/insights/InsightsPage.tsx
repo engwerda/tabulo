@@ -250,12 +250,11 @@ export const InsightsPage = ({ org }: { org: string }) => {
                 {data.failedRepos.length > 0 && (
                   <ErrorNotice
                     tone="warning"
-                    title={`${data.failedRepos.length === 1 ? "1 repository" : `${data.failedRepos.length} repositories`} left out`}
+                    title={`Could not load ${data.failedRepos.length === 1 ? "1 repository" : `${data.failedRepos.length} repositories`}`}
                     onRetry={() => void insights.refetch()}
                     retrying={insights.isFetching}
                   >
-                    {data.failedRepos.length === 1 ? "It" : "They"} failed to load:{" "}
-                    {failures(data.failedRepos)}.
+                    {`Left out of these numbers: ${failures(data.failedRepos)}.`}
                   </ErrorNotice>
                 )}
                 {data.incomplete.length > 0 && (
