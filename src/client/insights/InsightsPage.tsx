@@ -4,6 +4,7 @@ import { useSearchParams } from "wouter"
 import { INSIGHT_DAYS, type InsightDays, type Insights } from "../../shared/api.ts"
 import { browserTimeZone, fetchInsights, fetchOrgs } from "../api.ts"
 import { formatSpan } from "../charts/scale.ts"
+import { boardCardHref } from "../epics/epics-view.ts"
 import { relativeTime } from "../format.ts"
 import { ChooseRepos } from "../scope/ChooseRepos.tsx"
 import { ORGS } from "../scope/OrgPicker.tsx"
@@ -262,7 +263,12 @@ export const InsightsPage = ({ org }: { org: string }) => {
                     {incompleteNotice(data.incomplete)}
                   </ErrorNotice>
                 )}
-                <InsightsDashboard insights={data} />
+                <InsightsDashboard
+                  insights={data}
+                  boardHref={(repo, number) =>
+                    boardCardHref(org, repoSelection.selected, { repo, number, state: "open" })
+                  }
+                />
               </>
             )}
           </div>

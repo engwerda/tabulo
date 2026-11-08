@@ -169,7 +169,8 @@ const Option = ({
       {item.external === true && (
         <Glyph
           name="external"
-          className="size-3.5 text-zinc-500 opacity-0 group-data-active:opacity-100 max-sm:hidden dark:text-zinc-400"
+          // Always shown, so a row's destination is known before choosing it.
+          className="size-3.5 text-zinc-400 group-data-active:text-zinc-600 dark:text-zinc-500 dark:group-data-active:text-zinc-300"
         />
       )}
     </span>

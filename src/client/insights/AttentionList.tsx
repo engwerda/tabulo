@@ -1,7 +1,9 @@
 import { useState } from "react"
+import { Link } from "wouter"
 import type { AttentionItem, AttentionKind } from "../../shared/api.ts"
 import { ShowAll } from "../charts/ShowAll.tsx"
 import { IssueRef } from "../ui/IssueRef.tsx"
+import { ExternalIcon } from "../ui/icons.tsx"
 import { cardClass } from "../ui/primitives.tsx"
 import { ATTENTION_LABELS } from "./summary.ts"
 
@@ -105,30 +107,83 @@ const ItemText = ({ item }: { readonly item: AttentionItem }) => {
 
 const LIMIT = 6
 
+/**
+ * Where an item's board card is, when it has one: an idle issue in a chosen repository opens in
+ * the board's side panel, as it would from the palette or an epic.
+ */
+export type BoardHref = (repo: string, number: number) => string | null
+
+const rowClass =
+  "flex min-w-0 flex-1 items-start gap-3 rounded-lg px-2 py-2 hover:bg-zinc-50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-indigo-500 dark:hover:bg-zinc-800/60"
+
+const Age = ({ days }: { readonly days: number }) => (
+  <span
+    className="shrink-0 pt-0.5 text-xs text-zinc-500 tabular-nums dark:text-zinc-400"
+    title={`${days} days`}
+  >
+    {days}d
+  </span>
+)
+
+const Row = ({
+  item,
+  boardHref,
+}: {
+  readonly item: AttentionItem
+  readonly boardHref: BoardHref
+}) => {
+  const number = item.url.match(ISSUE_URL)?.[1]
+  const onBoard =
+    item.kind === "stale_issue" && number !== undefined
+      ? boardHref(item.repo, Number(number))
+      : null
+  if (onBoard === null) {
+    return (
+      <a href={item.url} target="_blank" rel="noreferrer" className={rowClass}>
+        <KindIcon kind={item.kind} />
+        <ItemText item={item} />
+        <span className="sr-only"> (opens in Forgejo)</span>
+        <Age days={item.ageDays} />
+        <ExternalIcon className="mt-1 size-3.5 shrink-0 text-zinc-400 dark:text-zinc-500" />
+      </a>
+    )
+  }
+  return (
+    <div className="flex items-start">
+      <Link href={onBoard} className={rowClass}>
+        <KindIcon kind={item.kind} />
+        <ItemText item={item} />
+        <Age days={item.ageDays} />
+      </Link>
+      <a
+        href={item.url}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={`Open ${item.title} in Forgejo`}
+        title="Open in Forgejo"
+        className="mt-1.5 grid size-7 shrink-0 place-items-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 focus-visible:outline-2 focus-visible:outline-indigo-500 pointer-coarse:size-11 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+      >
+        <ExternalIcon className="size-3.5" />
+      </a>
+    </div>
+  )
+}
+
 /** Failing CI, overdue milestones, and idle work, worst first. */
-export const AttentionList = ({ items }: { readonly items: ReadonlyArray<AttentionItem> }) => {
+export const AttentionList = ({
+  items,
+  boardHref,
+}: {
+  readonly items: ReadonlyArray<AttentionItem>
+  readonly boardHref: BoardHref
+}) => {
   const [expanded, setExpanded] = useState(false)
   return (
     <div className="flex flex-col">
       <ul className="-mx-2 flex flex-col">
         {(expanded ? items : items.slice(0, LIMIT)).map((item) => (
           <li key={`${item.kind}-${item.url}`}>
-            <a
-              href={item.url}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-start gap-3 rounded-lg px-2 py-2 hover:bg-zinc-50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-indigo-500 dark:hover:bg-zinc-800/60"
-            >
-              <KindIcon kind={item.kind} />
-              <ItemText item={item} />
-              <span className="sr-only"> (opens in Forgejo)</span>
-              <span
-                className="shrink-0 pt-0.5 text-xs text-zinc-500 tabular-nums dark:text-zinc-400"
-                title={`${item.ageDays} days`}
-              >
-                {item.ageDays}d
-              </span>
-            </a>
+            <Row item={item} boardHref={boardHref} />
           </li>
         ))}
       </ul>

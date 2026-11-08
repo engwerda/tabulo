@@ -15,7 +15,7 @@ import { StatFigure, StatTile } from "../charts/StatTile.tsx"
 import { formatCount, formatHours, formatMinutes, formatPercent } from "../charts/scale.ts"
 import { useWidth } from "../charts/use-width.ts"
 import { cardClass, Segmented } from "../ui/primitives.tsx"
-import { AllClear, AttentionList } from "./AttentionList.tsx"
+import { AllClear, AttentionList, type BoardHref } from "./AttentionList.tsx"
 import { type Cell, packRows, type Row } from "./layout.ts"
 import { RepoHealthTable } from "./RepoHealthTable.tsx"
 import { formatWindowStart, priorLabel } from "./summary.ts"
@@ -269,9 +269,11 @@ const Throughput = ({
 
 const Attention = ({
   insights,
+  boardHref,
   className,
 }: {
   readonly insights: Insights
+  readonly boardHref: BoardHref
   readonly className: string
 }) => (
   <ChartCard
@@ -279,7 +281,7 @@ const Attention = ({
     description={`${insights.attention.length} ${insights.attention.length === 1 ? "item" : "items"}: failing CI, overdue milestones, idle work`}
     className={className}
   >
-    <AttentionList items={insights.attention} />
+    <AttentionList items={insights.attention} boardHref={boardHref} />
   </ChartCard>
 )
 
@@ -851,7 +853,13 @@ const CardRows = ({ rows }: { readonly rows: ReadonlyArray<Row<Card>> }) =>
   })
 
 /** Every card of the insights page, for one loaded payload. */
-export const InsightsDashboard = ({ insights }: { readonly insights: Insights }) => {
+export const InsightsDashboard = ({
+  insights,
+  boardHref,
+}: {
+  readonly insights: Insights
+  readonly boardHref: BoardHref
+}) => {
   const merged = sum(insights.pullMergeTime.buckets.map((bucket) => bucket.count))
   const cards: ReadonlyArray<Cell<Card>> = [
     {
@@ -874,7 +882,12 @@ export const InsightsDashboard = ({ insights }: { readonly insights: Insights })
               key: "attention",
               empty: null,
               render: (className: string) => (
-                <Attention key="attention" insights={insights} className={className} />
+                <Attention
+                  key="attention"
+                  insights={insights}
+                  boardHref={boardHref}
+                  className={className}
+                />
               ),
             },
           },
