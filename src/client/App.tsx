@@ -79,12 +79,21 @@ const useDocumentTitle = (title: string) => {
   }, [title])
 }
 
+/** A path segment as text; a malformed escape such as `/board/%` stays as typed. */
+const decodePathSegment = (segment: string) => {
+  try {
+    return decodeURIComponent(segment)
+  } catch {
+    return segment
+  }
+}
+
 /** Names the browser tab after the view and organization, so tabs and history stay apart. */
 const useRouteTitle = () => {
   const [path] = useLocation()
   const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
   const view = ORG_VIEWS.find((candidate) => isOrgViewPath(candidate, path))
-  const org = view === undefined ? undefined : decodeURIComponent(path.split("/")[2] ?? "")
+  const org = view === undefined ? undefined : decodePathSegment(path.split("/")[2] ?? "")
   const orgName =
     orgs.data?.find((candidate) => candidate.name.toLowerCase() === org?.toLowerCase())?.fullName ||
     org
