@@ -59,4 +59,7 @@ major version.
   Forgejo data, with no Effect services; `src/worker/load-insights.ts` only reads. The client's
   charts in `src/client/charts/` are hand-built SVG and color from the `--chart-*` tokens.
 - `src/shared/api.ts` holds the API payload schemas. The client decodes responses with them.
+- Deployment values (hosts, the OAuth client ID, the D1 `database_id`) go in the gitignored
+  `wrangler.deploy.jsonc`, never in `wrangler.jsonc`, which is the public template.
+  `vite.config.ts` merges it into the build.
 - Imports use explicit `.ts` extensions so `scripts/` runs under Node without a build step.
