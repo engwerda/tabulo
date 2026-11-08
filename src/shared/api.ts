@@ -344,6 +344,9 @@ export type AttentionItem = typeof AttentionItem.Type
 export const HealthStatus = Schema.Literals(["strong", "watch", "risky"])
 export type HealthStatus = typeof HealthStatus.Type
 
+export const UnscoredRule = Schema.Literals(["ci", "merges"])
+export type UnscoredRule = typeof UnscoredRule.Type
+
 export const RepoInsight = Schema.Struct({
   name: Schema.String,
   url: Schema.String,
@@ -359,13 +362,19 @@ export const RepoInsight = Schema.Struct({
   ),
   /** Issues and pull requests opened, closed, or merged per period, aligned with `series`. */
   activity: Schema.Array(Schema.Number),
+  /** Read from all of the repository's issues, pull requests, and runs, whoever is involved. */
   health: Schema.Struct({
     score: Schema.Number,
     status: HealthStatus,
     reasons: Schema.Array(Schema.String),
+    /** The rules that had nothing to read in the window, so the score rests on the others. */
+    unscored: Schema.Array(UnscoredRule),
   }),
 })
 export type RepoInsight = typeof RepoInsight.Type
+
+export const Person = Schema.Struct({ login: Schema.String, avatarUrl: Schema.String })
+export type Person = typeof Person.Type
 
 /** A listing of a repository that Tabulo stopped reading before its end. */
 export const IncompleteListing = Schema.Struct({
@@ -379,6 +388,17 @@ export const Insights = Schema.Struct({
   repos: Schema.Array(Schema.String),
   days: Schema.Literals(INSIGHT_DAYS),
   tz: Schema.String,
+  /**
+   * The login the numbers are narrowed to, as requested, or null for everyone. Narrowed numbers
+   * count the issues and pull requests that person opened or is assigned to; `ci` and the CI
+   * pass rate tile are then null.
+   */
+  user: Schema.NullOr(Schema.String),
+  /**
+   * Everyone who opened or is assigned to an issue or pull request that Tabulo read, whatever
+   * `user` is, by login.
+   */
+  people: Schema.Array(Person),
   generatedAt: Schema.String,
   /**
    * The first and last day of the window in `tz`, `YYYY-MM-DD`. It starts at the beginning of
@@ -411,8 +431,7 @@ export const Insights = Schema.Struct({
   ),
   contributors: Schema.Array(
     Schema.Struct({
-      login: Schema.String,
-      avatarUrl: Schema.String,
+      ...Person.fields,
       pullsMerged: Schema.Number,
       issuesClosed: Schema.Number,
     }),

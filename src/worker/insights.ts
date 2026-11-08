@@ -10,7 +10,9 @@ import {
   type InsightGrain,
   type Insights,
   type Language,
+  type Person,
   type RepoInsight,
+  type UnscoredRule,
 } from "../shared/api.ts"
 import {
   type ForgejoActionRun,
@@ -43,6 +45,8 @@ export type InsightsInput = {
   readonly repos: ReadonlyArray<string>
   readonly days: InsightDays
   readonly tz: string
+  /** The login to narrow the numbers to, matched case-insensitively; null for everyone. */
+  readonly user: string | null
   /** Epoch milliseconds. */
   readonly now: number
   readonly loaded: ReadonlyArray<RepoActivity>
@@ -51,8 +55,6 @@ export type InsightsInput = {
   /** The board's status label scope; those labels are columns, not topics, so Top labels skips them. */
   readonly statusScope: string
 }
-
-type Person = { readonly login: string; readonly avatarUrl: string }
 
 /** An issue or pull request with its times parsed to epoch milliseconds. */
 type Item = {
@@ -314,7 +316,11 @@ export const repoHealth = (facts: RepoFacts): RepoInsight["health"] => {
   )
   const score = Math.max(0, 100 - penalties.reduce((total, { penalty }) => total + penalty, 0))
   const status: HealthStatus = score >= 80 ? "strong" : score >= 60 ? "watch" : "risky"
-  return { score, status, reasons: penalties.map(({ reason }) => reason) }
+  const unscored: Array<UnscoredRule> = [
+    ...(facts.ciSuccessRate === null ? ["ci" as const] : []),
+    ...(facts.medianMergeHours === null ? ["merges" as const] : []),
+  ]
+  return { score, status, reasons: penalties.map(({ reason }) => reason), unscored }
 }
 
 /** The workflows whose latest finished run on the default branch failed. */
@@ -417,21 +423,29 @@ export const buildInsights = (input: InsightsInput): Insights => {
   const { periods, first, window, previous } = insightPeriods(now, days, input.tz)
   const zoned = zonedTime(input.tz)
   const ageDays = (time: number) => Math.floor((now - time) / DAY_MS)
+  const user = input.user?.toLowerCase() ?? null
+  const involves = (item: Item) =>
+    user === null ||
+    [item.author, ...item.assignees].some((person) => person.login.toLowerCase() === user)
 
   const repos = input.loaded.map((activity) => {
-    const items = new Map<number, Item>()
+    const byNumber = new Map<number, Item>()
     for (const item of [...activity.closed, ...activity.open].map(toItem(activity.repo.name))) {
-      items.set(item.number, item)
+      byNumber.set(item.number, item)
     }
+    const all = [...byNumber.values()]
     const runs = activity.runs?.map(toRun(activity.repo.name)) ?? null
     return {
       activity,
-      items: [...items.values()],
+      /** Every issue and pull request read, for the health score. */
+      all,
+      /** The ones that involve `user`, for every other number. */
+      involved: all.filter(involves),
       runs,
       failing: failingWorkflows(activity.repo, runs ?? [], now),
     }
   })
-  const items = repos.flatMap((repo) => repo.items)
+  const items = repos.flatMap((repo) => repo.involved)
   const issues = items.filter((item) => item.kind === "issue")
   const pulls = items.filter((item) => item.kind === "pull")
   const runs = repos.flatMap((repo) => repo.runs ?? [])
@@ -449,7 +463,9 @@ export const buildInsights = (input: InsightsInput): Insights => {
     )
   const runsIn = (period: Period, list: ReadonlyArray<Run> = runs) =>
     list.filter((run) => within(period, run.created))
-  const anyCi = repos.some((repo) => repo.runs !== null)
+  // A person's numbers count what they opened or are assigned to. A run has neither, only the
+  // user who triggered it, so runs are never narrowed and their summary is left out.
+  const showCi = user === null && repos.some((repo) => repo.runs !== null)
 
   const tile = (measure: (period: Period) => number) => ({
     value: measure(window),
@@ -523,7 +539,7 @@ export const buildInsights = (input: InsightsInput): Insights => {
   }
 
   const windowRuns = runsIn(window)
-  const ci: CiSummary | null = anyCi
+  const ci: CiSummary | null = showCi
     ? {
         runs: windowRuns.length,
         successRate: successRate(windowRuns),
@@ -573,7 +589,7 @@ export const buildInsights = (input: InsightsInput): Insights => {
     ageDays(item.updated) >= STALE_PULL_DAYS
 
   const attention: Array<AttentionItem> = repos.flatMap(
-    ({ activity, items: repoItems, failing }) => [
+    ({ activity, involved: repoItems, failing }) => [
       ...failing,
       ...activity.milestones.filter(isOverdue).map(
         (milestone): AttentionItem => ({
@@ -617,12 +633,14 @@ export const buildInsights = (input: InsightsInput): Insights => {
   )
 
   const repoStats = repos.map((repo): RepoInsight => {
-    const { activity, items: repoItems, runs: repoRuns } = repo
+    const { activity, all, involved: repoItems, runs: repoRuns } = repo
+    const allIssues = all.filter((item) => item.kind === "issue")
+    const allPulls = all.filter((item) => item.kind === "pull")
     const repoIssues = repoItems.filter((item) => item.kind === "issue")
     const repoPulls = repoItems.filter((item) => item.kind === "pull")
     const lastActivity = Math.max(
       Date.parse(activity.repo.updated_at),
-      ...repoItems.map((item) => item.updated),
+      ...all.map((item) => item.updated),
       ...(repoRuns ?? []).map((run) => run.created),
     )
     const repoWindowRuns = repoRuns === null ? null : runsIn(window, repoRuns)
@@ -630,10 +648,10 @@ export const buildInsights = (input: InsightsInput): Insights => {
       archived: activity.repo.archived,
       ciSuccessRate: repoWindowRuns === null ? null : successRate(repoWindowRuns),
       failingDefaultBranch: repo.failing.length > 0,
-      medianMergeHours: median(mergeHours(window, repoPulls)),
-      stalePulls: count(repoItems, isStalePull),
-      openIssues: openNow(repoIssues),
-      openIssuesAtStart: openAt(repoIssues, window.start),
+      medianMergeHours: median(mergeHours(window, allPulls)),
+      stalePulls: count(all, isStalePull),
+      openIssues: openNow(allIssues),
+      openIssuesAtStart: openAt(allIssues, window.start),
       daysSinceActivity: ageDays(lastActivity),
       overdueMilestones: count(activity.milestones, isOverdue),
     }
@@ -641,7 +659,7 @@ export const buildInsights = (input: InsightsInput): Insights => {
       name: activity.repo.name,
       url: activity.repo.html_url,
       archived: activity.repo.archived,
-      openIssues: facts.openIssues,
+      openIssues: openNow(repoIssues),
       openPulls: openNow(repoPulls),
       issuesClosed: count(repoIssues, (item) => within(window, item.closed)),
       pullsMerged: count(repoPulls, (item) => within(window, item.merged)),
@@ -656,11 +674,23 @@ export const buildInsights = (input: InsightsInput): Insights => {
     }
   })
 
+  const people = new Map<string, Person>()
+  for (const item of repos.flatMap((repo) => repo.all)) {
+    for (const person of [item.author, ...item.assignees]) {
+      const key = person.login.toLowerCase()
+      if (!people.has(key)) people.set(key, person)
+    }
+  }
+
   return {
     org: input.org,
     repos: input.repos,
     days,
     tz: input.tz,
+    user: input.user,
+    people: [...people.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, person]) => person),
     generatedAt: new Date(now).toISOString(),
     window: { start: first, end: zoned(now).date },
     tiles: {
@@ -671,7 +701,7 @@ export const buildInsights = (input: InsightsInput): Insights => {
       pullsMerged: tile((period) => count(pulls, (item) => within(period, item.merged))),
       medianIssueCloseHours: optionalTile((period) => median(closeHours(period))),
       medianPullMergeHours: optionalTile((period) => median(mergeHours(period))),
-      ciSuccessRate: anyCi
+      ciSuccessRate: showCi
         ? {
             value: successRate(runsIn(window)),
             previous: successRate(runsIn(previous)),

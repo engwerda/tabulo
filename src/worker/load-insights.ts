@@ -41,11 +41,22 @@ const parseDays = (value: string | undefined) => {
     : Effect.succeed(days)
 }
 
+const LOGIN = /^[A-Za-z0-9_.-]{1,40}$/
+
+/** The login to narrow the numbers to; null for everyone. */
+const parseUser = (value: string | undefined) =>
+  value === undefined
+    ? Effect.succeed(null)
+    : LOGIN.test(value)
+      ? Effect.succeed(value)
+      : Effect.fail(new BoardRequestInvalid({ message: "user is not a Forgejo login" }))
+
 export type InsightsQuery = {
   readonly org: string
   readonly repos: ReadonlyArray<string>
   readonly days: InsightDays
   readonly tz: string
+  readonly user: string | null
 }
 
 export const parseInsightsQuery = (query: {
@@ -53,12 +64,14 @@ export const parseInsightsQuery = (query: {
   readonly repos: string | undefined
   readonly days: string | undefined
   readonly tz: string | undefined
+  readonly user: string | undefined
 }) =>
   Effect.all({
     scope: parseBoardQuery(query.org, query.repos),
     days: parseDays(query.days),
     tz: parseTimeZone(query.tz),
-  }).pipe(Effect.map(({ scope, days, tz }): InsightsQuery => ({ ...scope, days, tz })))
+    user: parseUser(query.user),
+  }).pipe(Effect.map(({ scope, days, tz, user }): InsightsQuery => ({ ...scope, days, tz, user })))
 
 type RepoResult =
   | {

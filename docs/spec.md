@@ -244,6 +244,16 @@ because a daylight saving change repeats a wall-clock hour. Pull requests are co
 issues everywhere. `buildInsights` in `src/worker/insights.ts` computes every aggregate from
 decoded Forgejo data; loading only reads.
 
+A request can narrow the numbers to one person with `user`, a login matched case-insensitively.
+An issue or pull request involves the person who opened it and each of its assignees. Every
+number counted from issues and pull requests then counts only the ones that involve that
+person: the tiles, the series, the backlog, merge and close times, issue age, labels, the
+punchcard, contributors, idle pull requests and issues, and each repository's open issues, open
+pull requests, closed, merged, and activity. Milestones, languages, failing CI, overdue
+milestones, and each repository's health and CI stay repository-wide. `people` lists everyone
+who opened or is assigned to an issue or pull request that Tabulo read, whatever `user` is, so
+the page can offer them.
+
 For each repository Tabulo reads, as the user, the repository, its open issues and pull
 requests, the issues and pull requests closed and updated since the previous window started,
 its workflow runs created since then, its languages, and its open milestones. It reads two
@@ -269,16 +279,21 @@ copied summary say which numbers are too low.
   their `updated_at` days after the job ran. The pass rate is passed runs among runs that
   passed or failed. A cancelled or skipped run has finished without failing. A start or stop
   time before 2000 means Forgejo never set it. A 404 or 403 from Forgejo means the repository
-  has no CI data.
+  has no CI data. A run has no author or assignee, only the user who triggered it, so runs are
+  never narrowed to a person. With `user`, the CI summary and the pass rate tile are null.
 - **Contributors.** A merged pull request counts for its author, a closed issue for each of
-  its assignees. Forgejo does not say who closed an issue.
+  its assignees. Forgejo does not say who closed an issue. With `user`, contributors come from
+  the issues and pull requests that involve the person, so the people they worked with show
+  too.
 - **Needs attention.** Workflows whose latest finished run on the default branch failed, open
   milestones past their due date with open issues, non-draft pull requests without an update
   for 7 days, and assigned issues without an update for 21 days. In that order, then oldest
   first, at most 15.
 - **Health.** A repository starts at 100 and each rule that applies subtracts its penalty.
   The score is strong from 80, watch from 60, and risky below. `HEALTH_RULES` in
-  `src/worker/insights.ts` is the rule table.
+  `src/worker/insights.ts` is the rule table. The rules read all of a repository's issues,
+  pull requests, and runs, whatever `user` is. `unscored` names the CI and merge time rules
+  when they had nothing to read in the window.
 
 | Rule | Penalty |
 |---|---|
@@ -297,7 +312,7 @@ streak that has no contribution yet today still counts until the day ends.
 
 | Endpoint | Result |
 |---|---|
-| `GET /api/insights?org=&repos=a,b&days=90&tz=Europe/Amsterdam` | The `Insights` payload in `src/shared/api.ts`. `days` is 1, 7, 30, 90, 180, or 365 and defaults to 90. `tz` is an IANA time zone and defaults to UTC. Other values answer 400. At most 20 repositories. |
+| `GET /api/insights?org=&repos=a,b&days=90&tz=Europe/Amsterdam&user=ada` | The `Insights` payload in `src/shared/api.ts`. `days` is 1, 7, 30, 90, 180, or 365 and defaults to 90. `tz` is an IANA time zone and defaults to UTC. `user` is a login of 1 to 40 letters, digits, `-`, `_`, or `.`, and narrows the numbers to that person; without it they count everyone. Other values answer 400. At most 20 repositories. |
 | `GET /api/activity?tz=Europe/Amsterdam` | The signed-in user's days with contributions, total, current and longest streak, and busiest day. |
 
 ### Epics

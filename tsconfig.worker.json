@@ -15,6 +15,7 @@
     "src/client/insights/summary.ts",
     "src/client/insights/layout.ts",
     "src/client/insights/periods.ts",
+    "src/client/insights/people.ts",
     "src/client/epics/epics-view.ts",
     "src/client/palette/fuzzy.ts",
     "src/client/palette/rank.ts",

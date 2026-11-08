@@ -262,6 +262,12 @@ current one is drawn lighter because it is still in progress.
 - **Repositories** gives each repository a health score from 0 to 100 with the reasons it lost
   points. Expand a row to read them.
 
+To see one person's work, choose them in the **Everyone** menu beside the period, or click a
+name under **Contributors**. The address gains `&user=<login>`. The numbers then count the
+issues and pull requests that person opened or is assigned to. Milestones, languages,
+repository health, failing CI, and overdue milestones still cover the whole repositories. CI
+numbers are left out, because a CI run has no author or assignee.
+
 **Copy summary** copies a Markdown report of the page, for a chat message or a status update.
 
 CI numbers come from Forgejo Actions. A repository with Actions turned off shows no CI data.

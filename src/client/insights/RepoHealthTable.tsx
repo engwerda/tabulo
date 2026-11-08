@@ -1,5 +1,11 @@
 import { Fragment, type ReactNode, useState } from "react"
-import type { HealthStatus, InsightGrain, Language, RepoInsight } from "../../shared/api.ts"
+import type {
+  HealthStatus,
+  InsightGrain,
+  Language,
+  RepoInsight,
+  UnscoredRule,
+} from "../../shared/api.ts"
 import { SegmentedBar } from "../charts/SegmentedBar.tsx"
 import { Sparkline } from "../charts/Sparkline.tsx"
 import { formatCount, formatPercent } from "../charts/scale.ts"
@@ -63,17 +69,14 @@ const Missing = ({ label }: { readonly label: string }) => (
 )
 
 /**
- * The health rules that had nothing to read for a repository in this period. Its score then
- * rests on the other rules only, which the table says rather than let a 100 overstate.
+ * How the table names a health rule that had nothing to read for a repository in this period.
+ * Its score then rests on the other rules only, which the table says rather than let a 100
+ * overstate.
  */
-const unscored = (repo: RepoInsight) => [
-  ...(repo.ci === null || repo.ci.successRate === null
-    ? [{ short: "CI", long: "CI, because no run passed or failed" }]
-    : []),
-  ...(repo.pullsMerged === 0
-    ? [{ short: "merges", long: "time to merge, because nothing was merged" }]
-    : []),
-]
+const UNSCORED: Record<UnscoredRule, { readonly short: string; readonly long: string }> = {
+  ci: { short: "CI", long: "CI, because no run passed or failed" },
+  merges: { short: "merges", long: "time to merge, because nothing was merged" },
+}
 
 const ciRate = (repo: RepoInsight) =>
   repo.ci === null || repo.ci.successRate === null ? null : repo.ci.successRate
@@ -245,7 +248,7 @@ export const RepoHealthTable = ({
           {sorted.map((repo) => {
             const open = expanded.has(repo.name)
             const detailsId = `repo-health-${repo.name}`
-            const missing = unscored(repo)
+            const missing = repo.health.unscored.map((rule) => UNSCORED[rule])
             return (
               <Fragment key={repo.name}>
                 <tr className="border-b border-zinc-100 hover:bg-zinc-50/70 dark:border-zinc-800/70 dark:hover:bg-zinc-800/30">

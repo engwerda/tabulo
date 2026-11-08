@@ -14,6 +14,8 @@ const insights: Insights = {
   repos: ["api", "web", "old"],
   days: 30,
   tz: "Europe/Amsterdam",
+  user: null,
+  people: [],
   generatedAt: "2026-11-07T09:00:00.000Z",
   window: { start: "2026-10-05", end: "2026-11-07" },
   tiles: {
@@ -58,7 +60,7 @@ const insights: Insights = {
       languages: [],
       ci: null,
       activity: [],
-      health: { score: 100, status: "strong", reasons: [] },
+      health: { score: 100, status: "strong", reasons: [], unscored: ["ci"] },
     },
     {
       name: "api",
@@ -72,7 +74,12 @@ const insights: Insights = {
       languages: [],
       ci: { runs: 4, successRate: 0.75 },
       activity: [],
-      health: { score: 70, status: "watch", reasons: ["CI fails on the default branch"] },
+      health: {
+        score: 70,
+        status: "watch",
+        reasons: ["CI fails on the default branch"],
+        unscored: [],
+      },
     },
   ],
   failedRepos: [{ repo: "old", message: "Forgejo returned HTTP 404" }],
@@ -106,6 +113,20 @@ describe("insightsSummary", () => {
 
 Not included, because they failed to load: old.
 `)
+  })
+})
+
+describe("insightsSummary for one person", () => {
+  it("says whose issues and pull requests the numbers count, and that CI is left out", () => {
+    const lines = insightsSummary({ ...insights, user: "ada" }, "acme").split("\n")
+
+    expect(lines.slice(2, 6)).toEqual([
+      "2 repositories, last 30 days in whole weeks (Oct 5 to Nov 7, 2026, Europe/Amsterdam).",
+      "",
+      "The numbers count the issues and pull requests that @ada opened or is assigned to, and leave CI out. Repository health covers everyone's work.",
+      "",
+    ])
+    expect(insightsSummary(insights, "acme")).not.toContain("@ada")
   })
 })
 

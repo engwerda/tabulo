@@ -97,6 +97,7 @@ const insights = (loaded: ReadonlyArray<RepoActivity>, fields: Partial<InsightsI
     repos: loaded.map((entry) => entry.repo.name),
     days: 30,
     tz: "UTC",
+    user: null,
     now: NOW,
     loaded,
     failedRepos: [],
@@ -507,6 +508,80 @@ describe("buildInsights in hours and days", () => {
   })
 })
 
+describe("buildInsights for one person", () => {
+  const loaded = [
+    activity({
+      open: [
+        issue(1, { user: person("Ada") }),
+        issue(2, { user: person("grace"), assignees: [person("ADA")] }),
+        issue(3, { user: person("grace") }),
+        // Idle for 18 days, and not Ada's.
+        pull(4, "2026-10-02T08:00:00Z", null, {
+          user: person("grace"),
+          updated_at: "2026-10-20T08:00:00Z",
+        }),
+      ],
+      closed: [
+        pull(5, "2026-11-01T08:00:00Z", "2026-11-03T08:00:00Z", {
+          user: person("grace"),
+          assignees: [person("ada")],
+        }),
+        pull(6, "2026-11-01T08:00:00Z", "2026-11-02T08:00:00Z", { user: person("alan") }),
+      ],
+      runs: [run("failure", "2026-11-06T10:00:00Z", 5), run("success", "2026-11-05T10:00:00Z", 5)],
+      milestones: [
+        { id: 8, title: "1.0", open_issues: 2, closed_issues: 3, due_on: "2026-11-01T00:00:00Z" },
+      ],
+    }),
+  ]
+  const everyone = insights(loaded)
+  const ada = insights(loaded, { user: "ada" })
+
+  it("counts the issues and pull requests the person opened or is assigned to, in any case", () => {
+    expect(ada.user).toBe("ada")
+    expect(ada.tiles.openIssues).toEqual({ value: 2, previous: 2 })
+    expect(everyone.tiles.openIssues.value).toBe(3)
+    expect(ada.tiles.openPulls.value).toBe(0)
+    expect(ada.tiles.pullsMerged.value).toBe(1)
+    expect(ada.pullMergeTime.p50).toBe(48)
+    expect(ada.series.map((week) => week.openIssues)).toEqual([2, 2, 2, 2, 2])
+    expect(ada.series.reduce((total, week) => total + week.pullsMerged, 0)).toBe(1)
+    expect(ada.repoStats[0]).toMatchObject({
+      openIssues: 2,
+      openPulls: 0,
+      issuesClosed: 0,
+      pullsMerged: 1,
+    })
+    expect(ada.contributors.map((entry) => entry.login)).toEqual(["grace"])
+    expect(insights(loaded, { user: "ADA" }).tiles).toEqual(ada.tiles)
+  })
+
+  it("lists everyone involved, whatever the filter, once each and by login", () => {
+    expect(everyone.people.map((entry) => entry.login)).toEqual(["ada", "alan", "grace"])
+    expect(ada.people).toEqual(everyone.people)
+  })
+
+  it("keeps health, milestones, failing CI, and each repository's CI repository-wide", () => {
+    expect(ada.repoStats[0]?.health).toEqual(everyone.repoStats[0]?.health)
+    expect(ada.repoStats[0]?.health.reasons).toContain("1 pull request idle for a week or more")
+    expect(ada.repoStats[0]?.ci).toEqual(everyone.repoStats[0]?.ci)
+    expect(ada.repoStats[0]?.ci?.runs).toBe(2)
+    expect(ada.milestones).toEqual(everyone.milestones)
+    expect(ada.attention.map((item) => item.kind)).toEqual(["failing_ci", "overdue_milestone"])
+    expect(everyone.attention.map((item) => item.kind)).toEqual([
+      "failing_ci",
+      "overdue_milestone",
+      "stale_pull",
+    ])
+  })
+
+  it("leaves out the CI summary and pass rate, which cannot be narrowed", () => {
+    expect(everyone.ci?.runs).toBe(2)
+    expect(ada.ci).toBeNull()
+    expect(ada.tiles.ciSuccessRate).toEqual({ value: null, previous: null })
+  })
+})
+
 describe("quantile", () => {
   it("interpolates between ranks", () => {
     expect(quantile([4, 1, 3, 2], 0.5)).toBe(2.5)
@@ -530,7 +605,12 @@ describe("repoHealth", () => {
   }
 
   it("is strong with no reasons when no rule applies", () => {
-    expect(repoHealth(healthy)).toEqual({ score: 100, status: "strong", reasons: [] })
+    expect(repoHealth(healthy)).toEqual({
+      score: 100,
+      status: "strong",
+      reasons: [],
+      unscored: [],
+    })
   })
 
   it("subtracts each rule's penalty and lists the largest first", () => {
@@ -542,6 +622,16 @@ describe("repoHealth", () => {
         "Open issues grew from 10 to 16",
         "2 pull requests idle for a week or more",
       ],
+      unscored: [],
+    })
+  })
+
+  it("names the rules that had nothing to read", () => {
+    expect(repoHealth({ ...healthy, ciSuccessRate: null, medianMergeHours: null })).toEqual({
+      score: 100,
+      status: "strong",
+      reasons: [],
+      unscored: ["ci", "merges"],
     })
   })
 

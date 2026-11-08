@@ -651,9 +651,11 @@ const Labels = ({
 
 const Contributors = ({
   insights,
+  onChoosePerson,
   className,
 }: {
   readonly insights: Insights
+  readonly onChoosePerson: (login: string) => void
   readonly className: string
 }) => (
   <ChartCard
@@ -668,6 +670,10 @@ const Contributors = ({
         key: person.login,
         name: person.login,
         lead: <Avatar url={person.avatarUrl} name={person.login} size="xs" />,
+        choose: {
+          label: `Show the insights of @${person.login}`,
+          onChoose: () => onChoosePerson(person.login),
+        },
         segments: [
           { label: "pull requests merged", value: person.pullsMerged, color: SERIES.opened },
           { label: "issues closed", value: person.issuesClosed, color: SERIES.closed },
@@ -881,9 +887,12 @@ const CardRows = ({ rows }: { readonly rows: ReadonlyArray<Row<Card>> }) =>
 export const InsightsDashboard = ({
   insights,
   boardHref,
+  onChoosePerson,
 }: {
   readonly insights: Insights
   readonly boardHref: BoardHref
+  /** Narrows the page to the person with this login. */
+  readonly onChoosePerson: (login: string) => void
 }) => {
   const merged = sum(insights.pullMergeTime.buckets.map((bucket) => bucket.count))
   const cards: ReadonlyArray<Cell<Card>> = [
@@ -984,7 +993,12 @@ export const InsightsDashboard = ({
         empty:
           insights.contributors.length === 0 ? "Contributors (nothing merged or closed)" : null,
         render: (className) => (
-          <Contributors key="contributors" insights={insights} className={className} />
+          <Contributors
+            key="contributors"
+            insights={insights}
+            onChoosePerson={onChoosePerson}
+            className={className}
+          />
         ),
       },
     },

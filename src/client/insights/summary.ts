@@ -89,6 +89,12 @@ export const insightsSummary = (insights: Insights, orgName: string): string => 
     "",
     `${insights.repoStats.length === 1 ? "1 repository" : `${insights.repoStats.length} repositories`}, last ${range} in whole ${GRAIN_WORDS[INSIGHT_GRAIN[insights.days]].many} (${formatSpan(insights.window.start, insights.window.end)}, ${insights.tz}).`,
     "",
+    ...(insights.user === null
+      ? []
+      : [
+          `The numbers count the issues and pull requests that @${insights.user} opened or is assigned to, and leave CI out. Repository health covers everyone's work.`,
+          "",
+        ]),
     "## Headline numbers",
     "",
     `- **Open issues:** ${formatCount(tiles.openIssues.value)} (${signed(tiles.openIssues.value - tiles.openIssues.previous)} since ${start})`,

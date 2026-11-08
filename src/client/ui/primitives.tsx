@@ -109,6 +109,8 @@ type PopoverProps = {
   readonly triggerTabIndex?: number
   /** Where focus goes when the panel closes; the trigger when left out. */
   readonly returnFocus?: RefObject<HTMLElement | null>
+  /** Keeps the panel shut, as before the choices it lists have loaded. */
+  readonly disabled?: boolean
 }
 
 const MENU_ITEMS = '[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]'
@@ -202,6 +204,7 @@ export const Popover = ({
   focusFirstItem = false,
   triggerTabIndex,
   returnFocus,
+  disabled = false,
 }: PopoverProps) => {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
   const open = controlledOpen ?? uncontrolledOpen
@@ -271,6 +274,7 @@ export const Popover = ({
         aria-controls={panelId}
         aria-label={accessibleLabel}
         tabIndex={triggerTabIndex}
+        disabled={disabled}
         onClick={() => setOpen(!open)}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" && !open) {

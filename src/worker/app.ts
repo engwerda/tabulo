@@ -396,6 +396,7 @@ export const createApp = (dependencies: Dependencies) => {
           repos: c.req.query("repos"),
           days: c.req.query("days"),
           tz: c.req.query("tz"),
+          user: c.req.query("user"),
         }),
         (query) => {
           const pool: PageBudget = { remaining: PAGE_BUDGET }
