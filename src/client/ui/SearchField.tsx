@@ -54,6 +54,8 @@ export const SearchField = ({
       placeholder={placeholder}
       title={title}
       aria-keyshortcuts={shortcut}
+      // Named outright: the clear button sits inside the label and would join the name.
+      aria-label={label}
       className={`${inputClass} pr-8 pl-8 [&::-webkit-search-cancel-button]:appearance-none ${
         inMenu ? "shadow-none" : ""
       }`}

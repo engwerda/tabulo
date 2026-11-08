@@ -919,6 +919,18 @@ export const CardPanel = ({
               </ErrorNotice>
             ) : (
               <>
+                {detail.isError && (
+                  <ErrorNotice
+                    bare
+                    tone="warning"
+                    title="Could not refresh the description and comments"
+                    onRetry={() => void detail.refetch()}
+                    retrying={detail.isFetching}
+                    className="mt-8"
+                  >
+                    {`These were loaded ${relativeTime(new Date(detail.dataUpdatedAt).toISOString())}, so newer comments may be missing. ${detail.error.message}`}
+                  </ErrorNotice>
+                )}
                 <section aria-labelledby="card-description" className="mt-8">
                   <h3 id="card-description" className={sectionTitle}>
                     Description

@@ -39,9 +39,9 @@ const STATES = [
 ] as const
 
 const SORTS = [
-  { value: "updated", label: "Recently updated" },
-  { value: "progress", label: "Most progress" },
-  { value: "children", label: "Most children" },
+  { value: "updated", label: "Recently updated", short: "Updated" },
+  { value: "progress", label: "Most progress", short: "Progress" },
+  { value: "children", label: "Most children", short: "Children" },
 ] as const
 
 const LoadingEpics = () => (
@@ -255,7 +255,7 @@ export const EpicsPage = ({ org }: { org: string }) => {
           .filter((label) => all.every((epic) => epic.labels.some(({ id }) => id === label.id)))
           .map((label) => label.id),
   )
-  const sortLabel = SORTS.find(({ value }) => value === filters.sort)?.label ?? SORTS[0].label
+  const sort = SORTS.find(({ value }) => value === filters.sort) ?? SORTS[0]
 
   return (
     <main className="pb-12">
@@ -405,10 +405,9 @@ export const EpicsPage = ({ org }: { org: string }) => {
                       label={
                         <>
                           <SortIcon className="size-4 text-zinc-500 dark:text-zinc-400" />
-                          <span className="max-sm:sr-only">
-                            <span className="sr-only">Sort: </span>
-                            {sortLabel}
-                          </span>
+                          <span className="sr-only">Sort: </span>
+                          <span className="max-sm:hidden">{sort.label}</span>
+                          <span className="sm:hidden">{sort.short}</span>
                         </>
                       }
                       options={SORTS}

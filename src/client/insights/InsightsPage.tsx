@@ -250,6 +250,8 @@ export const InsightsPage = ({ org }: { org: string }) => {
                   <ErrorNotice
                     tone="warning"
                     title={`${data.failedRepos.length === 1 ? "1 repository" : `${data.failedRepos.length} repositories`} left out`}
+                    onRetry={() => void insights.refetch()}
+                    retrying={insights.isFetching}
                   >
                     {data.failedRepos.length === 1 ? "It" : "They"} failed to load:{" "}
                     {failures(data.failedRepos)}.
