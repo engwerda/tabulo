@@ -63,7 +63,7 @@ export type PageBudget = { remaining: number }
 // Workers allow 1,000 subrequests per request. Listing pages share this budget, which leaves
 // room for the reads besides them: on each of at most two attempts, each of at most 20
 // repositories reads itself (and, for Insights, its languages), and the session may refresh
-// its token once.
+// its token and reread the user once.
 export const PAGE_BUDGET = 800
 
 /**

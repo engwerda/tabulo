@@ -155,6 +155,20 @@ describe("access token refresh", () => {
     expect(new Set(apiCalls.map((r) => r.authorization))).toEqual(new Set(["Bearer access-2"]))
   })
 
+  it("takes the user's current login and name from Forgejo when it refreshes the token", async () => {
+    const forgejo = createFakeForgejo({ expiresIn: 30 })
+    const call = tabulo(forgejo.fetch)
+    const cookie = await signIn(call, forgejo)
+    forgejo.renameUser("ada", "ada-renamed")
+
+    const activity = await call("/api/activity?tz=UTC", { headers: { cookie } })
+    const me = await call("/api/me", { headers: { cookie } })
+
+    expect(activity.status).toBe(200)
+    expect(forgejo.requests.map((r) => r.path)).toContain("/api/v1/users/ada-renamed/heatmap")
+    expect(await me.json()).toMatchObject({ login: "ada-renamed", name: "Ada Lovelace" })
+  })
+
   it("refreshes once when Forgejo rejects an unexpired access token", async () => {
     const forgejo = createFakeForgejo()
     const call = tabulo(forgejo.fetch)

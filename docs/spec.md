@@ -76,7 +76,9 @@ starts with all of them chosen; clearing the choice is remembered too.
    Forgejo rejects the refresh token itself (`invalid_grant` or `unauthorized_client`). Any other
    token endpoint failure, such as `invalid_client` or a rate limit, returns HTTP 502 and keeps
    the session. Forgejo can rotate refresh tokens, so when concurrent requests refresh the same
-   session, the first stored tokens win and the other requests use them.
+   session, the first stored tokens win and the other requests use them. After a refresh,
+   Tabulo reads the user again and stores their current login, name, and avatar, so a rename
+   reaches the session within one access token's lifetime.
 6. `POST /auth/logout` deletes the session. Requests that change state must carry an `Origin`
    header equal to `APP_URL`, and a body only as `application/json` of at most 1 MB; others
    answer 403, 415, and 413. An HTML form can post from Tabulo's own origin but cannot send JSON.
@@ -334,7 +336,7 @@ organization and repository selection. It shows open epics and epics closed with
   not use. Each child lookup takes one page when it starts. A listing that runs out of pages is
   named in `incomplete.listings`, and epics in its unread part are missing.
   `incomplete.children` counts the child references that were not looked up. With at most 20
-  repositories read on each of two attempts and one token refresh, a request makes at most 841
+  repositories read on each of two attempts and one token refresh, a request makes at most 842
   Forgejo requests.
 - **Display.** Each epic exposes its issue details and board column, progress segments and
   legend, completion percentage, and an expandable child list. The response is

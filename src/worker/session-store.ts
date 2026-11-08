@@ -32,6 +32,8 @@ export class SessionStore extends Context.Service<
       session: Session,
       tokens: TokenGrant,
     ) => Effect.Effect<Session, SessionNotFound>
+    /** Stores the user's login, name, and avatar as Forgejo names them now. */
+    readonly updateUser: (session: Session, user: ForgejoUser) => Effect.Effect<Session>
     readonly remove: (idHash: string) => Effect.Effect<void>
     /** Deletes the session unless a concurrent request has stored newer tokens. */
     readonly removeIfCurrent: (session: Session) => Effect.Effect<void>
@@ -56,6 +58,12 @@ type SessionRow = {
 
 // D1 failures are infrastructure faults, not domain outcomes, so they surface as defects.
 const query = <A>(run: () => Promise<A>) => Effect.promise(run)
+
+const sessionUser = (user: ForgejoUser): User => ({
+  login: user.login,
+  name: user.full_name.trim() || user.login,
+  avatarUrl: user.avatar_url,
+})
 
 export const makeSessionStore = (db: D1Database, key: CryptoKey): SessionStore["Service"] => {
   const sealTokens = (idHash: string, tokens: TokenGrant) =>
@@ -110,6 +118,7 @@ export const makeSessionStore = (db: D1Database, key: CryptoKey): SessionStore["
         const idHash = yield* sha256Hex(cookieValue)
         const [accessEnc, refreshEnc] = yield* sealTokens(idHash, tokens)
         const now = yield* Clock.currentTimeMillis
+        const { login, name, avatarUrl } = sessionUser(user)
         yield* query(() =>
           db.batch([
             db.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(now),
@@ -122,9 +131,9 @@ export const makeSessionStore = (db: D1Database, key: CryptoKey): SessionStore["
               .bind(
                 idHash,
                 user.id,
-                user.login,
-                user.full_name.trim() || user.login,
-                user.avatar_url,
+                login,
+                name,
+                avatarUrl,
                 accessEnc,
                 refreshEnc,
                 tokens.accessExpiresAt,
@@ -161,6 +170,26 @@ export const makeSessionStore = (db: D1Database, key: CryptoKey): SessionStore["
         )
         if (result.meta.changes === 0) return yield* findByHash(session.idHash)
         return { ...session, tokens, tokenVersion: session.tokenVersion + 1 }
+      }),
+
+    updateUser: (session, forgejoUser) =>
+      Effect.gen(function* () {
+        const user = sessionUser(forgejoUser)
+        if (
+          forgejoUser.id !== session.forgejoUserId ||
+          (user.login === session.user.login &&
+            user.name === session.user.name &&
+            user.avatarUrl === session.user.avatarUrl)
+        ) {
+          return session
+        }
+        yield* query(() =>
+          db
+            .prepare("UPDATE sessions SET login = ?, name = ?, avatar_url = ? WHERE id_hash = ?")
+            .bind(user.login, user.name, user.avatarUrl, session.idHash)
+            .run(),
+        )
+        return { ...session, user }
       }),
 
     remove,
