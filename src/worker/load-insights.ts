@@ -7,7 +7,7 @@ import {
   type Insights,
 } from "../shared/api.ts"
 import { buildActivity } from "./activity.ts"
-import { parseBoardQuery } from "./board.ts"
+import { BoardConfig, parseBoardQuery } from "./board.ts"
 import {
   BoardRequestInvalid,
   describeForgejoError,
@@ -76,6 +76,7 @@ type RepoResult =
 export const loadInsights = (token: AccessToken, query: InsightsQuery, pool: PageBudget) =>
   Effect.gen(function* () {
     const forgejo = yield* ForgejoClient
+    const { statusScope } = yield* BoardConfig
     const now = yield* Clock.currentTimeMillis
     // The window before the shown one feeds the change on each stat tile.
     const since = insightPeriods(now, query.days, query.tz).previous.start
@@ -132,6 +133,7 @@ export const loadInsights = (token: AccessToken, query: InsightsQuery, pool: Pag
     return buildInsights({
       ...query,
       now,
+      statusScope,
       loaded: results.flatMap((result) => (result._tag === "Loaded" ? [result.activity] : [])),
       failedRepos: results.flatMap((result) =>
         result._tag === "Failed" ? [{ repo: result.repo, message: result.message }] : [],

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { type ReactNode, useState } from "react"
 import { fetchOrgRepos, fetchOrgs } from "../api.ts"
+import { ErrorNotice, sentence } from "../ui/ErrorNotice.tsx"
 import { ORGS, OrgSwitcher } from "./OrgPicker.tsx"
 import { RepoPicker } from "./RepoPicker.tsx"
 import type { RepoSelection } from "./use-repo-selection.ts"
@@ -14,7 +15,12 @@ type ScopeBarProps = {
   readonly children?: ReactNode
 }
 
-/** The heading of an org-level view: the organization and the chosen repositories. */
+/**
+ * The header of an org-level view: the organization, the chosen repositories, and the view's own
+ * controls at the end. Its frame matches the board's header, so switching views moves nothing.
+ * The view's name is in the navigation, so here it is only the page's heading for assistive
+ * technology.
+ */
 export const ScopeBar = ({ org, view, repoSelection, children }: ScopeBarProps) => {
   const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
   const repos = useQuery({ queryKey: ["org-repos", org], queryFn: () => fetchOrgRepos(org) })
@@ -23,16 +29,24 @@ export const ScopeBar = ({ org, view, repoSelection, children }: ScopeBarProps) 
   const displayName = details?.fullName || org
 
   return (
-    <div className="flex flex-col gap-3 px-4 pt-4 pb-3 sm:px-6">
+    <div className="flex flex-col gap-3 pt-4 pb-3">
       <h1 className="sr-only">
         {orgView(view).label} for {displayName}
       </h1>
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex min-h-8 min-w-0 flex-1 items-center gap-2">
           <OrgSwitcher org={org} view={view} />
-          <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-700">
-            /
-          </span>
+          {!repos.isError && (
+            <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-700">
+              /
+            </span>
+          )}
+          {repos.isPending && (
+            <span
+              aria-hidden="true"
+              className="h-8 w-36 animate-shimmer rounded-lg bg-zinc-200/60 pointer-coarse:h-11 max-sm:w-24 dark:bg-zinc-800/60"
+            />
+          )}
           {repos.data !== undefined && (
             <RepoPicker
               repos={repos.data}
@@ -43,12 +57,20 @@ export const ScopeBar = ({ org, view, repoSelection, children }: ScopeBarProps) 
             />
           )}
         </div>
-        {children}
+        {children !== undefined && (
+          <div className="flex min-w-0 flex-wrap items-center gap-2">{children}</div>
+        )}
       </div>
-      {repos.isError && (
-        <p role="alert" className="text-sm text-red-700 dark:text-red-400">
-          Could not load the repositories of {org}: {repos.error.message}
-        </p>
+      {/* Without a selection the view's own notice reports the failure, with a retry. */}
+      {repos.isError && repoSelection.selection !== "" && (
+        <ErrorNotice
+          tone="warning"
+          title={`Could not load the repositories of ${displayName}`}
+          onRetry={() => void repos.refetch()}
+          retrying={repos.isFetching}
+        >
+          {`${sentence(repos.error.message)} The page still shows its data; choosing repositories waits until they load.`}
+        </ErrorNotice>
       )}
     </div>
   )

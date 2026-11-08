@@ -21,6 +21,30 @@ export const niceTicks = (max: number, target = 4, { integer = true } = {}) => {
   return ticks
 }
 
+// An axis label at text-2xs is about this wide per character, tabular figures included.
+const LABEL_CHAR_WIDTH = 5.8
+const LABEL_SPACE = 8
+
+/**
+ * How many points apart the shown axis labels are, counted back from the last: at least `minGap`
+ * pixels apart in `plotWidth`, and further when two shown neighbours, such as "Dec 29 ’25" and
+ * "Jan 26 ’26", would touch.
+ */
+export const labelStride = (labels: ReadonlyArray<string>, plotWidth: number, minGap: number) => {
+  const count = labels.length
+  const spacing = plotWidth / Math.max(count, 1)
+  const fits = (every: number) => {
+    for (let index = count - 1 - every; index >= 0; index -= every) {
+      const pair = (labels[index]?.length ?? 0) + (labels[index + every]?.length ?? 0)
+      if ((pair / 2) * LABEL_CHAR_WIDTH + LABEL_SPACE > every * spacing) return false
+    }
+    return true
+  }
+  let every = Math.max(1, Math.ceil(count / Math.max(1, Math.floor(plotWidth / minGap))))
+  while (every < count && !fits(every)) every++
+  return every
+}
+
 const compactFormat = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 })
 const fullFormat = new Intl.NumberFormat("en")
 
@@ -65,4 +89,34 @@ export const formatSpan = (start: string, end: string) => {
   return startYear === endYear
     ? `${formatDay(start)} to ${formatDay(end)}, ${endYear}`
     : `${formatDay(start)}, ${startYear} to ${formatDay(end)}, ${endYear}`
+}
+
+/** How a change against an earlier value reads: a percentage, a count, or percentage points. */
+export type ChangeMode = "percent" | "absolute" | "points"
+
+// Below this earlier value a percentage overstates the change ("+2600%" from 3 to 81).
+const PERCENT_MIN_BASE = 10
+
+/**
+ * The change from `previous` to `value` with its sign: "+12%", "−4" in the value's own `format`,
+ * or "+3 pts" for ratios. A percentage falls back to the difference when the earlier value is
+ * under 10, and then names that value ("+100 from 7") so it does not read as a percentage.
+ */
+export const formatChange = (
+  value: number,
+  previous: number,
+  mode: ChangeMode,
+  format: (value: number) => string = formatCount,
+) => {
+  const change = value - previous
+  const sign = change > 0 ? "+" : "−"
+  if (mode === "points") {
+    const points = Math.abs(Math.round(change * 100))
+    return `${sign}${points} ${points === 1 ? "pt" : "pts"}`
+  }
+  if (mode === "absolute") return `${sign}${format(Math.abs(change))}`
+  if (Math.abs(previous) >= PERCENT_MIN_BASE) {
+    return `${sign}${Math.abs(Math.round((change / previous) * 100))}%`
+  }
+  return `${sign}${format(Math.abs(change))} from ${format(previous)}`
 }

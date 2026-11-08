@@ -1,6 +1,12 @@
 import type { Board, BoardCard } from "../../shared/api.ts"
 import { compareCardOrder, rankForDrop } from "../../shared/card-order.ts"
 
+/**
+ * The board's query: the organization and its chosen repositories as `useRepoSelection` joins
+ * them. The command palette reads the same entry to open cards in the board's panel.
+ */
+export const boardQueryKey = (org: string, selection: string) => ["board", org, selection] as const
+
 /** Every card of a column in board order. */
 export const columnCards = (cards: ReadonlyArray<BoardCard>, column: string) =>
   cards.filter((card) => card.column === column).sort(compareCardOrder)
@@ -32,6 +38,22 @@ export const readFilters = (params: URLSearchParams): BoardFilters => ({
   label: params.getAll(FILTER_PARAMS.label),
   text: params.get(FILTER_PARAMS.text) ?? "",
 })
+
+/** `params` with `filter` set to `values`; no values remove the filter. */
+export const withFilter = (
+  params: URLSearchParams,
+  filter: keyof BoardFilters,
+  values: ReadonlyArray<string>,
+) => {
+  const next = new URLSearchParams(params)
+  next.delete(FILTER_PARAMS[filter])
+  for (const value of values) if (value !== "") next.append(FILTER_PARAMS[filter], value)
+  return next
+}
+
+/** `values` with `value` added, or removed when it is there. */
+export const toggled = (values: ReadonlyArray<string>, value: string) =>
+  values.includes(value) ? values.filter((other) => other !== value) : [...values, value]
 
 export const isFiltered = (filters: BoardFilters) =>
   filters.assignee.length > 0 ||

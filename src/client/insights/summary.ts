@@ -1,5 +1,6 @@
 import type { AttentionKind, IncompleteListing, InsightDays, Insights } from "../../shared/api.ts"
-import { formatCount, formatDay, formatHours, formatPercent, formatSpan } from "../charts/scale.ts"
+import { formatCount, formatHours, formatPercent, formatSpan } from "../charts/scale.ts"
+import { formatDate, spansYears } from "./weeks.ts"
 
 export const RANGE_LABELS: Record<InsightDays, { readonly short: string; readonly long: string }> =
   {
@@ -8,6 +9,20 @@ export const RANGE_LABELS: Record<InsightDays, { readonly short: string; readonl
     180: { short: "6m", long: "6 months" },
     365: { short: "1y", long: "year" },
   }
+
+/**
+ * What a change against the period before compares with: a period as long as the window. The
+ * window starts on a Monday and ends today, so its length is given in weeks, rounded, with the
+ * first and last day counted as the header's span does.
+ */
+export const priorLabel = ({ start, end }: Insights["window"]) => {
+  const days = Math.round((Date.parse(end) - Date.parse(start)) / 86_400_000) + 1
+  return `vs the ${Math.round(days / 7)} weeks before`
+}
+
+/** The window's first day, with its year when the window ends in a later one. */
+export const formatWindowStart = ({ start, end }: Insights["window"]) =>
+  formatDate(start, spansYears([start, end]))
 
 export const ATTENTION_LABELS: Record<AttentionKind, string> = {
   failing_ci: "CI failing",
@@ -31,11 +46,14 @@ export const incompleteNotice = (incomplete: ReadonlyArray<IncompleteListing>) =
 
 const signed = (value: number) => `${value > 0 ? "+" : ""}${formatCount(value)}`
 
-/** A Markdown summary of the insights for pasting into a chat or a status report. */
-export const insightsSummary = (insights: Insights): string => {
+/**
+ * A Markdown summary of the insights for pasting into a chat or a status report, headed with
+ * the organization's display name.
+ */
+export const insightsSummary = (insights: Insights, orgName: string): string => {
   const { tiles } = insights
   const range = RANGE_LABELS[insights.days].long
-  const start = formatDay(insights.window.start)
+  const start = formatWindowStart(insights.window)
   const flow = (label: string, tile: { value: number; previous: number }) =>
     `- **${label}:** ${formatCount(tile.value)} (period before: ${formatCount(tile.previous)})`
   const duration = (label: string, tile: { value: number | null; previous: number | null }) =>
@@ -46,7 +64,7 @@ export const insightsSummary = (insights: Insights): string => {
         ]
 
   const lines = [
-    `# ${insights.org} insights`,
+    `# ${orgName} insights`,
     "",
     `${insights.repoStats.length === 1 ? "1 repository" : `${insights.repoStats.length} repositories`}, last ${range} in whole weeks (${formatSpan(insights.window.start, insights.window.end)}, ${insights.tz}).`,
     "",
@@ -62,7 +80,7 @@ export const insightsSummary = (insights: Insights): string => {
     ...(tiles.ciSuccessRate.value === null
       ? []
       : [
-          `- **CI success rate:** ${formatPercent(tiles.ciSuccessRate.value)}${tiles.ciSuccessRate.previous === null ? "" : ` (period before: ${formatPercent(tiles.ciSuccessRate.previous)})`}`,
+          `- **CI pass rate:** ${formatPercent(tiles.ciSuccessRate.value)}${tiles.ciSuccessRate.previous === null ? "" : ` (period before: ${formatPercent(tiles.ciSuccessRate.previous)})`}`,
         ]),
   ]
 

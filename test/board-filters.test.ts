@@ -4,6 +4,8 @@ import {
   filterChoices,
   matchesFilters,
   readFilters,
+  toggled,
+  withFilter,
 } from "../src/client/board/board-view.ts"
 import type { BoardCard } from "../src/shared/api.ts"
 
@@ -82,5 +84,22 @@ describe("board filters", () => {
     ])
     expect(choices.assignees).toEqual([person("ada"), person("grace")])
     expect(choices.labels).toEqual([{ name: "Kind/Bug", color: "#d73a4a" }])
+  })
+
+  it("sets one filter in the address and keeps the others", () => {
+    const params = new URLSearchParams("repos=api&label=Kind%2FBug&assignee=%40me&q=crash")
+
+    const labels = withFilter(params, "label", toggled(readFilters(params).label, "Kind/Docs"))
+    expect(readFilters(labels)).toEqual({
+      assignee: ["@me"],
+      milestone: null,
+      label: ["Kind/Bug", "Kind/Docs"],
+      text: "crash",
+    })
+    expect(labels.get("repos")).toBe("api")
+
+    const cleared = withFilter(labels, "label", toggled(["Kind/Bug"], "Kind/Bug"))
+    expect(cleared.has("label")).toBe(false)
+    expect(params.getAll("label")).toEqual(["Kind/Bug"])
   })
 })

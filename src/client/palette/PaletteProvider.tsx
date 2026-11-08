@@ -10,6 +10,7 @@ import {
 import { useLocation } from "wouter"
 import { useLastScope } from "../scope/remembered.ts"
 import { type OrgViewId, orgViewHref } from "../scope/views.ts"
+import { isTypingTarget } from "../ui/primitives.tsx"
 import { CommandPalette } from "./CommandPalette.tsx"
 import { ShortcutsDialog } from "./ShortcutsDialog.tsx"
 import { type PendingKey, resolveKey, type ShortcutId } from "./shortcuts.ts"
@@ -23,10 +24,6 @@ export const usePalette = (): PaletteControls => {
   if (controls === null) throw new Error("usePalette needs a PaletteProvider")
   return controls
 }
-
-const isTyping = (target: EventTarget | null) =>
-  target instanceof HTMLElement &&
-  (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
 
 const GO_VIEWS: Partial<Record<ShortcutId, OrgViewId>> = {
   "go-board": "board",
@@ -50,6 +47,14 @@ export const PaletteProvider = ({
   const pending = useRef<PendingKey>(null)
   const latest = useRef({ surface, navigate, lastScope })
   latest.current = { surface, navigate, lastScope }
+  // Where focus was before the first surface opened: the shortcuts dialog, opened from the
+  // command menu, returns there, as the menu's own input is gone by then.
+  const opener = useRef<HTMLElement | null>(null)
+  const rememberOpener = useCallback(() => {
+    if (latest.current.surface === "none" && document.activeElement instanceof HTMLElement) {
+      opener.current = document.activeElement
+    }
+  }, [])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -57,13 +62,14 @@ export const PaletteProvider = ({
       const current = latest.current
       // A page's own modal, such as the board's shortcut list, owns plain keys while it is open.
       const typing =
-        isTyping(event.target) ||
+        isTypingTarget(event.target) ||
         current.surface !== "none" ||
         document.querySelector("dialog[open]") !== null
       const result = resolveKey(event, pending.current, event.timeStamp, typing)
       pending.current = result.pending
       if (result.shortcut === null) return
       event.preventDefault()
+      rememberOpener()
       switch (result.shortcut) {
         case "palette":
           setSurface(current.surface === "palette" ? "none" : "palette")
@@ -84,9 +90,12 @@ export const PaletteProvider = ({
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [])
+  }, [rememberOpener])
 
-  const openPalette = useCallback(() => setSurface("palette"), [])
+  const openPalette = useCallback(() => {
+    rememberOpener()
+    setSurface("palette")
+  }, [rememberOpener])
   // A surface closes only itself: the shortcuts dialog reports closing after Cmd+K opened the
   // menu over it, and that must not close the menu.
   const closePalette = useCallback(
@@ -108,7 +117,11 @@ export const PaletteProvider = ({
         onOpenShortcuts={openShortcuts}
         signOut={signOut}
       />
-      <ShortcutsDialog open={surface === "shortcuts"} onClose={closeShortcuts} />
+      <ShortcutsDialog
+        open={surface === "shortcuts"}
+        onClose={closeShortcuts}
+        returnFocus={opener}
+      />
     </PaletteContext>
   )
 }

@@ -286,3 +286,36 @@ export const ArchiveIcon = ({ className }: IconProps) => (
     <path d="M3 6.25v6a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-6M6.5 9h3" />
   </Stroke>
 )
+
+export const CopyIcon = ({ className }: IconProps) => (
+  <Stroke className={className}>
+    <rect x="5.25" y="5.25" width="8.5" height="8.5" rx="1.5" />
+    <path d="M10.75 5.25v-1.5a1.5 1.5 0 0 0-1.5-1.5h-5.5a1.5 1.5 0 0 0-1.5 1.5v5.5a1.5 1.5 0 0 0 1.5 1.5h1.5" />
+  </Stroke>
+)
+
+export const ArrowUpIcon = ({ className }: IconProps) => (
+  <Stroke className={className}>
+    <path d="M8 13V3M4 7l4-4 4 4" />
+  </Stroke>
+)
+
+export const ArrowDownIcon = ({ className }: IconProps) => (
+  <Stroke className={className}>
+    <path d="M8 3v10M4 9l4 4 4-4" />
+  </Stroke>
+)
+
+/** The Return key. */
+export const EnterIcon = ({ className }: IconProps) => (
+  <Stroke className={className}>
+    <path d="M12.75 3.25v4.5a1.5 1.5 0 0 1-1.5 1.5h-8" />
+    <path d="M5.75 6.25 2.75 9.25l3 3" />
+  </Stroke>
+)
+
+export const SortIcon = ({ className }: IconProps) => (
+  <Stroke className={className}>
+    <path d="M2.75 4.25h10.5M4.75 8h6.5M6.75 11.75h2.5" />
+  </Stroke>
+)

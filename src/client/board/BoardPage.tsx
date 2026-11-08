@@ -26,29 +26,33 @@ import {
   RequestFailed,
   setAssignee,
 } from "../api.ts"
-import { relativeTime } from "../format.ts"
+import { absoluteTime, relativeTime } from "../format.ts"
+import { ShortcutsDialog, usePageShortcuts } from "../palette/ShortcutsDialog.tsx"
+import { usePageCommands } from "../palette/use-palette-groups.ts"
 import { ORGS, OrgSwitcher } from "../scope/OrgPicker.tsx"
 import { RepoPicker } from "../scope/RepoPicker.tsx"
 import { useRepoSelection } from "../scope/use-repo-selection.ts"
 import { useViewer } from "../session.ts"
+import { ErrorNotice, sentence } from "../ui/ErrorNotice.tsx"
+import { IssueRef } from "../ui/IssueRef.tsx"
 import {
-  AlertIcon,
   ColumnsIcon,
   InfoIcon,
   KeyboardIcon,
   PlusIcon,
   RefreshIcon,
   SearchIcon,
-  XIcon,
 } from "../ui/icons.tsx"
-import { buttonClass, isTypingTarget } from "../ui/primitives.tsx"
+import { buttonClass, isTypingTarget, Kbd, Popover, touchTarget } from "../ui/primitives.tsx"
 import { RepoPaletteProvider } from "../ui/repo-palette.tsx"
 import { useToast } from "../ui/toast.tsx"
 import type { CardActions } from "./BoardCardView.tsx"
 import { BoardColumns } from "./BoardColumns.tsx"
 import { BoardFiltersBar } from "./BoardFiltersBar.tsx"
+import { boardCommands } from "./board-commands.ts"
 import {
   applyMove,
+  boardQueryKey,
   type CardMove,
   columnCards,
   FILTER_PARAMS,
@@ -57,12 +61,15 @@ import {
   matchesFilters,
   readFilters,
   replaceCard,
+  withFilter,
 } from "./board-view.ts"
 import { CardComposer } from "./CardComposer.tsx"
 import { CardPanel } from "./CardPanel.tsx"
-import { ShortcutsDialog } from "./ShortcutsDialog.tsx"
+import { drafts, titleDraftKey } from "./drafts.ts"
+import { BOARD_SHORTCUTS } from "./shortcuts.ts"
 
 const REFRESH_MS = 60_000
+const NO_COMMANDS: ReturnType<typeof boardCommands> = []
 
 /**
  * A change to a card's assignees, labels, or milestone. `done` says what happened in the toast
@@ -76,6 +83,10 @@ export type CardUpdate = {
   readonly undo?: { readonly run: () => Promise<CardUpdateResult>; readonly done: string }
 }
 const CARD_PARAM = "card"
+
+/** The toast key of a card: a newer toast about the card replaces an older one and its Undo. */
+const aboutCard = ({ repo, number }: { readonly repo: string; readonly number: number }) =>
+  `card:${repo}#${number}`
 
 // Remembering choices is a convenience: storage can be missing or refuse writes.
 const storage = {
@@ -131,41 +142,13 @@ const useNow = () => {
   return now
 }
 
-const Notice = ({
-  tone,
-  children,
-  onDismiss,
-}: {
-  tone: "warning" | "info" | "error"
-  children: ReactNode
-  onDismiss?: () => void
-}) => (
+const Notice = ({ children }: { children: ReactNode }) => (
   <div
-    role={tone === "info" ? "status" : "alert"}
-    className={`mx-4 mb-3 flex items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-sm sm:mx-6 ${
-      tone === "error"
-        ? "border-red-200 bg-red-50 text-red-900 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200"
-        : tone === "warning"
-          ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100"
-          : "border-zinc-200 bg-white text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
-    }`}
+    role="status"
+    className="mx-4 mb-3 flex items-start gap-2.5 rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-sm text-zinc-700 sm:mx-6 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
   >
-    {tone === "info" ? (
-      <InfoIcon className="mt-0.5 size-4 text-zinc-400" />
-    ) : (
-      <AlertIcon className="mt-0.5 size-4 opacity-70" />
-    )}
+    <InfoIcon className="mt-0.5 size-4 text-zinc-400" />
     <div className="min-w-0 flex-1">{children}</div>
-    {onDismiss !== undefined && (
-      <button
-        type="button"
-        onClick={onDismiss}
-        aria-label="Dismiss"
-        className="-my-0.5 -mr-1 grid size-6 shrink-0 place-items-center rounded-md opacity-60 transition hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
-      >
-        <XIcon className="size-3.5" />
-      </button>
-    )}
   </div>
 )
 
@@ -175,14 +158,14 @@ const BoardSkeleton = () => (
       <div
         // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have no identity
         key={column}
-        className="flex min-w-[14.5rem] flex-1 flex-col gap-2 rounded-2xl bg-zinc-100/80 p-2 dark:bg-zinc-900/80"
+        className="flex min-w-[14.5rem] flex-1 flex-col gap-1.5 rounded-xl bg-zinc-100/70 p-1.5 dark:bg-zinc-900/60"
       >
         <div className="mx-1.5 my-2.5 h-4 w-24 animate-shimmer rounded bg-zinc-200 dark:bg-zinc-800" />
         {Array.from({ length: count }, (_, card) => (
           <div
             // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have no identity
             key={card}
-            className="h-24 animate-shimmer rounded-xl border border-zinc-200/70 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+            className="h-[5.5rem] animate-shimmer rounded-xl border border-zinc-200/70 bg-white dark:border-zinc-800 dark:bg-zinc-900"
             style={{ animationDelay: `${(column + card) * 80}ms` }}
           />
         ))}
@@ -194,7 +177,7 @@ const BoardSkeleton = () => (
 const EmptyBoard = ({ onChoose }: { onChoose: () => void }) => (
   <div className="grid flex-1 place-items-center px-6 pb-16">
     <div className="max-w-sm text-center">
-      <div className="mx-auto flex h-20 w-28 items-end justify-center gap-1.5 rounded-2xl bg-gradient-to-b from-indigo-50 to-white p-3 ring-1 ring-indigo-100 dark:from-indigo-500/10 dark:to-transparent dark:ring-indigo-500/20">
+      <div className="mx-auto flex h-20 w-28 items-end justify-center gap-1.5 rounded-xl bg-gradient-to-b from-indigo-50 to-white p-3 ring-1 ring-indigo-100 dark:from-indigo-500/10 dark:to-transparent dark:ring-indigo-500/20">
         {[70, 45, 58].map((height) => (
           <span
             key={height}
@@ -230,74 +213,47 @@ const OrgNotFound = ({ org }: { org: string }) => (
   </div>
 )
 
-/** A centered state for something that went wrong, with what to do about it. */
-const Problem = ({
-  title,
-  detail,
-  actions,
-}: {
-  title: string
-  detail: ReactNode
-  actions: ReactNode
-}) => (
-  <div className="grid flex-1 place-items-center px-6 pb-16">
-    <div role="alert" className="max-w-md text-center">
-      <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-amber-50 text-amber-500 dark:bg-amber-500/10">
-        <AlertIcon className="size-5" />
-      </div>
-      <h2 className="mt-5 text-base font-semibold tracking-tight">{title}</h2>
-      <div className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">{detail}</div>
-      <div className="mt-5 flex justify-center gap-2">{actions}</div>
-    </div>
-  </div>
-)
+/** A text button inside a notice's sentence; on touch its hit area grows to 44px tall. */
+const inlineAction =
+  "relative font-medium pointer-coarse:before:absolute pointer-coarse:before:inset-x-0 pointer-coarse:before:-inset-y-3 text-zinc-700 underline decoration-zinc-300 underline-offset-2 transition hover:text-zinc-900 hover:decoration-zinc-500 dark:text-zinc-300 dark:decoration-zinc-600 dark:hover:text-zinc-100"
 
-const ReposFailed = ({
+/**
+ * Why repositories could not be loaded, with the action that takes them off the board. A title that
+ * already names the one repository leaves only its reason here.
+ */
+const FailedRepos = ({
   failures,
+  named = false,
   onRemove,
-  onRetry,
+  onDismiss,
 }: {
   failures: ReadonlyArray<{ readonly repo: string; readonly message: string }>
+  named?: boolean
   onRemove: () => void
-  onRetry: () => void
+  onDismiss?: () => void
 }) => (
-  <Problem
-    title={
-      failures.length === 1
-        ? `${failures[0]?.repo} did not load`
-        : "These repositories did not load"
-    }
-    detail={
-      failures.length === 1 ? (
-        `${failures[0]?.message}.`
-      ) : (
-        <ul className="space-y-0.5">
-          {failures.map((failure) => (
-            <li key={failure.repo}>
-              <span className="font-medium text-zinc-800 dark:text-zinc-200">{failure.repo}</span>:{" "}
-              {failure.message}
-            </li>
-          ))}
-        </ul>
-      )
-    }
-    actions={
+  <>
+    {named
+      ? sentence(failures[0]?.message ?? "")
+      : `${failures.map((failure) => `${failure.repo} (${failure.message})`).join(", ")}.`}{" "}
+    <button type="button" onClick={onRemove} className={inlineAction}>
+      Remove {failures.length === 1 ? "it" : "them"} from the board
+    </button>
+    {onDismiss !== undefined && (
       <>
-        <button type="button" onClick={onRetry} className={buttonClass.secondary}>
-          Try again
-        </button>
-        <button type="button" onClick={onRemove} className={buttonClass.primary}>
-          Remove from the board
+        <span aria-hidden="true"> · </span>
+        <button type="button" onClick={onDismiss} className={inlineAction}>
+          Hide this
         </button>
       </>
-    }
-  />
+    )}
+  </>
 )
 
 const NoMatches = ({ query, onClear }: { query: string; onClear: () => void }) => (
   <div className="grid flex-1 place-items-center px-6 pb-16">
     <div className="max-w-sm text-center">
-      <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-zinc-100 text-zinc-400 dark:bg-zinc-900">
+      <div className="mx-auto grid size-12 place-items-center rounded-xl bg-zinc-100 text-zinc-400 dark:bg-zinc-900">
         <SearchIcon className="size-5" />
       </div>
       <h2 className="mt-5 text-base font-semibold tracking-tight">
@@ -311,6 +267,84 @@ const NoMatches = ({ query, onClear }: { query: string; onClear: () => void }) =
       </button>
     </div>
   </div>
+)
+
+const boardMenuItem =
+  "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm text-zinc-700 transition pointer-coarse:min-h-11 hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none dark:text-zinc-300 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
+
+/** The board's quieter actions: refreshing, which also says when the board was read, and help. */
+const BoardMenu = ({
+  updated,
+  refreshing,
+  onRefresh,
+  onShortcuts,
+  className = "",
+}: {
+  /** When the board was last read, in words; null before it first loads. */
+  updated: string | null
+  refreshing: boolean
+  onRefresh: () => void
+  onShortcuts: () => void
+  className?: string
+}) => (
+  <Popover
+    align="end"
+    chevron={false}
+    focusFirstItem
+    containerClass={`relative ${className}`}
+    accessibleLabel={`Board options${updated === null ? "" : `. ${updated}`}`}
+    triggerClass={buttonClass.icon}
+    panelClass="w-60 p-1"
+    label={
+      refreshing ? (
+        <RefreshIcon className="size-4 animate-spin" />
+      ) : (
+        <svg aria-hidden="true" viewBox="0 0 16 16" className="size-4" fill="currentColor">
+          <circle cx="3.5" cy="8" r="1.25" />
+          <circle cx="8" cy="8" r="1.25" />
+          <circle cx="12.5" cy="8" r="1.25" />
+        </svg>
+      )
+    }
+  >
+    {(close) => (
+      <div role="menu" aria-label="Board options">
+        <button
+          type="button"
+          role="menuitem"
+          className={boardMenuItem}
+          onClick={() => {
+            close()
+            onRefresh()
+          }}
+        >
+          <RefreshIcon className="size-4 text-zinc-500 dark:text-zinc-400" />
+          <span className="flex min-w-0 flex-1 flex-col">
+            Refresh
+            {updated !== null && (
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">{updated}</span>
+            )}
+          </span>
+          <span className="pointer-coarse:hidden">
+            <Kbd>R</Kbd>
+          </span>
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          className={`${boardMenuItem} pointer-coarse:hidden`}
+          onClick={() => {
+            close()
+            onShortcuts()
+          }}
+        >
+          <KeyboardIcon className="size-4 text-zinc-500 dark:text-zinc-400" />
+          <span className="flex-1">Keyboard shortcuts</span>
+          <Kbd>?</Kbd>
+        </button>
+      </div>
+    )}
+  </Popover>
 )
 
 export const BoardPage = ({ org }: { org: string }) => {
@@ -334,12 +368,23 @@ export const BoardPage = ({ org }: { org: string }) => {
   const [composing, setComposing] = useState<string | null>(null)
   const [composerRepo, setComposerRepo] = useState(() => storage.read(composerRepoKey(org)))
   const searchInput = useRef<HTMLInputElement>(null)
+  // Where focus goes when the shortcuts dialog closes and what had it before is gone: the control
+  // it was opened from, or the board's options after a key press from the page.
+  const shortcutsOpener = useRef<HTMLElement | null>(null)
+  const openShortcuts = () => {
+    const active = document.activeElement
+    shortcutsOpener.current =
+      active instanceof HTMLElement && active !== document.body
+        ? active
+        : document.querySelector<HTMLElement>('button[aria-label^="Board options"]')
+    setShortcutsOpen(true)
+  }
 
   const repos = useQuery({ queryKey: ["org-repos", org], queryFn: () => fetchOrgRepos(org) })
   const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
   const hasSelection = selection !== ""
 
-  const boardKey = ["board", org, selection] as const
+  const boardKey = boardQueryKey(org, selection)
   const writeKey = ["board-write", org, selection] as const
   // A refetch that lands during a drag or before a write is stored would undo it on screen.
   const moving = useIsMutating({ mutationKey: writeKey }) > 0
@@ -390,10 +435,12 @@ export const BoardPage = ({ org }: { org: string }) => {
     }),
   )
 
-  const refetchAfterWrites = () =>
-    queryClient.isMutating({ mutationKey: writeKey }) > 1
-      ? undefined
-      : queryClient.invalidateQueries({ queryKey: boardKey })
+  // Not returned: React Query would keep the write pending, and its card "Saving", until the
+  // board reload finished.
+  const refetchAfterWrites = () => {
+    if (queryClient.isMutating({ mutationKey: writeKey }) > 1) return
+    void queryClient.invalidateQueries({ queryKey: boardKey })
+  }
 
   /** Stops board reads in flight, whose answers predate a write and would undo it on screen. */
   const holdReads = () => queryClient.cancelQueries({ queryKey: boardKey }, { revert: false })
@@ -417,14 +464,21 @@ export const BoardPage = ({ org }: { org: string }) => {
           tone: "warning",
           title: "Moved, but its place in the column was not saved",
           detail: "Others may see the card elsewhere in the column.",
+          key: aboutCard(card),
         })
         return
       }
       if (request.fromColumn === request.toColumn) return
       toast({
         tone: "success",
-        title: `Moved ${card.repo}#${card.number} to ${columnTitle(request.toColumn)}`,
+        title: (
+          <>
+            Moved <IssueRef repo={card.repo} number={card.number} />{" "}
+            {undo === null ? "back to" : "to"} {columnTitle(request.toColumn)}
+          </>
+        ),
         detail: card.title,
+        key: aboutCard(card),
         ...(undo === null ? {} : { action: { label: "Undo", run: () => startMove(undo, null) } }),
       })
     },
@@ -435,7 +489,8 @@ export const BoardPage = ({ org }: { org: string }) => {
         toast({
           tone: "error",
           title: "The move was only partly applied",
-          detail: `${error.message}. The board shows the issue as it is now.`,
+          detail: `${sentence(error.message)} The board shows the issue as it is now.`,
+          key: aboutCard(request),
         })
         return
       }
@@ -445,13 +500,19 @@ export const BoardPage = ({ org }: { org: string }) => {
           tone: "warning",
           title: "Someone changed the board meanwhile",
           detail: "The card did not move. The board has been reloaded; try again.",
+          key: aboutCard(request),
         })
         return
       }
       toast({
         tone: "error",
-        title: `Couldn't move ${request.repo}#${request.number}`,
+        title: (
+          <>
+            Could not move <IssueRef repo={request.repo} number={request.number} />
+          </>
+        ),
         detail: error.message,
+        key: aboutCard(request),
         action: { label: "Retry", run: () => startMove(cardMove, undo) },
       })
     },
@@ -524,7 +585,12 @@ export const BoardPage = ({ org }: { org: string }) => {
       putCard(card)
       toast({
         tone: orderSaved ? "success" : "warning",
-        title: `Created ${card.repo}#${card.number}`,
+        title: (
+          <>
+            Created <IssueRef repo={card.repo} number={card.number} />
+          </>
+        ),
+        key: aboutCard(card),
         detail: orderSaved
           ? card.title
           : "Its place at the top of the column was not saved, so it may show lower down.",
@@ -532,7 +598,7 @@ export const BoardPage = ({ org }: { org: string }) => {
       })
     },
     onError: (error) =>
-      toast({ tone: "error", title: "The issue was not created", detail: error.message }),
+      toast({ tone: "error", title: "Could not create the issue", detail: error.message }),
   })
 
   const update = useMutation({
@@ -545,6 +611,7 @@ export const BoardPage = ({ org }: { org: string }) => {
       toast({
         tone: "success",
         title: done,
+        key: aboutCard(card),
         ...(undo === undefined
           ? {}
           : { action: { label: "Undo", run: () => update.mutate({ ...undo, issue }) } }),
@@ -553,7 +620,8 @@ export const BoardPage = ({ org }: { org: string }) => {
     onError: (error, variables) =>
       toast({
         tone: "error",
-        title: `Couldn't change ${variables.issue}`,
+        title: `Could not change ${variables.issue}`,
+        key: `card:${variables.issue}`,
         detail: error.message,
         action: { label: "Retry", run: () => update.mutate(variables) },
       }),
@@ -630,17 +698,36 @@ export const BoardPage = ({ org }: { org: string }) => {
   }
 
   // Opening the panel adds a history entry, so Back closes it. Closing goes back to that entry
-  // only if the board's address is unchanged since; otherwise it would undo a new filter.
+  // only if the board's address is unchanged since; otherwise it would undo a new filter. A card
+  // that arrives through a new entry, from the board or from elsewhere such as the command
+  // palette, counts as opened here; one in the address on load, or reached with Back or Forward,
+  // does not, since the entry before it may not be this board.
   const pushedFrom = useRef<string | null>(null)
   const boardAddress = () => {
     const next = new URLSearchParams(window.location.search)
     next.delete(CARD_PARAM)
     return next.toString()
   }
-  const openPanel = (card: BoardCard) => {
-    if (selectedRef === null) pushedFrom.current = boardAddress()
-    setCardParam(cardRef(card), selectedRef !== null)
-  }
+  const shownRef = useRef(selectedRef)
+  // The address Back or Forward last went to. Captured, so it is known before the router's own
+  // listener re-renders the board and runs the effect below.
+  const popped = useRef<string | null>(null)
+  useEffect(() => {
+    const listener = () => {
+      popped.current = window.location.href
+    }
+    window.addEventListener("popstate", listener, { capture: true })
+    return () => window.removeEventListener("popstate", listener, { capture: true })
+  }, [])
+  useEffect(() => {
+    const previous = shownRef.current
+    shownRef.current = selectedRef
+    const viaHistory = popped.current === window.location.href
+    popped.current = null
+    if (selectedRef === null) pushedFrom.current = null
+    else if (previous === null && !viaHistory) pushedFrom.current = boardAddress()
+  })
+  const openPanel = (card: BoardCard) => setCardParam(cardRef(card), selectedRef !== null)
   const closePanel = () => {
     const key = selectedCard?.key
     if (pushedFrom.current !== null && pushedFrom.current === boardAddress()) {
@@ -670,7 +757,11 @@ export const BoardPage = ({ org }: { org: string }) => {
     setCardParam(null, true)
   })
 
-  const openComposer = (column: string) => {
+  // Escape or Cancel returns focus to the control that opened the composer; without one, such as
+  // after the N key, to the column's + button.
+  const composerOpener = useRef<HTMLElement | null>(null)
+  const openComposer = (column: string, opener: HTMLElement | null = null) => {
+    composerOpener.current = opener
     setComposing(column)
     if (collapsed.has(column)) toggleCollapsed(column)
   }
@@ -690,14 +781,15 @@ export const BoardPage = ({ org }: { org: string }) => {
       { replace: true },
     )
 
-  // Single-key shortcuts; see ShortcutsDialog for the list.
+  // Single-key shortcuts; BOARD_SHORTCUTS lists them.
+  usePageShortcuts(BOARD_SHORTCUTS)
   const shortcuts = useRef<(event: KeyboardEvent) => void>(() => {})
   shortcuts.current = (event) => {
     if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return
     if (isTypingTarget(event.target) || shortcutsOpen || dragging) return
     if (document.querySelector("dialog[open]") !== null) return
     const key = event.key
-    if (key === "?") setShortcutsOpen(true)
+    if (key === "?") openShortcuts()
     else if (key === "/") searchInput.current?.focus()
     else if (key === "r" || key === "R") void board.refetch()
     else if (key === "m" || key === "M") toggleMine()
@@ -781,16 +873,62 @@ export const BoardPage = ({ org }: { org: string }) => {
     composerRepo !== null && creatableRepos.includes(composerRepo)
       ? composerRepo
       : creatableRepos[0]
+  const loadedAt = new Date(board.dataUpdatedAt).toISOString()
+  // After a failed refresh the cards are older than the last attempt, so say when they were read.
+  const refreshFailed = data !== undefined && board.isError && !allFailed
+  const updated =
+    data === undefined
+      ? null
+      : board.isFetching
+        ? "Refreshing…"
+        : refreshFailed
+          ? `Refresh failed, last loaded ${relativeTime(loadedAt, now)}`
+          : `Updated ${relativeTime(loadedAt, now)}`
+  // On a phone the board's options sit beside Filters, which leaves the organization's name room.
+  const filtersShown = data !== undefined && !allFailed
+
+  usePageCommands(
+    data === undefined || allFailed
+      ? NO_COMMANDS
+      : boardCommands({
+          cards: data.cards,
+          filters,
+          newIssueColumn:
+            canCreate && firstCreatable !== undefined ? columnTitle(firstCreatable.key) : null,
+          newIssue: () => {
+            if (firstCreatable !== undefined) openComposer(firstCreatable.key)
+          },
+          toggleMine,
+          setFilter: (filter, values) =>
+            setParams((current) => withFilter(current, filter, values), { replace: true }),
+          clearFilters,
+          // The command menu gives focus back to where it was as it closes, after this runs.
+          focusSearch: () => window.setTimeout(() => searchInput.current?.focus()),
+          refresh: () => void board.refetch(),
+          updated: updated ?? "",
+        }),
+  )
 
   return (
     <RepoPaletteProvider repos={data?.repos ?? selected}>
-      <main className="flex h-[calc(100dvh-3.5rem-1px)] min-h-0 flex-col">
+      <main className="flex h-[calc(100dvh-3.5rem-1px-var(--tab-bar-height))] min-h-0 flex-col">
         <h1 className="sr-only">Board for {orgTitle}</h1>
-        <div className="flex items-center gap-3 px-4 pt-4 pb-3 sm:px-6">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
+        {/*
+          One row on a wide screen: scope, search and filters, then the board's actions. Narrower,
+          the filters take a row of their own under the scope and actions; on a phone the board's
+          options move down beside them.
+        */}
+        <div
+          className={`grid items-center gap-x-2 gap-y-2.5 px-4 pt-3 pb-3 sm:px-6 ${
+            filtersShown
+              ? "grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_auto_auto] min-[84rem]:grid-cols-[auto_minmax(0,1fr)_auto_auto]"
+              : "grid-cols-[minmax(0,1fr)_auto]"
+          }`}
+        >
+          <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-1.5">
             <OrgSwitcher org={org} view="board" />
-            {!orgMissing && (
-              <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-700">
+            {repos.data !== undefined && (
+              <span aria-hidden="true" className="text-zinc-300 max-sm:hidden dark:text-zinc-700">
                 /
               </span>
             )}
@@ -804,50 +942,50 @@ export const BoardPage = ({ org }: { org: string }) => {
               />
             )}
           </div>
-          <div className="flex shrink-0 items-center gap-1">
-            {!online ? (
+          {filtersShown && (
+            <>
+              <BoardFiltersBar
+                cards={data.cards}
+                filters={filters}
+                setParams={setParams}
+                searchInput={searchInput}
+                shown={shownCount}
+                total={data.cards.length}
+                className="col-start-1 row-start-2 sm:col-span-3 min-[84rem]:col-span-1 min-[84rem]:col-start-2 min-[84rem]:row-start-1 min-[84rem]:ml-2"
+              />
+              <BoardMenu
+                updated={updated}
+                refreshing={board.isFetching}
+                onRefresh={() => void board.refetch()}
+                onShortcuts={openShortcuts}
+                className="col-start-2 row-start-2 self-start sm:row-start-1 sm:self-center min-[84rem]:col-start-3"
+              />
+            </>
+          )}
+          <div
+            className={`col-start-2 row-start-1 flex shrink-0 items-center justify-end gap-1 ${
+              filtersShown ? "sm:col-start-3 min-[84rem]:col-start-4" : ""
+            }`}
+          >
+            {!online && (
               <span className="mr-1 inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-500/15 dark:text-amber-200">
                 <span aria-hidden="true" className="size-1.5 rounded-full bg-amber-500" />
                 Offline
               </span>
-            ) : (
-              data !== undefined && (
-                <span
-                  className="mr-1 hidden text-xs text-zinc-500 lg:inline dark:text-zinc-400"
-                  title={new Date(board.dataUpdatedAt).toLocaleString()}
-                >
-                  {board.isFetching
-                    ? "Refreshing…"
-                    : `Updated ${relativeTime(new Date(board.dataUpdatedAt).toISOString(), now)}`}
-                </span>
-              )
             )}
-            {hasSelection && (
-              <button
-                type="button"
-                onClick={() => void board.refetch()}
-                disabled={board.isFetching}
-                aria-label="Refresh the board"
-                title="Refresh (R)"
-                className={`${buttonClass.icon} max-sm:hidden`}
-              >
-                <RefreshIcon className={`size-4 ${board.isFetching ? "animate-spin" : ""}`} />
-              </button>
+            {hasSelection && !filtersShown && (
+              <BoardMenu
+                updated={updated}
+                refreshing={board.isFetching}
+                onRefresh={() => void board.refetch()}
+                onShortcuts={openShortcuts}
+              />
             )}
-            <button
-              type="button"
-              onClick={() => setShortcutsOpen(true)}
-              aria-label="Keyboard shortcuts"
-              title="Keyboard shortcuts (?)"
-              className={`${buttonClass.icon} max-sm:hidden`}
-            >
-              <KeyboardIcon />
-            </button>
             {canCreate && firstCreatable !== undefined && (
               <button
                 type="button"
-                onClick={() => openComposer(firstCreatable.key)}
-                className={`${buttonClass.primary} ml-1`}
+                onClick={(event) => openComposer(firstCreatable.key, event.currentTarget)}
+                className={`${buttonClass.primary} ${touchTarget} ml-1 max-sm:w-8 max-sm:px-0`}
                 title="New issue (N)"
               >
                 <PlusIcon className="size-4" />
@@ -860,40 +998,58 @@ export const BoardPage = ({ org }: { org: string }) => {
           </p>
         </div>
 
-        {data !== undefined && !allFailed && (
-          <BoardFiltersBar
-            cards={data.cards}
-            filters={filters}
-            setParams={setParams}
-            searchInput={searchInput}
-            shown={shownCount}
-            total={data.cards.length}
-          />
-        )}
-
         {repos.isError && !orgMissing && (
-          <Notice tone="error">
-            Could not load the repositories of {org}: {repos.error.message}
-          </Notice>
+          <ErrorNotice
+            tone={filtersShown ? "warning" : "error"}
+            title={`Could not load the repositories of ${orgTitle}`}
+            onRetry={() => void repos.refetch()}
+            retrying={repos.isFetching}
+            className="mx-4 mb-3 sm:mx-6"
+          >
+            {filtersShown
+              ? `${sentence(repos.error.message)} The board still shows its cards; choosing repositories waits until they load.`
+              : repos.error.message}
+          </ErrorNotice>
+        )}
+        {refreshFailed && (
+          <ErrorNotice
+            tone="warning"
+            title="Could not refresh the board"
+            onRetry={() => void board.refetch()}
+            retrying={board.isFetching}
+            className="mx-4 mb-3 sm:mx-6"
+          >
+            {sentence(board.error?.message ?? "")} The cards shown were loaded{" "}
+            <time dateTime={loadedAt} title={absoluteTime(loadedAt)}>
+              {relativeTime(loadedAt, now)}
+            </time>
+            .
+          </ErrorNotice>
         )}
         {failures.length > 0 &&
           failures.length < (data?.repos.length ?? 0) &&
           dismissedFailures !== failureId && (
-            <Notice tone="warning" onDismiss={() => setDismissedFailures(failureId)}>
-              Some repositories did not load:{" "}
-              {failures.map((failure) => `${failure.repo} (${failure.message})`).join(", ")}.{" "}
-              <button type="button" onClick={removeFailed} className="font-medium underline">
-                Remove {failures.length === 1 ? "it" : "them"} from the board
-              </button>
-            </Notice>
+            <ErrorNotice
+              tone="warning"
+              title="Could not load some repositories"
+              onRetry={() => void board.refetch()}
+              retrying={board.isFetching}
+              className="mx-4 mb-3 sm:mx-6"
+            >
+              <FailedRepos
+                failures={failures}
+                onRemove={removeFailed}
+                onDismiss={() => setDismissedFailures(failureId)}
+              />
+            </ErrorNotice>
           )}
         {data !== undefined && !data.viewerCanArrange && (
-          <Notice tone="info">
+          <Notice>
             You can view this board. Only members of {data.org} can move cards and add issues.
           </Notice>
         )}
         {onlyDefaultColumns && (
-          <Notice tone="info">
+          <Notice>
             <span className="flex items-center gap-1.5">
               <ColumnsIcon className="size-4 text-zinc-400" />
               Add exclusive labels such as{" "}
@@ -903,124 +1059,145 @@ export const BoardPage = ({ org }: { org: string }) => {
           </Notice>
         )}
 
-        {orgMissing ? (
-          <OrgNotFound org={org} />
-        ) : !hasSelection ? (
-          repos.isPending ? (
-            <div className="min-h-0 flex-1">
-              <BoardSkeleton />
-            </div>
-          ) : repos.isError ? null : (
-            <EmptyBoard onChoose={() => setPickerOpen(true)} />
-          )
-        ) : data === undefined ? (
-          board.isError ? (
-            <Problem
-              title="The board did not load"
-              detail={board.error.message}
-              actions={
-                <button
-                  type="button"
-                  onClick={() => void board.refetch()}
-                  className={buttonClass.primary}
-                >
-                  Try again
-                </button>
+        {/* The board area, under the toolbar: on a wide screen the card panel sits inside it. */}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {orgMissing ? (
+            <OrgNotFound org={org} />
+          ) : !hasSelection ? (
+            repos.isPending ? (
+              <div className="min-h-0 flex-1">
+                <BoardSkeleton />
+              </div>
+            ) : repos.isError ? null : (
+              <EmptyBoard onChoose={() => setPickerOpen(true)} />
+            )
+          ) : data === undefined ? (
+            board.isError ? (
+              <ErrorNotice
+                title="Could not load the board"
+                onRetry={() => void board.refetch()}
+                retrying={board.isFetching}
+                className="mx-4 sm:mx-6"
+              >
+                {board.error.message}
+              </ErrorNotice>
+            ) : (
+              <div className="min-h-0 flex-1">
+                <BoardSkeleton />
+              </div>
+            )
+          ) : allFailed ? (
+            <ErrorNotice
+              title={
+                data.failedRepos.length === 1
+                  ? `Could not load ${data.failedRepos[0]?.repo}`
+                  : "Could not load any of the repositories"
               }
-            />
+              onRetry={() => void board.refetch()}
+              retrying={board.isFetching}
+              className="mx-4 sm:mx-6"
+            >
+              <FailedRepos
+                failures={data.failedRepos}
+                named={data.failedRepos.length === 1}
+                onRemove={removeFailed}
+              />
+            </ErrorNotice>
+          ) : filtered && shownCount === 0 && data.cards.length > 0 ? (
+            <NoMatches query={boardFilters.text.trim()} onClear={clearFilters} />
           ) : (
             <div className="min-h-0 flex-1">
-              <BoardSkeleton />
-            </div>
-          )
-        ) : allFailed ? (
-          <ReposFailed
-            failures={data.failedRepos}
-            onRemove={removeFailed}
-            onRetry={() => void board.refetch()}
-          />
-        ) : filtered && shownCount === 0 && data.cards.length > 0 ? (
-          <NoMatches query={boardFilters.text.trim()} onClear={clearFilters} />
-        ) : (
-          <div className="min-h-0 flex-1">
-            <BoardColumns
-              board={data}
-              saving={saving}
-              panelOpen={selectedCard !== undefined}
-              visible={visible}
-              filtered={filtered}
-              viewer={viewer.login}
-              selectedKey={selectedCard?.key ?? null}
-              collapsed={collapsed}
-              onToggleCollapsed={toggleCollapsed}
-              composing={canCreate ? composing : null}
-              onCompose={openComposer}
-              canCreate={canCreate}
-              composer={
-                composing !== null &&
-                composerTarget !== undefined && (
-                  <CardComposer
-                    columnTitle={columnTitle(composing)}
-                    repos={creatableRepos}
-                    repo={composerTarget}
-                    onRepoChange={(repo) => {
-                      setComposerRepo(repo)
-                      storage.write(composerRepoKey(org), repo)
-                    }}
-                    onClose={() => {
-                      const column = composing
-                      setComposing(null)
-                      // Focus goes back to the column's + button, where the composer was opened.
-                      requestAnimationFrame(() =>
-                        document
-                          .querySelector<HTMLElement>(
-                            `button[aria-label="New issue in ${CSS.escape(columnTitle(column))}"]`,
-                          )
-                          ?.focus(),
-                      )
-                    }}
-                    onCreate={async (repo, title) => {
-                      if (!navigator.onLine) {
-                        offlineNotice(
-                          "The new issue is created in Forgejo once you are back online.",
+              <BoardColumns
+                board={data}
+                saving={saving}
+                panelOpen={selectedCard !== undefined}
+                visible={visible}
+                filtered={filtered}
+                viewer={viewer.login}
+                selectedKey={selectedCard?.key ?? null}
+                collapsed={collapsed}
+                onToggleCollapsed={toggleCollapsed}
+                composing={canCreate ? composing : null}
+                onCompose={openComposer}
+                canCreate={canCreate}
+                composer={
+                  composing !== null &&
+                  composerTarget !== undefined && (
+                    <CardComposer
+                      key={composing}
+                      columnTitle={columnTitle(composing)}
+                      draft={drafts.read(titleDraftKey(org, composing))}
+                      onDraftChange={(title) => drafts.write(titleDraftKey(org, composing), title)}
+                      repos={creatableRepos}
+                      repo={composerTarget}
+                      onRepoChange={(repo) => {
+                        setComposerRepo(repo)
+                        storage.write(composerRepoKey(org), repo)
+                      }}
+                      onClose={() => {
+                        const column = composing
+                        const opener = composerOpener.current
+                        setComposing(null)
+                        requestAnimationFrame(() =>
+                          (opener?.isConnected
+                            ? opener
+                            : document.querySelector<HTMLElement>(
+                                `button[aria-label="New issue in ${CSS.escape(columnTitle(column))}"]`,
+                              )
+                          )?.focus(),
                         )
-                      }
-                      await create.mutateAsync({ org: data.org, repo, title, column: composing })
-                    }}
-                  />
-                )
-              }
-              actions={actions}
-              hrefBase={hrefBase}
-              onMove={(cardMove) => startMove(cardMove)}
-              onDragChange={(isDragging) => {
-                setDragging(isDragging)
-                if (isDragging) void queryClient.cancelQueries({ queryKey: boardKey })
-              }}
-            />
-          </div>
-        )}
+                      }}
+                      onCreate={async (repo, title) => {
+                        if (!navigator.onLine) {
+                          offlineNotice(
+                            "The new issue is created in Forgejo once you are back online.",
+                          )
+                        }
+                        await create.mutateAsync({ org: data.org, repo, title, column: composing })
+                      }}
+                    />
+                  )
+                }
+                actions={actions}
+                hrefBase={hrefBase}
+                onMove={(cardMove) => startMove(cardMove)}
+                onDragChange={(isDragging) => {
+                  setDragging(isDragging)
+                  if (isDragging) void queryClient.cancelQueries({ queryKey: boardKey })
+                }}
+              />
+            </div>
+          )}
 
-        {data !== undefined && selectedCard !== undefined && (
-          <CardPanel
-            org={data.org}
-            card={selectedCard}
-            columns={data.columns}
-            viewer={viewer.login}
-            movable={data.viewerCanArrange && selectedCard.readOnlyReason === null}
-            position={{ index: selectedIndex, count: selectedColumn.length }}
-            onStep={step}
-            onMoveTo={(column) => moveToTop(selectedCard, column)}
-            onToggleAssigned={() => toggleAssigned(selectedCard)}
-            onUpdate={(change) => update.mutate(change)}
-            onCommented={putCard}
-            holdReads={holdReads}
-            updating={update.isPending}
-            onCopyLink={() => copyLink(selectedCard)}
-            onClose={closePanel}
-          />
-        )}
-        <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+          {data !== undefined && selectedCard !== undefined && (
+            <CardPanel
+              org={data.org}
+              card={selectedCard}
+              columns={data.columns}
+              viewer={viewer.login}
+              movable={data.viewerCanArrange && selectedCard.readOnlyReason === null}
+              position={{
+                index: selectedIndex,
+                count: selectedColumn.length,
+                hiddenByFilters: !visible(selectedCard),
+              }}
+              onStep={step}
+              onMoveTo={(column) => moveToTop(selectedCard, column)}
+              onToggleAssigned={() => toggleAssigned(selectedCard)}
+              onUpdate={(change) => update.mutate(change)}
+              onCommented={putCard}
+              holdReads={holdReads}
+              updating={update.isPending}
+              onCopyLink={() => copyLink(selectedCard)}
+              onClose={closePanel}
+            />
+          )}
+        </div>
+        <ShortcutsDialog
+          open={shortcutsOpen}
+          onClose={() => setShortcutsOpen(false)}
+          returnFocus={shortcutsOpener}
+        />
       </main>
     </RepoPaletteProvider>
   )

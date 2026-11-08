@@ -1,4 +1,4 @@
-export type LegendItem = {
+type LegendItem = {
   readonly label: string
   readonly color: string
   readonly shape?: "square" | "line"

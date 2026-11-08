@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest"
 import {
+  boardCardHref,
   completion,
   epicSummary,
   incompleteNotice,
   readEpicFilters,
+  readOpenEpics,
   visibleEpics,
+  withEpicOpen,
 } from "../src/client/epics/epics-view.ts"
 import type { Epic } from "../src/shared/api.ts"
 
@@ -83,5 +86,57 @@ describe("epics view", () => {
   it("handles empty progress without dividing by zero", () => {
     expect(completion({ total: 0, done: 0 })).toBe(0)
     expect(completion({ total: 3, done: 1 })).toBe(33)
+  })
+})
+
+describe("boardCardHref", () => {
+  const card = (href: string | null) => {
+    if (href === null) return null
+    const url = new URL(href, "https://tabulo.example")
+    return {
+      path: url.pathname,
+      repos: url.searchParams.get("repos"),
+      card: url.searchParams.get("card"),
+    }
+  }
+
+  it("opens an open issue of a chosen repository in the board's panel", () => {
+    const open = { repo: "acme/Web", number: 12, state: "open", kind: "issue" } as const
+    expect(card(boardCardHref("Acme", ["api", "web"], open))).toEqual({
+      path: "/board/Acme",
+      repos: "api,web",
+      card: "Web#12",
+    })
+    expect(card(boardCardHref("acme", ["api"], { repo: "api", number: 3, state: "open" }))).toEqual(
+      { path: "/board/acme", repos: "api", card: "api#3" },
+    )
+  })
+
+  it("has no board address for what the board may not show", () => {
+    const issue = { repo: "acme/web", number: 12, state: "open", kind: "issue" } as const
+    expect(boardCardHref("acme", ["api"], issue)).toBeNull()
+    expect(boardCardHref("acme", ["web"], { ...issue, repo: "other/web" })).toBeNull()
+    expect(boardCardHref("acme", ["web"], { ...issue, state: "closed" })).toBeNull()
+    expect(boardCardHref("acme", ["web"], { ...issue, kind: "pull" })).toBeNull()
+  })
+})
+
+describe("open epics in the address", () => {
+  it("adds and removes an epic while keeping the other parameters", () => {
+    const start = new URLSearchParams("repos=api,web&q=search")
+    const one = withEpicOpen(start, "acme/api#1", true)
+    const two = withEpicOpen(one, "acme/web#2", true)
+    expect([...readOpenEpics(two)]).toEqual(["acme/api#1", "acme/web#2"])
+    expect(two.get("repos")).toBe("api,web")
+    expect(two.get("q")).toBe("search")
+    expect([...readOpenEpics(withEpicOpen(two, "acme/api#1", false))]).toEqual(["acme/web#2"])
+    expect(start.has("open")).toBe(false)
+  })
+
+  it("drops the parameter when no epic is open, and opens an epic once", () => {
+    const one = withEpicOpen(new URLSearchParams(), "acme/api#1", true)
+    expect(withEpicOpen(one, "acme/api#1", true).get("open")).toBe("acme/api#1")
+    expect(withEpicOpen(one, "acme/api#1", false).has("open")).toBe(false)
+    expect(readOpenEpics(new URLSearchParams("open=,")).size).toBe(0)
   })
 })

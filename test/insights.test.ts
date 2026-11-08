@@ -101,6 +101,7 @@ const insights = (loaded: ReadonlyArray<RepoActivity>, fields: Partial<InsightsI
     loaded,
     failedRepos: [],
     incomplete: [],
+    statusScope: "Status/",
     ...fields,
   })
 
@@ -522,5 +523,24 @@ describe("buildActivity", () => {
       longestStreak: 0,
       busiestDay: null,
     })
+  })
+})
+
+describe("top labels", () => {
+  it("counts labels on open issues and leaves out the board's status labels", () => {
+    const labelled = (number: number, names: ReadonlyArray<string>) =>
+      issue(number, { labels: names.map((name) => ({ name, color: "ee0701" })) })
+    const result = insights(
+      [
+        activity({
+          open: [
+            labelled(1, ["Kind/Bug", "Status/In Progress"]),
+            labelled(2, ["Kind/Bug", "Status/Review"]),
+          ],
+        }),
+      ],
+      { statusScope: "Status/" },
+    )
+    expect(result.labels).toEqual([{ name: "Kind/Bug", color: "#ee0701", count: 2 }])
   })
 })

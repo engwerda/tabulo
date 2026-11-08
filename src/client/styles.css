@@ -7,7 +7,10 @@
 /*
  * Chart colors, validated with the dataviz palette checks against zinc-50 and white (light) and
  * zinc-950 and zinc-900 (dark). Series follow the slot order; the first three also stay apart
- * when every pair can touch, as in a scatter plot.
+ * when every pair can touch, as in a scatter plot. Positive and negative (CI passed and failed)
+ * also differ in lightness, at least 2:1 in luminance and 2:1 under simulated protanopia and
+ * deuteranopia, so they never rely on hue alone; the failed one is the louder against the
+ * surface. Neutral is the third outcome (cancelled or skipped), apart from both.
  */
 :root {
   --chart-1: #615fff;
@@ -16,10 +19,11 @@
   --chart-4: #0084d1;
   --chart-5: #ff2056;
   --chart-6: #8e51ff;
-  --chart-grid: #e4e4e7;
+  --chart-grid: #ececef;
   --chart-axis: #71717b;
-  --chart-positive: #008236;
-  --chart-negative: #e7000b;
+  --chart-positive: #00a63e;
+  --chart-negative: #9f0712;
+  --chart-neutral: #71717b;
 }
 
 .dark {
@@ -31,8 +35,9 @@
   --chart-6: #8e51ff;
   --chart-grid: #27272a;
   --chart-axis: #9f9fa9;
-  --chart-positive: #00a63e;
-  --chart-negative: #ff6467;
+  --chart-positive: #008236;
+  --chart-negative: #ffa2a2;
+  --chart-neutral: #8b8b95;
 }
 
 @theme inline {
@@ -46,11 +51,17 @@
   --color-chart-axis: var(--chart-axis);
   --color-chart-positive: var(--chart-positive);
   --color-chart-negative: var(--chart-negative);
+  --color-chart-neutral: var(--chart-neutral);
 }
 
 @theme {
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
-  --shadow-card: 0 1px 2px 0 rgb(24 24 27 / 0.05), 0 1px 1px -1px rgb(24 24 27 / 0.04);
+  --font-mono:
+    ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  /* The smallest text: chips, keys, chart axes, and eyebrows. Nothing goes below it. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --shadow-card: 0 1px 2px 0 rgb(24 24 27 / 0.04);
   --shadow-lift: 0 12px 28px -8px rgb(24 24 27 / 0.22), 0 4px 10px -4px rgb(24 24 27 / 0.12);
   --shadow-pop: 0 16px 40px -12px rgb(24 24 27 / 0.28), 0 2px 6px -2px rgb(24 24 27 / 0.1);
   --animate-fade-in: fade-in 140ms ease-out;
@@ -60,6 +71,7 @@
   --animate-shimmer: shimmer 1.4s ease-in-out infinite;
   --animate-palette-in: palette-in 140ms cubic-bezier(0.16, 1, 0.3, 1);
   --animate-palette-fade: palette-fade 120ms ease-out;
+  --animate-sketch-in: sketch-in 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 
   @keyframes fade-in {
     from {
@@ -95,10 +107,26 @@
       transform: translateY(-6px) scale(0.98);
     }
   }
+  @keyframes sketch-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
   @keyframes palette-fade {
     from {
       opacity: 0;
     }
+  }
+}
+
+/* The phone's bottom tab bar, which the content and any full-height view leave room for. */
+:root {
+  --tab-bar-height: 0px;
+}
+@media (width < 48rem) {
+  :root {
+    --tab-bar-height: calc(3.5rem + env(safe-area-inset-bottom));
   }
 }
 
@@ -109,7 +137,8 @@
     overflow-x: clip;
   }
   html {
-    font-feature-settings: "cv11", "ss01";
+    /* Inter's open digits and single-storey a, and a straight-legged l that never reads as 1. */
+    font-feature-settings: "cv11", "ss01", "cv05";
     -webkit-tap-highlight-color: transparent;
   }
   body {
@@ -129,8 +158,10 @@
   ::after {
     /* biome-ignore lint/complexity/noImportantStyles: reduced motion must win over every animation */
     animation-duration: 1ms !important;
+    /* No transition at all, rather than a 1ms one: code that measures layout right after a
+       change must see the final state, and nothing waits on transitionend. */
     /* biome-ignore lint/complexity/noImportantStyles: reduced motion must win over every transition */
-    transition-duration: 1ms !important;
+    transition-duration: 0s !important;
   }
 }
 
@@ -167,12 +198,13 @@
 .prose-forgejo li.task-list-item {
   @apply -ml-5 list-none;
 }
-/* Task list boxes read as status marks, not as disabled inputs. */
+/* Task list boxes read as status marks, not as inputs. */
 .prose-forgejo input[type="checkbox"] {
   @apply mr-1.5 inline-grid size-3.5 appearance-none place-content-center rounded border border-zinc-300 bg-white align-[-2px] dark:border-zinc-600 dark:bg-zinc-900;
 }
+/* Grey, not the indigo of real controls: these record state in Forgejo and cannot be ticked here. */
 .prose-forgejo input[type="checkbox"]:checked {
-  @apply border-indigo-600 bg-indigo-600 dark:border-indigo-500 dark:bg-indigo-500;
+  @apply border-zinc-500 bg-zinc-500 dark:border-zinc-500 dark:bg-zinc-500;
 }
 .prose-forgejo input[type="checkbox"]:checked::after {
   content: "";

@@ -2,10 +2,8 @@ import { useQuery } from "@tanstack/react-query"
 import { useEffect, useRef } from "react"
 import { useSearchParams } from "wouter"
 import { fetchOrgRepos } from "../api.ts"
+import { firstVisitChoice } from "./first-visit.ts"
 import { forgetRepos, readRememberedRepos, rememberScope } from "./remembered.ts"
-
-/** The server's limit on repositories per view, and the most a first visit chooses by itself. */
-const MAX_REPOS = 20
 
 export type RepoSelection = {
   /** The chosen repository names, from the `repos` search parameter. */
@@ -13,6 +11,11 @@ export type RepoSelection = {
   /** `selected` joined with commas: a stable value for query keys and effect dependencies. */
   readonly selection: string
   readonly setSelected: (repos: ReadonlyArray<string>) => void
+  /**
+   * True while an empty selection is about to be filled on a first visit, mostly while the
+   * organization's repositories load: the view shows its loading state, not "none chosen".
+   */
+  readonly resolving: boolean
 }
 
 /**
@@ -32,15 +35,16 @@ export const useRepoSelection = (org: string): RepoSelection => {
   // selection is the user's choice. An organization never visited with few enough active
   // repositories shows all of them, so a first visit lands on the view instead of a chooser.
   const restoredFor = useRef<string | null>(null)
+  const pending =
+    selection === "" && restoredFor.current !== org
+      ? firstVisitChoice(readRememberedRepos(org), orgRepos)
+      : ""
+  const resolving = pending === undefined ? !repos.isError : pending !== ""
   useEffect(() => {
-    const firstVisit = restoredFor.current !== org
-    if (firstVisit && selection === "") {
-      const remembered = readRememberedRepos(org)
-      if (remembered === null && orgRepos === undefined) return
+    if (restoredFor.current !== org && selection === "") {
+      const choice = firstVisitChoice(readRememberedRepos(org), orgRepos)
+      if (choice === undefined) return
       restoredFor.current = org
-      const active = (orgRepos ?? []).filter((repo) => !repo.archived).map((repo) => repo.name)
-      const fallback = active.length > 0 && active.length <= MAX_REPOS ? active.join(",") : ""
-      const choice = remembered ?? fallback
       if (choice !== "") {
         setParams(
           (current) => {
@@ -70,5 +74,5 @@ export const useRepoSelection = (org: string): RepoSelection => {
     )
   }
 
-  return { selected, selection, setSelected }
+  return { selected, selection, setSelected, resolving }
 }

@@ -4,6 +4,7 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   memo,
+  type ReactNode,
   type RefObject,
   useMemo,
   useRef,
@@ -12,12 +13,12 @@ import {
 import type { BoardCard, BoardColumn } from "../../shared/api.ts"
 import { AvatarStack } from "../Avatar.tsx"
 import { absoluteTime, shortAge } from "../format.ts"
+import { IssueRef } from "../ui/IssueRef.tsx"
 import {
   ArchiveIcon,
   CheckIcon,
   CommentIcon,
   ExternalIcon,
-  GripIcon,
   IssueClosedIcon,
   LinkIcon,
   MilestoneIcon,
@@ -27,7 +28,7 @@ import {
   UserPlusIcon,
 } from "../ui/icons.tsx"
 import { LabelList } from "../ui/LabelChip.tsx"
-import { buttonClass, Popover } from "../ui/primitives.tsx"
+import { Popover, touchTarget } from "../ui/primitives.tsx"
 import { useRepoColor } from "../ui/repo-palette.tsx"
 
 /**
@@ -41,22 +42,23 @@ export type CardActions = {
   readonly copyLink: (card: BoardCard) => void
 }
 
-export const RepoTag = ({ repo }: { repo: string }) => {
+/** An issue's reference after its repository's color mark. */
+export const RepoIssueRef = ({ repo, number }: { repo: string; number: number }) => {
   const color = useRepoColor(repo)
   return (
     <span className="flex min-w-0 items-center gap-1.5">
       <span
         aria-hidden="true"
-        className="size-2 shrink-0 rounded-[3px]"
+        className="size-2 shrink-0 rounded-[2px]"
         style={{ backgroundColor: color }}
       />
-      <span className="truncate">{repo}</span>
+      <IssueRef repo={repo} number={number} className="min-w-0 truncate" />
     </span>
   )
 }
 
 const menuItemClass =
-  "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-zinc-700 transition hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none dark:text-zinc-300 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
+  "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-zinc-700 transition pointer-coarse:min-h-11 hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none dark:text-zinc-300 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
 
 const CardMenu = ({
   card,
@@ -86,7 +88,7 @@ const CardMenu = ({
     onOpenChange={onOpenChange}
     returnFocus={returnFocus}
     accessibleLabel={`Actions for ${card.repo}#${card.number}`}
-    triggerClass={`${buttonClass.iconSmall} relative z-10 [@media(pointer:coarse)]:size-9`}
+    triggerClass={`-my-0.5 inline-flex size-6 items-center justify-center rounded-md text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 ${touchTarget}`}
     triggerTabIndex={-1}
     panelClass="w-56 p-1"
     label={
@@ -155,7 +157,7 @@ const CardMenu = ({
         {movable && (
           <>
             <div className="my-1 border-t border-zinc-100 dark:border-zinc-800" />
-            <p className="px-2 pt-1 pb-1 text-[0.6875rem] font-semibold tracking-wide text-zinc-400 uppercase">
+            <p className="px-2 pt-1 pb-1 text-2xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
               Move to
             </p>
             {columns.map((column) => {
@@ -184,6 +186,18 @@ const CardMenu = ({
     )}
   </Popover>
 )
+
+/** A label's name in a menu, with its scope in a lighter tone as `LabelChip` shows it. */
+export const LabelName = ({ name }: { name: string }) => {
+  const slash = name.lastIndexOf("/")
+  if (slash <= 0) return name
+  return (
+    <>
+      <span className="text-zinc-500 dark:text-zinc-400">{name.slice(0, slash + 1)}</span>
+      {name.slice(slash + 1)}
+    </>
+  )
+}
 
 /** A column's mark, always in the same 16px box so lists of columns line up. */
 export const ColumnDot = ({ column }: { column: BoardColumn }) => (
@@ -221,8 +235,11 @@ const ColumnMark = ({ column }: { column: BoardColumn }) => {
 const CardReference = ({ card, showRepo }: { card: BoardCard; showRepo: boolean }) => (
   <>
     {card.state === "closed" && <span className="sr-only">Closed, </span>}
-    {showRepo && <RepoTag repo={card.repo} />}
-    <span className="shrink-0 tabular-nums">#{card.number}</span>
+    {showRepo ? (
+      <RepoIssueRef repo={card.repo} number={card.number} />
+    ) : (
+      <span className="shrink-0 tabular-nums">#{card.number}</span>
+    )}
   </>
 )
 
@@ -262,39 +279,59 @@ const focusNeighbour = (link: HTMLElement, key: string) => {
   return false
 }
 
-/** The card's face: shared by the sortable card and the drag overlay. */
-const CardFace = ({ card }: { card: BoardCard }) => {
+/**
+ * The card's face, shared by the sortable card and the drag overlay: the issue's reference and
+ * assignees, its title, then one quiet line of labels, milestone, comments, and age.
+ */
+const CardFace = ({
+  card,
+  reference,
+  tools,
+}: {
+  card: BoardCard
+  reference: ReactNode
+  /** Controls beside the assignees, such as the card's menu. */
+  tools?: ReactNode
+}) => {
   const closed = card.state === "closed"
   const age = closed && card.closedAt !== null ? card.closedAt : card.updatedAt
   return (
     <>
+      <div className="flex h-5 items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+        {reference}
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          {tools}
+          {card.assignees.length > 0 && <AvatarStack people={card.assignees} size="xs" />}
+        </span>
+      </div>
       <p
-        className={`text-[0.8125rem] leading-5 font-medium break-words ${
+        className={`mt-1 text-sm leading-5 font-medium break-words ${
           closed ? "text-zinc-500 dark:text-zinc-400" : "text-zinc-900 dark:text-zinc-100"
         }`}
       >
         {card.title}
       </p>
-      <LabelList labels={card.labels} className="mt-2" />
-      <div className="mt-2.5 flex items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400">
-        {card.milestone !== null && (
-          <span title={`Milestone ${card.milestone}`} className="flex min-w-0 items-center gap-1">
-            <MilestoneIcon className="size-3.5" />
-            <span className="sr-only">Milestone </span>
-            <span className="truncate">{card.milestone}</span>
-          </span>
-        )}
-        {card.comments > 0 && (
-          <span
-            title={`${card.comments} ${card.comments === 1 ? "comment" : "comments"}`}
-            className="flex items-center gap-1 tabular-nums"
-          >
-            <CommentIcon className="size-3.5" />
-            {card.comments}
-            <span className="sr-only">{card.comments === 1 ? " comment" : " comments"}</span>
-          </span>
-        )}
-        <span className="ml-auto flex shrink-0 items-center gap-2">
+      {/* On a narrow card the details wrap under the labels as one group, with the age. */}
+      <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+        <LabelList labels={card.labels} max={2} compact />
+        <span className="ml-auto flex shrink-0 items-center gap-2.5">
+          {card.milestone !== null && (
+            <span title={`Milestone ${card.milestone}`} className="flex items-center gap-1">
+              <MilestoneIcon className="size-3.5 shrink-0" />
+              <span className="sr-only">Milestone </span>
+              <span className="max-w-20 truncate">{card.milestone}</span>
+            </span>
+          )}
+          {card.comments > 0 && (
+            <span
+              title={`${card.comments} ${card.comments === 1 ? "comment" : "comments"}`}
+              className="flex items-center gap-1 tabular-nums"
+            >
+              <CommentIcon className="size-3.5" />
+              {card.comments}
+              <span className="sr-only">{card.comments === 1 ? " comment" : " comments"}</span>
+            </span>
+          )}
           <time
             dateTime={age}
             title={`${closed ? "Closed" : "Updated"} ${absoluteTime(age)}`}
@@ -303,7 +340,6 @@ const CardFace = ({ card }: { card: BoardCard }) => {
             <span className="sr-only">{closed ? "Closed " : "Updated "}</span>
             {shortAge(age)}
           </time>
-          {card.assignees.length > 0 && <AvatarStack people={card.assignees} size="xs" />}
         </span>
       </div>
     </>
@@ -311,7 +347,7 @@ const CardFace = ({ card }: { card: BoardCard }) => {
 }
 
 const cardBase =
-  "group/card relative rounded-xl border bg-white p-3 select-none [-webkit-touch-callout:none] dark:bg-zinc-800/60"
+  "group/card relative rounded-xl border bg-white p-2.5 select-none [-webkit-touch-callout:none] dark:bg-zinc-900"
 
 type SortableCardProps = {
   readonly card: BoardCard
@@ -401,47 +437,50 @@ const CardContents = memo(function CardContents({
     if (movable) keyboard.onKeyDown?.(event)
   }
   return (
-    <>
-      <div className="flex h-5 items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-        <a
-          ref={(element) => {
-            link.current = element
-            if (movable) keyboard.ref(element)
-          }}
-          href={href}
-          data-card-link=""
-          tabIndex={tabbable ? 0 : -1}
-          onClick={openPanel}
-          onKeyDown={onKeyDown}
-          draggable={false}
-          aria-describedby={movable ? keyboard.describedBy : undefined}
-          aria-keyshortcuts="Enter Space ."
-          className="flex min-w-0 items-center gap-1.5 rounded font-medium text-zinc-500 hover:text-zinc-800 focus-visible:outline-none dark:text-zinc-400 dark:hover:text-zinc-200"
-        >
-          <span className="sr-only">{card.title}, </span>
-          {!showRepo && <span className="sr-only">{card.repo}</span>}
-          <CardReference card={card} showRepo={showRepo} />
-        </a>
-        {saving && (
-          <span
-            title="Saving to Forgejo"
-            className="flex shrink-0 items-center gap-1 text-[0.6875rem] text-zinc-400"
+    <CardFace
+      card={card}
+      reference={
+        <>
+          <a
+            ref={(element) => {
+              link.current = element
+              if (movable) keyboard.ref(element)
+            }}
+            href={href}
+            data-card-link=""
+            tabIndex={tabbable ? 0 : -1}
+            onClick={openPanel}
+            onKeyDown={onKeyDown}
+            draggable={false}
+            aria-describedby={movable ? keyboard.describedBy : undefined}
+            aria-keyshortcuts="Enter Space ."
+            className="flex min-w-0 items-center gap-1.5 rounded font-medium text-zinc-500 hover:text-zinc-800 focus-visible:outline-none dark:text-zinc-400 dark:hover:text-zinc-200"
           >
-            <RefreshIcon className="size-3 animate-spin" />
-            Saving
-          </span>
-        )}
-        {card.readOnlyReason === "archived" && (
-          <span
-            title={`${card.repo} is archived, so this card cannot be moved.`}
-            className="shrink-0 text-zinc-400"
-          >
-            <ArchiveIcon className="size-3.5" />
-            <span className="sr-only">Archived</span>
-          </span>
-        )}
+            <span className="sr-only">{card.title}, </span>
+            {!showRepo && <span className="sr-only">{card.repo}</span>}
+            <CardReference card={card} showRepo={showRepo} />
+          </a>
+          {saving && (
+            <span title="Saving to Forgejo" className="flex shrink-0 items-center gap-1 text-2xs">
+              <RefreshIcon className="size-3 animate-spin" />
+              Saving
+            </span>
+          )}
+          {card.readOnlyReason === "archived" && (
+            <span
+              title={`${card.repo} is archived, so this card cannot be moved.`}
+              className="shrink-0"
+            >
+              <ArchiveIcon className="size-3.5" />
+              <span className="sr-only">Archived</span>
+            </span>
+          )}
+        </>
+      }
+      tools={
+        // The menu shows on hover or focus where a pointer can hover, and always on touch.
         <span
-          className={`relative z-10 -my-1 -mr-1.5 ml-auto flex items-center transition-opacity group-focus-within/card:opacity-100 group-hover/card:opacity-100 [@media(hover:none)]:opacity-100 ${
+          className={`relative z-10 flex transition-opacity group-focus-within/card:opacity-100 group-hover/card:opacity-100 [@media(hover:none)]:opacity-100 ${
             menuOpen ? "opacity-100" : "opacity-0"
           }`}
         >
@@ -455,20 +494,9 @@ const CardContents = memo(function CardContents({
             onOpenChange={setMenuOpen}
             returnFocus={link}
           />
-          {movable && (
-            <span
-              aria-hidden="true"
-              className="grid size-7 cursor-grab place-items-center text-zinc-400"
-            >
-              <GripIcon />
-            </span>
-          )}
         </span>
-      </div>
-      <div className="mt-1">
-        <CardFace card={card} />
-      </div>
-    </>
+      }
+    />
   )
 })
 
@@ -522,7 +550,7 @@ export const SortableCard = memo(function SortableCard({
       onClick={openFromCard}
       className={`${cardBase} cursor-pointer transition-[border-color,box-shadow,opacity] has-[a[data-card-link]:focus-visible]:outline-2 has-[a[data-card-link]:focus-visible]:outline-offset-2 has-[a[data-card-link]:focus-visible]:outline-indigo-500 ${
         sortable.isDragging
-          ? "border-dashed border-zinc-300 bg-zinc-50 opacity-50 shadow-none dark:border-zinc-700 dark:bg-zinc-900/40 [&>*]:invisible"
+          ? "border-dashed border-indigo-300 bg-indigo-50/60 shadow-none dark:border-indigo-400/40 dark:bg-indigo-500/[0.06] [&>*]:invisible"
           : selected
             ? "border-indigo-400 shadow-card ring-3 ring-indigo-500/15 dark:border-indigo-500"
             : "border-zinc-200/90 shadow-card hover:border-zinc-300 hover:shadow-md hover:shadow-zinc-900/5 dark:border-zinc-800 dark:hover:border-zinc-700"
@@ -550,17 +578,16 @@ export const SortableCard = memo(function SortableCard({
 export const OverlayCard = ({ card, showRepo }: { card: BoardCard; showRepo: boolean }) => (
   <div>
     <div
-      className={`${cardBase} rotate-[1.5deg] cursor-grabbing border-indigo-300 shadow-lift ring-1 ring-indigo-500/20 dark:border-indigo-500/60`}
+      className={`${cardBase} rotate-1 cursor-grabbing border-zinc-200 shadow-lift ring-1 ring-zinc-900/5 dark:border-zinc-700 dark:bg-zinc-800 dark:ring-white/5`}
     >
-      <div className="flex h-5 items-center gap-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-        <CardReference card={card} showRepo={showRepo} />
-        <span className="ml-auto text-zinc-400">
-          <GripIcon />
-        </span>
-      </div>
-      <div className="mt-1">
-        <CardFace card={card} />
-      </div>
+      <CardFace
+        card={card}
+        reference={
+          <span className="flex min-w-0 items-center gap-1.5 font-medium">
+            <CardReference card={card} showRepo={showRepo} />
+          </span>
+        }
+      />
     </div>
   </div>
 )

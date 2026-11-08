@@ -1,4 +1,6 @@
-import { type ReactNode, useId, useState } from "react"
+import { type ReactNode, type Ref, useId, useState } from "react"
+import { cardClass, touchTarget } from "../ui/primitives.tsx"
+import { HiddenTable } from "./DataTable.tsx"
 
 type ChartCardProps = {
   readonly title: string
@@ -8,8 +10,23 @@ type ChartCardProps = {
   /** The chart's table view. Screen readers always get it; sighted readers can switch to it. */
   readonly table?: ReactNode
   readonly className?: string
+  readonly ref?: Ref<HTMLElement>
   readonly children: ReactNode
 }
+
+const TableIcon = () => (
+  <svg
+    viewBox="0 0 16 16"
+    className="size-3.5 shrink-0"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.5}
+    aria-hidden="true"
+  >
+    <rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2" />
+    <path d="M2.25 6.25h11.5M2.25 9.75h11.5M6.5 6.25v7" />
+  </svg>
+)
 
 /** Switches a chart to its table view and back. */
 export const TableToggle = ({
@@ -22,10 +39,16 @@ export const TableToggle = ({
   <button
     type="button"
     aria-pressed={pressed}
+    title={pressed ? "Show the chart" : "Show as a table"}
     onClick={onToggle}
-    className="rounded-md px-2 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 aria-pressed:bg-zinc-100 aria-pressed:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:aria-pressed:bg-zinc-800 dark:aria-pressed:text-zinc-100"
+    className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border px-2 text-xs pointer-coarse:h-11 pointer-coarse:px-3 font-medium whitespace-nowrap transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 ${
+      pressed
+        ? "border-zinc-300 bg-zinc-100 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-50"
+        : "border-zinc-200 text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-100"
+    } ${touchTarget}`}
   >
-    Table
+    <TableIcon />
+    <span className="max-sm:sr-only">Table</span>
   </button>
 )
 
@@ -35,37 +58,44 @@ export const ChartCard = ({
   actions,
   table,
   className = "",
+  ref,
   children,
 }: ChartCardProps) => {
   const headingId = useId()
   const [showTable, setShowTable] = useState(false)
   return (
     <section
+      ref={ref}
       aria-labelledby={headingId}
-      className={`chart-card flex min-w-0 flex-col rounded-xl border border-zinc-200 bg-white p-4 shadow-xs sm:p-5 dark:border-zinc-800 dark:bg-zinc-900 ${className}`}
+      className={`${cardClass} flex min-w-0 flex-col p-4 sm:p-5 ${className}`}
     >
-      <header className="mb-4 flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+      <header className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 id={headingId} className="text-sm font-semibold tracking-tight">
+          <h2 id={headingId} className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
             {title}
           </h2>
           {description !== undefined && (
             <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{description}</p>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          {actions}
-          {table !== undefined && (
-            <TableToggle pressed={showTable} onToggle={() => setShowTable((current) => !current)} />
-          )}
-        </div>
+        {(actions !== undefined || table !== undefined) && (
+          <div className="flex shrink-0 items-center gap-2">
+            {actions}
+            {table !== undefined && (
+              <TableToggle
+                pressed={showTable}
+                onToggle={() => setShowTable((current) => !current)}
+              />
+            )}
+          </div>
+        )}
       </header>
       {showTable ? (
         table
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
           {children}
-          {table !== undefined && <div className="sr-only">{table}</div>}
+          {table !== undefined && <HiddenTable>{table}</HiddenTable>}
         </div>
       )}
     </section>

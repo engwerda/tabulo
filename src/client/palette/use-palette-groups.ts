@@ -1,8 +1,18 @@
 import { useQuery } from "@tanstack/react-query"
 import { useEffect, useMemo, useState } from "react"
-import type { DashboardItem } from "../../shared/api.ts"
-import { fetchDashboard, fetchInstance, fetchOrgRepos, fetchOrgs, fetchSearch } from "../api.ts"
+import { useRoute, useSearchParams } from "wouter"
+import type { BoardCard, DashboardItem } from "../../shared/api.ts"
+import {
+  fetchBoard,
+  fetchDashboard,
+  fetchInstance,
+  fetchOrgRepos,
+  fetchOrgs,
+  fetchSearch,
+} from "../api.ts"
+import { boardQueryKey } from "../board/board-view.ts"
 import { DASHBOARD } from "../Dashboard.tsx"
+import { boardCardHref } from "../epics/epics-view.ts"
 import { ORGS } from "../scope/OrgPicker.tsx"
 import { readRememberedRepos, useLastScope } from "../scope/remembered.ts"
 import { ORG_VIEWS, type OrgViewId, orgViewHref } from "../scope/views.ts"
@@ -13,33 +23,52 @@ import {
   useThemePreference,
 } from "../theme.ts"
 import type { GlyphName } from "./icons.tsx"
+import { isMac } from "./keys.tsx"
+import { pageSlot } from "./page-slot.ts"
 import type { GroupSpec, Searchable } from "./rank.ts"
-import type { ShortcutId } from "./shortcuts.ts"
+import { type ShortcutId, shortcutKeys } from "./shortcuts.ts"
 
 export type RunContext = {
   readonly navigate: (to: string) => void
   readonly openShortcuts: () => void
+  /** Lists every item of one group, such as the board's labels, until the user goes back. */
+  readonly browse: (group: string) => void
   /** Keeps the palette open to report how `task` went, then closes it if it succeeded. */
   readonly report: (task: Promise<unknown>, success: string, failure: string) => void
   readonly signOut: () => void
 }
 
-export type Badge = {
-  readonly text: string
-  readonly tone: "open" | "closed" | "neutral" | "current"
-}
-
 export type PaletteItem = Searchable & {
   readonly icon: GlyphName
-  readonly badge?: Badge
-  readonly shortcut?: ShortcutId
+  /** A label's color, shown as a dot in place of the icon. */
+  readonly color?: string
+  /** An issue or pull request, which the row names in words so the two never look alike. */
+  readonly kind?: { readonly type: DashboardItem["kind"]; readonly state: DashboardItem["state"] }
+  /** Why the item is listed, such as "Review", in quiet text. */
+  readonly hint?: string
+  /** The setting or filter in effect, marked with a check and this word. */
+  readonly current?: "Current" | "On"
+  /** The keys that do the same outside the palette. */
+  readonly keys?: ReadonlyArray<string>
   readonly external?: boolean
+  /** What Enter does, when it is not "Select" or, for an external item, opening a new tab. */
+  readonly enterLabel?: string
+  /** A second way to open the item, with Ctrl or Cmd and Enter or a click. */
+  readonly alternate?: { readonly label: string; readonly run: (context: RunContext) => void }
   /** Items of the issue search are not remembered: they are not there when the query is empty. */
   readonly remember: boolean
   readonly run: (context: RunContext) => void
 }
 
 export type SearchStatus = "idle" | "loading" | "error" | "done"
+
+const pageCommands = pageSlot<ReadonlyArray<GroupSpec<PaletteItem>>>([])
+
+/**
+ * Adds a page's own commands to the palette while the page is mounted. Groups marked
+ * `contextual` lead the palette while the query is empty.
+ */
+export const usePageCommands = pageCommands.usePublish
 
 const DEBOUNCE_MS = 200
 const MIN_SEARCH_LENGTH = 2
@@ -70,24 +99,58 @@ const VIEW_SHORTCUTS: Record<OrgViewId, ShortcutId> = {
 
 const openExternal = (url: string) => window.open(url, "_blank", "noopener,noreferrer")
 
+/**
+ * Where the page opens an issue: on an org view, the board's side panel when it is a card of the
+ * view's repositories; null for Forgejo.
+ */
+type BoardHref = (item: DashboardItem) => string | null
+
+/**
+ * What makes a row the same issue whichever group lists it, and the references a query may
+ * name it by exactly: `#66`, `66`, `web#66`, `acme/web#66`.
+ */
+const issueNames = (fullName: string, number: number) => {
+  const reference = `${fullName}#${number}`
+  return {
+    identity: reference.toLowerCase(),
+    aliases: [
+      `#${number}`,
+      `${number}`,
+      `${fullName.slice(fullName.indexOf("/") + 1)}#${number}`,
+      reference,
+    ],
+  }
+}
+
 const issueItem = (
   item: DashboardItem,
   id: string,
-  extra: { readonly keywords?: string; readonly badge: Badge; readonly remember: boolean },
-): PaletteItem => ({
-  id,
-  title: item.title,
-  subtitle: `${item.repo}#${item.number}`,
-  icon: item.kind,
-  external: true,
-  run: () => openExternal(item.url),
-  ...extra,
-})
+  boardHref: BoardHref,
+  extra: { readonly keywords?: string; readonly hint?: string; readonly remember: boolean },
+): PaletteItem => {
+  const base = {
+    id,
+    title: item.title,
+    subtitle: `${item.repo}#${item.number}`,
+    ...issueNames(item.repo, item.number),
+    icon: item.kind,
+    kind: { type: item.kind, state: item.state },
+    ...extra,
+  }
+  const href = boardHref(item)
+  if (href === null) return { ...base, external: true, run: () => openExternal(item.url) }
+  return {
+    ...base,
+    enterLabel: "Open on the board",
+    alternate: { label: "Open in Forgejo", run: () => openExternal(item.url) },
+    run: ({ navigate }) => navigate(href),
+  }
+}
 
 const WORK_SECTIONS = [
-  { key: "reviewRequests", label: "Review" },
+  { key: "reviewRequests", label: "Review requested" },
   { key: "assigned", label: "Assigned" },
-  { key: "mentioned", label: "Mention" },
+  { key: "mentioned", label: "Mentioned" },
 ] as const
 
 /**
@@ -112,6 +175,46 @@ export const usePaletteGroups = (query: string, active: boolean) => {
     staleTime: Number.POSITIVE_INFINITY,
   })
 
+  // On an org view, an open issue of the chosen repositories opens in the board's side panel, as
+  // an epic's child does.
+  const [onOrgPage, route] = useRoute("/:view/:org")
+  const view = onOrgPage ? ORG_VIEWS.find(({ path }) => path === `/${route.view}`) : undefined
+  const viewOrg = view === undefined ? undefined : route?.org
+  const onBoard = view?.id === "board"
+  const [params] = useSearchParams()
+  const selection = params.get("repos") ?? ""
+  // The board's own query; the palette only reads what the board has loaded.
+  const board = useQuery({
+    queryKey: boardQueryKey(onBoard ? (viewOrg ?? "") : "", parseRepos(selection).join(",")),
+    queryFn: () => fetchBoard(viewOrg ?? "", parseRepos(selection)),
+    enabled: false,
+  })
+  const boardData = onBoard ? board.data : undefined
+  const pageSearch = params.toString()
+  // A card of the board on screen opens in its side panel and keeps the board's filters.
+  const cardHref = useMemo(() => {
+    if (viewOrg === undefined || boardData === undefined) return undefined
+    return (card: BoardCard) => {
+      const next = new URLSearchParams(pageSearch)
+      next.set("card", `${card.repo}#${card.number}`)
+      return `/board/${encodeURIComponent(viewOrg)}?${next}`
+    }
+  }, [viewOrg, boardData, pageSearch])
+  const boardHref = useMemo((): BoardHref => {
+    if (viewOrg === undefined) return () => null
+    const selected = parseRepos(selection)
+    if (boardData === undefined || cardHref === undefined) {
+      return (item) => boardCardHref(viewOrg, selected, item)
+    }
+    // The board on screen also knows which issues are its cards.
+    const cards = new Map(boardData.cards.map((card) => [card.key.toLowerCase(), card]))
+    return (item) => {
+      const card = cards.get(`${item.repo}#${item.number}`.toLowerCase())
+      if (card === undefined || boardCardHref(viewOrg, selected, item) === null) return null
+      return cardHref(card)
+    }
+  }, [viewOrg, selection, boardData, cardHref])
+
   const text = query.trim()
   const debounced = useDebounced(text)
   const searching = text.length >= MIN_SEARCH_LENGTH
@@ -129,6 +232,8 @@ export const usePaletteGroups = (query: string, active: boolean) => {
   const forgejoUrl = instance.data?.forgejoUrl
   const dashboardData = dashboard.data
 
+  const pageGroups = pageCommands.useValue()
+
   const groups = useMemo((): ReadonlyArray<GroupSpec<PaletteItem>> => {
     const lastOrg = lastScope?.org ?? (orgList?.length === 1 ? orgList[0]?.name : undefined)
 
@@ -139,7 +244,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
         subtitle: "Your work",
         keywords: "home go",
         icon: "dashboard",
-        shortcut: "go-dashboard",
+        keys: shortcutKeys("go-dashboard", isMac),
         remember: true,
         run: ({ navigate }) => navigate("/"),
       },
@@ -157,7 +262,11 @@ export const usePaletteGroups = (query: string, active: boolean) => {
         })
       }
     }
-    for (const entry of orgList ?? []) {
+    // The organization in use comes first, so its views lead the list when the query is empty.
+    const byRecency = [...(orgList ?? [])].sort(
+      (a, b) => Number(b.name === lastOrg) - Number(a.name === lastOrg),
+    )
+    for (const entry of byRecency) {
       const remembered = parseRepos(readRememberedRepos(entry.name))
       for (const view of ORG_VIEWS) {
         navigation.push({
@@ -167,7 +276,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
           keywords: `go ${entry.name}`,
           icon: view.icon,
           remember: true,
-          ...(entry.name === lastOrg ? { shortcut: VIEW_SHORTCUTS[view.id] } : {}),
+          ...(entry.name === lastOrg ? { keys: shortcutKeys(VIEW_SHORTCUTS[view.id], isMac) } : {}),
           run: ({ navigate }) =>
             navigate(
               orgViewHref(
@@ -181,14 +290,15 @@ export const usePaletteGroups = (query: string, active: boolean) => {
     }
 
     const repositories: Array<PaletteItem> = []
+    const orgName = orgList?.find((entry) => entry.name === org)?.fullName || org
     if (org !== undefined) {
       const active = (repos.data ?? []).filter((repo) => !repo.archived)
       for (const repo of active) {
         repositories.push({
           id: `repo:board:${repo.fullName}`,
           title: repo.name,
-          subtitle: `${org} · Open its board`,
-          keywords: "board repository",
+          subtitle: "Open its board",
+          keywords: `board repository ${org} ${orgName}`,
           icon: "repository",
           remember: true,
           run: ({ navigate }) => navigate(orgViewHref("board", org, [repo.name])),
@@ -199,8 +309,8 @@ export const usePaletteGroups = (query: string, active: boolean) => {
           repositories.push({
             id: `repo:forgejo:${repo.fullName}`,
             title: repo.name,
-            subtitle: `${org} · Open in Forgejo`,
-            keywords: "forgejo repository open",
+            subtitle: "Open in Forgejo",
+            keywords: `forgejo repository open ${org} ${orgName}`,
             icon: "external",
             external: true,
             remember: true,
@@ -209,6 +319,29 @@ export const usePaletteGroups = (query: string, active: boolean) => {
         }
       }
     }
+
+    // The board's own cards, matched with no request; an issue that is also your work or a
+    // search result shows once, as its card.
+    const cards: ReadonlyArray<PaletteItem> =
+      boardData === undefined || cardHref === undefined
+        ? []
+        : boardData.cards.map((card) => {
+            const column = boardData.columns.find(({ key }) => key === card.column)
+            const href = cardHref(card)
+            return {
+              id: `card:${card.key}`,
+              title: card.title,
+              subtitle: `${card.repo}#${card.number}`,
+              ...issueNames(card.key.slice(0, card.key.lastIndexOf("#")), card.number),
+              icon: "issue",
+              kind: { type: "issue", state: card.state },
+              ...(column === undefined ? {} : { hint: column.title }),
+              enterLabel: "Open on the board",
+              alternate: { label: "Open in Forgejo", run: () => openExternal(card.url) },
+              remember: true,
+              run: ({ navigate }) => navigate(href),
+            }
+          })
 
     const work: Array<PaletteItem> = []
     const seen = new Set<string>()
@@ -219,9 +352,9 @@ export const usePaletteGroups = (query: string, active: boolean) => {
         if (seen.has(item.url)) continue
         seen.add(item.url)
         work.push(
-          issueItem(item, `work:${item.url}`, {
+          issueItem(item, `work:${item.url}`, boardHref, {
             keywords: label,
-            badge: { text: label, tone: "neutral" },
+            hint: label,
             remember: true,
           }),
         )
@@ -234,7 +367,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
       keywords: "appearance color mode switch",
       icon: THEME_LABELS[preference].icon,
       remember: true,
-      ...(preference === currentTheme ? { badge: { text: "Current", tone: "current" } } : {}),
+      ...(preference === currentTheme ? { current: "Current" } : {}),
       run: () => setThemePreference(preference),
     }))
     const actions: Array<PaletteItem> = [
@@ -252,15 +385,20 @@ export const usePaletteGroups = (query: string, active: boolean) => {
             "Could not copy the link",
           ),
       },
-      {
-        id: "action:shortcuts",
-        title: "Show keyboard shortcuts",
-        keywords: "help keys hotkeys",
-        icon: "keyboard",
-        shortcut: "shortcuts",
-        remember: true,
-        run: ({ openShortcuts }) => openShortcuts(),
-      },
+      // A touch screen has no keys to list, as in the board's options menu.
+      ...(window.matchMedia("(pointer: coarse)").matches
+        ? []
+        : [
+            {
+              id: "action:shortcuts",
+              title: "Show keyboard shortcuts",
+              keywords: "help keys hotkeys",
+              icon: "keyboard",
+              keys: shortcutKeys("shortcuts", isMac),
+              remember: true,
+              run: ({ openShortcuts }) => openShortcuts(),
+            } satisfies PaletteItem,
+          ]),
       {
         id: "action:sign-out",
         title: "Sign out",
@@ -272,33 +410,30 @@ export const usePaletteGroups = (query: string, active: boolean) => {
     ]
 
     const issues: ReadonlyArray<PaletteItem> = (searchItems ?? []).map((item) =>
-      issueItem(item, `issue:${item.url}`, {
-        badge:
-          item.state === "open"
-            ? { text: "Open", tone: "open" }
-            : { text: "Closed", tone: "closed" },
-        remember: false,
-      }),
+      issueItem(item, `issue:${item.url}`, boardHref, { remember: false }),
     )
 
     return [
+      ...pageGroups,
+      // Before "Your work", so that an issue in both shows as its card.
+      { id: "cards", heading: "Cards", items: cards, limit: 6, emptyLimit: 0, filter: true },
       {
         id: "navigation",
         heading: "Navigation",
         items: navigation,
         limit: 8,
-        emptyLimit: 12,
+        emptyLimit: 1 + ORG_VIEWS.length,
         filter: true,
       },
+      { id: "work", heading: "Your work", items: work, limit: 5, emptyLimit: 4, filter: true },
       {
         id: "repositories",
-        heading: org === undefined ? "Repositories" : `Repositories in ${org}`,
+        heading: orgName === undefined ? "Repositories" : `Repositories in ${orgName}`,
         items: repositories,
         limit: 6,
         emptyLimit: 5,
         filter: true,
       },
-      { id: "work", heading: "Your work", items: work, limit: 5, emptyLimit: 4, filter: true },
       { id: "actions", heading: "Actions", items: actions, limit: 8, emptyLimit: 8, filter: true },
       {
         id: "issues",
@@ -309,7 +444,20 @@ export const usePaletteGroups = (query: string, active: boolean) => {
         filter: false,
       },
     ]
-  }, [lastScope, orgList, org, repos.data, forgejoUrl, dashboardData, searchItems, currentTheme])
+  }, [
+    lastScope,
+    orgList,
+    org,
+    repos.data,
+    forgejoUrl,
+    dashboardData,
+    searchItems,
+    currentTheme,
+    boardHref,
+    boardData,
+    cardHref,
+    pageGroups,
+  ])
 
   const status: SearchStatus = !searching
     ? "idle"
@@ -322,6 +470,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
     groups,
     searchStatus: status,
     searchError: search.error?.message,
+    retrySearch: () => void search.refetch(),
     minSearchLength: MIN_SEARCH_LENGTH,
   }
 }

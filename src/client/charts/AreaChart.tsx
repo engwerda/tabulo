@@ -1,9 +1,10 @@
-import { formatCount, linearScale, niceTicks } from "./scale.ts"
+import { formatCount, labelStride, linearScale, niceTicks } from "./scale.ts"
 import { Readout, Tooltip } from "./Tooltip.tsx"
 import { useActiveIndex } from "./use-active-index.ts"
+import { useEntrance } from "./use-entrance.ts"
 import { useSize } from "./use-width.ts"
 
-const MARGIN = { top: 16, right: 12, bottom: 22, left: 34 }
+const MARGIN = { top: 16, right: 12, bottom: 22, left: 30 }
 const MIN_LABEL_GAP = 56
 
 /**
@@ -57,9 +58,10 @@ export const AreaChart = ({
   const line = `M${points.join("L")}`
   const settled = partialLast && count > 1 ? `M${points.slice(0, -1).join("L")}` : line
   const area = `${line}L${x(count - 1)},${y(0)}L${x(0)},${y(0)}Z`
-  const every = Math.max(1, Math.ceil(count / Math.max(1, Math.floor(plotWidth / MIN_LABEL_GAP))))
+  const every = labelStride(labels, plotWidth, MIN_LABEL_GAP)
   const last = count - 1
   const lastValue = values[last] ?? 0
+  const play = useEntrance(`area:${labels.join(",")}|${values.join(",")}`)
 
   return (
     <div ref={ref} className="relative flex-1" style={{ minHeight }}>
@@ -79,6 +81,7 @@ export const AreaChart = ({
                 y1={y(tick)}
                 y2={y(tick)}
                 className="stroke-chart-grid"
+                strokeOpacity={tick === 0 ? 1 : 0.7}
                 shapeRendering="crispEdges"
               />
               <text
@@ -86,13 +89,13 @@ export const AreaChart = ({
                 y={y(tick)}
                 dy="0.32em"
                 textAnchor="end"
-                className="fill-chart-axis text-[10px] tabular-nums"
+                className="fill-chart-axis text-2xs tabular-nums"
               >
                 {formatCount(tick)}
               </text>
             </g>
           ))}
-          <g className="chart-fade">
+          <g className={play ? "chart-fade" : undefined}>
             <path d={area} style={{ fill: color }} fillOpacity={0.1} />
             <path
               d={settled}
@@ -150,7 +153,7 @@ export const AreaChart = ({
                 x={x(index)}
                 y={height - 6}
                 textAnchor={index === 0 && count > 1 ? "start" : index === last ? "end" : "middle"}
-                className="fill-chart-axis text-[10px] tabular-nums"
+                className="fill-chart-axis text-2xs tabular-nums"
               >
                 {label}
               </text>

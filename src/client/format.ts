@@ -51,23 +51,48 @@ export const shortAge = (iso: string, now: number = Date.now()) => {
   return "now"
 }
 
-/** Distinct hues, ordered so that neighbours in the list never look alike. */
+/**
+ * Distinct hues, ordered so that neighbours in the list never look alike. The first ones stay
+ * clear of the board's status colors (grey, red, amber, violet, green), so a repository's mark
+ * never reads as a column.
+ */
 export const REPO_COLORS = [
-  "#6366f1",
-  "#f59e0b",
-  "#10b981",
-  "#ec4899",
   "#0ea5e9",
-  "#f97316",
-  "#8b5cf6",
-  "#84cc16",
-  "#ef4444",
+  "#ec4899",
   "#14b8a6",
+  "#6366f1",
+  "#d946ef",
+  "#06b6d4",
+  "#64748b",
+  "#84cc16",
+  "#f97316",
+  "#f43f5e",
 ]
 
-/** A stable color per name, for avatars and repositories outside a board's palette. */
-export const repoColor = (name: string) => {
+const hueIndex = (name: string) => {
   let hash = 0
   for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
-  return REPO_COLORS[hash % REPO_COLORS.length] ?? "#6366f1"
+  return hash % REPO_COLORS.length
 }
+
+/** A stable color per name, for avatars and repositories outside a board's palette. */
+export const repoColor = (name: string) => REPO_COLORS[hueIndex(name)] ?? "#0ea5e9"
+
+/**
+ * The hue `repoColor` gives a name, dark enough (600 or 700) that white initials on it pass
+ * WCAG AA at small sizes.
+ */
+const AVATAR_FILLS = [
+  "#0369a1",
+  "#be185d",
+  "#0f766e",
+  "#4f46e5",
+  "#a21caf",
+  "#0e7490",
+  "#475569",
+  "#4d7c0f",
+  "#c2410c",
+  "#be123c",
+]
+
+export const avatarFill = (name: string) => AVATAR_FILLS[hueIndex(name)] ?? "#0369a1"
