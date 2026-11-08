@@ -14,9 +14,10 @@ import { isOrgViewPath, ORG_VIEWS, type OrgViewId, orgViewHref } from "./scope/v
 import { SESSION_USER, useSession } from "./session.ts"
 import { ThemeControl } from "./ThemeControl.tsx"
 import { ErrorBoundary } from "./ui/ErrorBoundary.tsx"
+import { sentence } from "./ui/ErrorNotice.tsx"
 import { ArrowRightIcon, LogoMark, SignOutIcon } from "./ui/icons.tsx"
 import { buttonClass, Popover, touchTarget } from "./ui/primitives.tsx"
-import { useClearToasts } from "./ui/toast.tsx"
+import { useClearToasts, useToast } from "./ui/toast.tsx"
 
 /** A still life of a board, drawn with the app's own surfaces, for the sign-in page. */
 const BoardSketch = () => {
@@ -230,8 +231,12 @@ const useNav = (): ReadonlyArray<NavItem> => {
 const useSignOut = () => {
   const queryClient = useQueryClient()
   const clearToasts = useClearToasts()
+  const toast = useToast()
   return useMutation({
     mutationFn: signOut,
+    // Someone who walks away from a shared computer must know they are still signed in.
+    onError: (error) =>
+      toast({ tone: "error", title: "You are still signed in", detail: sentence(error.message) }),
     onSuccess: () => {
       // The session goes null first, so the app shows sign-in before the signed-in views lose
       // their data; clearing everything first left them rendering without a viewer.

@@ -5,7 +5,7 @@ import { App } from "./App.tsx"
 import { RequestFailed, Unauthenticated } from "./api.ts"
 import { startTheme } from "./theme.ts"
 import "./styles.css"
-import { SESSION_USER } from "./session.ts"
+import { keepDataToSessionUser, SESSION_USER } from "./session.ts"
 import { ToastProvider } from "./ui/toast.tsx"
 
 startTheme()
@@ -28,6 +28,7 @@ const queryClient = new QueryClient({
     },
   },
 })
+keepDataToSessionUser(queryClient)
 
 const root = document.getElementById("root")
 if (root === null) throw new Error("index.html is missing #root")

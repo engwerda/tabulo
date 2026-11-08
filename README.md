@@ -294,6 +294,8 @@ The token needs read access to issues, repositories, notifications, and the user
   styles, and requests, and images from Tabulo and `FORGEJO_URL`. It also forbids framing.
   `npm run build` writes the policy to `dist/client/_headers` from `FORGEJO_URL` in
   `wrangler.jsonc`, so rebuild after you change it. API responses are never cached.
+- Signing out, or another user signing in in the same browser, clears what Tabulo kept in the
+  browser's storage, except the theme.
 
 ## License
 
