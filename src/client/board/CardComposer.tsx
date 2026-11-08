@@ -54,7 +54,7 @@ export const CardComposer = ({
           onClose()
         }
       }}
-      className="animate-pop-in rounded-xl border border-indigo-300 bg-white p-2.5 shadow-card ring-3 ring-indigo-500/10 dark:border-indigo-500/60 dark:bg-zinc-900"
+      className="animate-pop-in rounded-xl border border-indigo-300 bg-white p-2.5 shadow-card ring-3 ring-indigo-500/10 dark:border-indigo-500/50 dark:bg-zinc-900"
     >
       <label className="sr-only" htmlFor={`${repoId}-title`}>
         Title of the new issue in {columnTitle}
@@ -74,7 +74,7 @@ export const CardComposer = ({
             submit()
           }
         }}
-        className="block w-full resize-none bg-transparent text-base sm:text-[0.8125rem] leading-5 font-medium text-zinc-900 placeholder:font-normal placeholder:text-zinc-400 focus:outline-none read-only:opacity-60 dark:text-zinc-100"
+        className="block w-full resize-none bg-transparent text-base sm:text-sm leading-5 font-medium text-zinc-900 placeholder:font-normal placeholder:text-zinc-500 dark:placeholder:text-zinc-400 focus:outline-none read-only:opacity-60 dark:text-zinc-100"
       />
       <div className="mt-2 flex items-center gap-2">
         {repos.length > 1 ? (

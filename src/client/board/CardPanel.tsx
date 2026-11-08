@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import DOMPurify from "dompurify"
-import { type ReactNode, useEffect, useRef, useState } from "react"
+import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import type { BoardCard, BoardColumn, CardDetail } from "../../shared/api.ts"
 import { Avatar } from "../Avatar.tsx"
 import {
@@ -72,8 +72,59 @@ const Property = ({ name, children }: { name: string; children: ReactNode }) => 
 
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform)
 
+// From the lg breakpoint the panel sits beside the board; below it, it covers the board as a modal.
+const wideQuery = window.matchMedia("(min-width: 64rem)")
+const subscribeWide = (changed: () => void) => {
+  wideQuery.addEventListener("change", changed)
+  return () => wideQuery.removeEventListener("change", changed)
+}
+
+/** Toasts stay usable over a modal panel: their Undo and Retry act on the open card. */
+const STAYS_LIVE = 'section[aria-label="Notifications"]'
+
+/**
+ * While `modal`, everything outside `layer` is inert, so focus and assistive technology stay in
+ * the panel. Popovers the panel opens render into the body later and stay live.
+ */
+const useInertOutside = (
+  modal: boolean,
+  layer: { readonly current: HTMLElement | null },
+  restoreFocus: () => void,
+) => {
+  const restore = useRef(restoreFocus)
+  restore.current = restoreFocus
+  useEffect(() => {
+    if (!modal) return
+    const made: HTMLElement[] = []
+    for (
+      let node = layer.current;
+      node !== null && node !== document.body;
+      node = node.parentElement
+    ) {
+      for (const sibling of node.parentElement?.children ?? []) {
+        if (
+          sibling !== node &&
+          sibling instanceof HTMLElement &&
+          !sibling.inert &&
+          !sibling.matches(STAYS_LIVE)
+        ) {
+          sibling.inert = true
+          made.push(sibling)
+        }
+      }
+    }
+    return () => {
+      for (const element of made) element.inert = false
+      // Closing tried to focus the card while the board was still inert; it can take focus now.
+      if (document.activeElement === null || document.activeElement === document.body) {
+        restore.current()
+      }
+    }
+  }, [modal, layer])
+}
+
 const sectionTitle =
-  "text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400"
+  "text-2xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400"
 
 const editTrigger =
   "inline-flex max-w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-left transition hover:bg-zinc-100 disabled:pointer-events-none dark:hover:bg-zinc-800/70"
@@ -215,7 +266,7 @@ const CommentBox = ({ onSubmit }: { onSubmit: (body: string) => Promise<unknown>
         className="block max-h-64 min-h-[4.5rem] w-full resize-none rounded-t-xl bg-transparent px-3 py-2.5 [field-sizing:content] text-base text-zinc-900 sm:text-sm placeholder:text-zinc-400 read-only:opacity-60 focus:outline-none dark:text-zinc-100"
       />
       <div className="flex items-center justify-end gap-2 border-t border-zinc-100 px-2 py-1.5 dark:border-zinc-800">
-        <span className="mr-auto hidden items-center gap-1 pl-1 text-[0.6875rem] text-zinc-400 sm:flex [@media(hover:none)]:hidden">
+        <span className="mr-auto hidden items-center gap-1 pl-1 text-2xs text-zinc-500 sm:flex dark:text-zinc-400 [@media(hover:none)]:hidden">
           <Kbd>{IS_MAC ? "⌘" : "Ctrl"}</Kbd>
           <Kbd>Enter</Kbd> to comment
         </span>
@@ -313,6 +364,13 @@ export const CardPanel = ({
       toast({ tone: "error", title: "The comment was not added", detail: error.message }),
   })
   const heading = useRef<HTMLHeadingElement>(null)
+  const layer = useRef<HTMLDivElement>(null)
+  const modal = !useSyncExternalStore(subscribeWide, () => wideQuery.matches)
+  useInertOutside(modal, layer, () =>
+    document
+      .querySelector<HTMLElement>(`[data-card-key="${CSS.escape(card.key)}"] a[data-card-link]`)
+      ?.focus(),
+  )
   const scroller = useRef<HTMLDivElement>(null)
   const column = columns.find((candidate) => candidate.key === card.column)
   const assigned = card.assignees.some((assignee) => assignee.login === viewer)
@@ -368,30 +426,34 @@ export const CardPanel = ({
         : String(currentMilestone.id)
 
   return (
-    <>
-      {/* On narrower screens the panel covers most of the board; a tap beside it closes it. */}
+    <div ref={layer} data-card-panel="">
+      {/* Below lg the panel is a modal over the board; a tap beside it closes it. */}
       <div
         aria-hidden="true"
         onClick={onClose}
-        className="fixed inset-0 z-30 animate-fade-in bg-zinc-950/20 lg:hidden"
+        className="fixed inset-0 z-30 animate-fade-in bg-zinc-950/30 lg:hidden"
       />
-      <aside
-        aria-label={`${card.repo}#${card.number} details`}
+      <div
+        {...{
+          role: modal ? "dialog" : "complementary",
+          "aria-modal": modal || undefined,
+          "aria-label": `${name} details`,
+        }}
         className="fixed inset-y-0 right-0 z-40 flex w-full animate-slide-in flex-col border-l border-zinc-200 bg-white shadow-pop sm:w-[32rem] dark:border-zinc-800 dark:bg-zinc-950"
       >
-        <div className="flex h-14 shrink-0 items-center gap-1 border-b border-zinc-100 px-3 dark:border-zinc-800/80">
-          <span className="flex min-w-0 items-center gap-2 pl-1 text-sm text-zinc-500 dark:text-zinc-400">
+        <div className="flex h-14 shrink-0 items-center gap-1 border-b border-zinc-200/70 pr-2 pl-4 dark:border-zinc-800">
+          <span className="flex min-w-0 items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
             <RepoTag repo={card.repo} />
             <span className="font-medium tabular-nums">#{card.number}</span>
             {closed && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-300">
-                <IssueClosedIcon className="size-3.5" />
+              <span className="inline-flex items-center gap-1 rounded-md bg-zinc-100 px-1.5 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                <IssueClosedIcon className="size-3.5 text-emerald-600 dark:text-emerald-400" />
                 Closed
               </span>
             )}
           </span>
-          <span className="ml-auto flex items-center">
-            <span className="mr-1 hidden text-xs text-zinc-400 tabular-nums sm:inline">
+          <span className="ml-auto flex items-center gap-0.5">
+            <span className="mr-1.5 hidden text-xs text-zinc-500 tabular-nums sm:inline dark:text-zinc-400">
               {position.count > 0 &&
                 position.index >= 0 &&
                 `${position.index + 1} of ${position.count}`}
@@ -416,7 +478,7 @@ export const CardPanel = ({
             >
               <ChevronDownIcon className="size-4" />
             </button>
-            <span className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-800" />
+            <span aria-hidden="true" className="mx-1.5 h-5 w-px bg-zinc-200 dark:bg-zinc-800" />
             <button
               type="button"
               onClick={onCopyLink}
@@ -447,7 +509,7 @@ export const CardPanel = ({
             </button>
           </span>
         </div>
-        <div ref={scroller} className="scroll-thin min-h-0 flex-1 overflow-y-auto">
+        <div ref={scroller} data-scroll="" className="scroll-thin min-h-0 flex-1 overflow-y-auto">
           <div className="px-6 pt-5 pb-8">
             <h2
               ref={heading}
@@ -743,7 +805,7 @@ export const CardPanel = ({
               <h3 id="card-comments" className={`${sectionTitle} flex items-center gap-2`}>
                 Comments
                 {detail.data !== undefined && (
-                  <span className="rounded-full bg-zinc-100 px-1.5 py-px text-[0.6875rem] tabular-nums dark:bg-zinc-800">
+                  <span className="font-medium text-zinc-500 tabular-nums dark:text-zinc-400">
                     {detail.data.commentCount}
                   </span>
                 )}
@@ -800,18 +862,7 @@ export const CardPanel = ({
             </section>
           </div>
         </div>
-
-        <div className="flex shrink-0 items-center gap-3 border-t border-zinc-100 px-6 py-3 dark:border-zinc-800/80">
-          <a href={card.url} target="_blank" rel="noreferrer" className={buttonClass.secondary}>
-            <ExternalIcon className="size-4 text-zinc-400" />
-            Open in Forgejo
-          </a>
-          <span className="ml-auto hidden items-center gap-1 text-xs text-zinc-400 sm:flex [@media(hover:none)]:hidden">
-            <Kbd>J</Kbd>
-            <Kbd>K</Kbd> to browse
-          </span>
-        </div>
-      </aside>
-    </>
+      </div>
+    </div>
   )
 }

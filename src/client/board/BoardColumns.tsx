@@ -22,7 +22,7 @@ import {
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import type { Board, BoardCard, BoardColumn } from "../../shared/api.ts"
 import { CollapseIcon, ExpandIcon, PlusIcon } from "../ui/icons.tsx"
-import { buttonClass } from "../ui/primitives.tsx"
+import { buttonClass, Segmented } from "../ui/primitives.tsx"
 import { type CardActions, ColumnDot, OverlayCard, SortableCard } from "./BoardCardView.tsx"
 import {
   type CardMove,
@@ -129,10 +129,8 @@ const Column = ({
   const headingId = `board-column-${index}`
   const count = (
     <span
-      className={`rounded-full px-1.5 py-px text-[0.6875rem] font-semibold tabular-nums ${
-        highlighted
-          ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200"
-          : "bg-zinc-200/70 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
+      className={`text-xs font-medium tabular-nums ${
+        highlighted ? "text-indigo-700 dark:text-indigo-300" : "text-zinc-500 dark:text-zinc-400"
       }`}
       title={shown === total ? undefined : `${shown} of ${total} shown`}
     >
@@ -145,10 +143,10 @@ const Column = ({
       <section
         ref={droppable.setNodeRef}
         aria-labelledby={headingId}
-        className={`flex w-11 shrink-0 flex-col items-center gap-3 rounded-2xl border py-3 transition-colors ${
+        className={`flex w-11 shrink-0 flex-col items-center gap-3 rounded-xl py-2 transition-colors ${
           highlighted
-            ? "border-indigo-300 bg-indigo-50 dark:border-indigo-500/50 dark:bg-indigo-500/10"
-            : "border-transparent bg-zinc-100/80 hover:bg-zinc-200/60 dark:bg-zinc-900/80 dark:hover:bg-zinc-900"
+            ? columnHighlight
+            : `${columnSurface} hover:bg-zinc-200/50 dark:hover:bg-zinc-900`
         }`}
       >
         <button
@@ -176,13 +174,11 @@ const Column = ({
   return (
     <section
       aria-labelledby={headingId}
-      className={`flex h-full min-w-[14.5rem] max-w-[24rem] shrink grow basis-[16.5rem] snap-start flex-col rounded-2xl border transition-colors max-sm:basis-[85vw] ${
-        highlighted
-          ? "border-indigo-300 bg-indigo-50/70 dark:border-indigo-500/50 dark:bg-indigo-500/[0.07]"
-          : "border-transparent bg-zinc-100/80 dark:bg-zinc-900/80"
+      className={`group/column flex h-full min-w-[14.5rem] max-w-[24rem] shrink grow basis-[16.5rem] snap-start flex-col rounded-xl transition-colors max-sm:w-[85vw] max-sm:max-w-none max-sm:shrink-0 max-sm:grow-0 max-sm:basis-auto ${
+        highlighted ? columnHighlight : columnSurface
       }`}
     >
-      <header className="flex h-11 shrink-0 items-center gap-2 pr-1.5 pl-3.5">
+      <header className="flex h-10 shrink-0 items-center gap-2 pr-1.5 pl-3">
         <ColumnDot column={column} />
         <h2
           id={headingId}
@@ -191,7 +187,8 @@ const Column = ({
           {column.title}
         </h2>
         {count}
-        <span className="ml-auto flex items-center">
+        {/* Where a pointer can hover, the column's actions show on hover or focus only. */}
+        <span className="ml-auto flex items-center transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-focus-within/column:opacity-100 [@media(hover:hover)]:group-hover/column:opacity-100">
           {header}
           <button
             type="button"
@@ -208,7 +205,7 @@ const Column = ({
       <SortableContext items={cards.map((card) => card.key)} strategy={verticalListSortingStrategy}>
         <ul
           ref={droppable.setNodeRef}
-          className="scroll-thin flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pt-0.5 pb-3"
+          className="scroll-thin flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-1.5 pt-0.5 pb-2"
         >
           {children}
         </ul>
@@ -217,17 +214,18 @@ const Column = ({
   )
 }
 
+/** The column's surface, and its look while a dragged card is over it. */
+const columnSurface = "bg-zinc-100/70 dark:bg-zinc-900/60"
+const columnHighlight =
+  "bg-indigo-50/80 ring-1 ring-indigo-200 ring-inset dark:bg-indigo-500/[0.07] dark:ring-indigo-500/30"
+
 const EmptyColumn = ({ filtered, column }: { filtered: boolean; column: BoardColumn }) => (
-  <li
-    className={`flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-300/80 px-4 text-center text-xs text-zinc-500 dark:border-zinc-700/80 dark:text-zinc-500 ${
-      filtered ? "py-3" : "py-8"
-    }`}
-  >
+  <li className="px-3 py-5 text-center text-xs text-zinc-500 dark:text-zinc-400">
     {filtered
-      ? "None match"
+      ? "No cards match the filters"
       : column._tag === "Done"
-        ? "Nothing closed recently. Drop a card here to close its issue."
-        : "No issues. Drop a card here."}
+        ? "Nothing closed recently"
+        : "No issues"}
   </li>
 )
 
@@ -421,7 +419,7 @@ export const BoardColumns = ({
   }, [selectedKey])
   // The tab of the column in view stays in view too.
   useEffect(() => {
-    const tab = tabs.current?.children[inView] as HTMLElement | undefined
+    const tab = tabs.current?.querySelectorAll("button")[inView]
     tab?.scrollIntoView({ block: "nearest", inline: "nearest" })
   }, [inView])
   return (
@@ -442,40 +440,43 @@ export const BoardColumns = ({
       <div className="flex h-full min-h-0 flex-col">
         <div
           ref={tabs}
-          role="tablist"
-          aria-label="Columns"
-          className="flex shrink-0 gap-1 overflow-x-auto px-4 pb-2 [mask-image:linear-gradient(to_right,transparent,black_1rem,black_calc(100%-1.5rem),transparent)] [scrollbar-width:none] sm:hidden"
+          className={`scroll-thin mx-4 mb-2 shrink-0 overflow-x-auto [scrollbar-width:none] sm:hidden ${
+            // The strip can run past the screen; a fade at its end says there is more.
+            inView < board.columns.length - 1
+              ? "[mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)]"
+              : ""
+          }`}
         >
-          {board.columns.map((column, index) => (
-            <button
-              key={column.key}
-              type="button"
-              role="tab"
-              aria-selected={inView === index}
-              onClick={() =>
-                (scroller.current?.children[index] as HTMLElement | undefined)?.scrollIntoView({
-                  behavior: "smooth",
-                  inline: "start",
-                  block: "nearest",
-                })
-              }
-              className={`flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition ${
-                inView === index
-                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
-                  : "border-zinc-200 bg-white text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
-              }`}
-            >
-              {column.title}
-              <span className="tabular-nums opacity-60">
-                {columnCards(board.cards, column.key).filter(visible).length}
-              </span>
-            </button>
-          ))}
+          <Segmented
+            label="Jump to a column"
+            value={board.columns[inView]?.key ?? ""}
+            onChange={(key) => {
+              const index = board.columns.findIndex((column) => column.key === key)
+              ;(scroller.current?.children[index] as HTMLElement | undefined)?.scrollIntoView({
+                behavior: "smooth",
+                inline: "start",
+                block: "nearest",
+              })
+            }}
+            options={board.columns.map((column) => ({
+              value: column.key,
+              label: (
+                <>
+                  {column.title}
+                  <span className="text-zinc-500 dark:text-zinc-400">
+                    {columnCards(board.cards, column.key).filter(visible).length}
+                  </span>
+                </>
+              ),
+            }))}
+            size="sm"
+            className="min-w-full [&>button]:h-8 [&>button]:flex-1"
+          />
         </div>
         <div
           ref={scroller}
           onScroll={trackColumn}
-          className={`scroll-thin flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-4 sm:snap-none sm:px-6 ${
+          className={`scroll-thin flex min-h-0 flex-1 snap-x snap-mandatory scroll-px-4 gap-2.5 overflow-x-auto px-4 pb-4 sm:snap-none sm:px-6 ${
             panelOpen ? "lg:scroll-pr-[33rem] lg:pr-[33rem]" : ""
           }`}
         >

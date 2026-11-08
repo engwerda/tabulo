@@ -22,7 +22,7 @@ const GROUPS = [
       { keys: ["K"], action: "Previous card in the column" },
       { keys: ["A"], action: "Assign or unassign me" },
       { keys: ["O"], action: "Open in Forgejo" },
-      { keys: ["Ctrl", "Enter"], action: "Send a comment (⌘ Enter on a Mac)" },
+      { keys: [isMac ? "⌘" : "Ctrl", "Enter"], action: "Send a comment" },
       { keys: ["Esc"], action: "Close" },
     ],
   },
@@ -58,12 +58,40 @@ const APP_GROUPS = (["General", "Go to"] as const).map((title) => ({
   ).map((shortcut) => ({ keys: shortcutKeys(shortcut.id, isMac), action: shortcut.label })),
 }))
 
+const ARROWS: Readonly<Record<string, number>> = { "↑": 0, "→": 90, "↓": 180, "←": 270 }
+
+/** Arrow keys as drawn arrows: the glyphs come from fallback fonts at uneven sizes. */
+const KeyLabel = ({ name }: { name: string }) => {
+  const rotation = ARROWS[name]
+  if (rotation === undefined) return name
+  return (
+    <svg
+      role="img"
+      aria-label={`${["Up", "Right", "Down", "Left"][rotation / 90]} arrow`}
+      viewBox="0 0 12 12"
+      className="size-3"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ transform: `rotate(${rotation}deg)` }}
+    >
+      <path d="M6 10V2M2.75 5.25 6 2l3.25 3.25" />
+    </svg>
+  )
+}
+
 export const ShortcutsDialog = ({ open, onClose }: { open: boolean; onClose: () => void }) => {
   const dialog = useRef<HTMLDialogElement>(null)
   useEffect(() => {
     const element = dialog.current
     if (element === null) return
-    if (open && !element.open) element.showModal()
+    if (open && !element.open) {
+      element.showModal()
+      // The dialog itself takes focus, so no control wears a focus ring before it is used.
+      element.focus()
+    }
     if (!open && element.open) element.close()
   }, [open])
   return (
@@ -74,30 +102,39 @@ export const ShortcutsDialog = ({ open, onClose }: { open: boolean; onClose: () 
       onClick={(event) => {
         if (event.target === dialog.current) onClose()
       }}
+      tabIndex={-1}
       aria-labelledby="shortcuts-title"
-      className="m-auto max-h-[calc(100dvh-2rem)] w-[min(32rem,calc(100vw-2rem))] lg:w-[min(56rem,calc(100vw-2rem))] animate-pop-in overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-pop backdrop:bg-zinc-950/40 backdrop:backdrop-blur-[2px] dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+      className="m-auto max-h-[calc(100dvh-2rem)] w-[min(30rem,calc(100vw-2rem))] animate-pop-in overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-pop backdrop:bg-zinc-950/40 focus:outline-none lg:w-[min(52rem,calc(100vw-2rem))] dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
     >
-      <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
-        <h2 id="shortcuts-title" className="text-base font-semibold">
+      <div className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-zinc-200/70 bg-white/95 pr-3 pl-5 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95">
+        <h2 id="shortcuts-title" className="text-[0.9375rem] font-semibold">
           Keyboard shortcuts
         </h2>
         <button type="button" onClick={onClose} aria-label="Close" className={buttonClass.icon}>
           <XIcon />
         </button>
       </div>
-      <div className="grid gap-6 px-5 py-5 lg:grid-cols-2 lg:gap-x-10">
+      <div className="grid gap-x-10 gap-y-6 px-5 pt-4 pb-6 lg:grid-cols-2">
         {[...GROUPS, ...APP_GROUPS].map((group) => (
-          <section key={group.title}>
-            <h3 className="text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
+          <section key={group.title} aria-labelledby={`shortcuts-${group.title}`}>
+            <h3
+              id={`shortcuts-${group.title}`}
+              className="text-2xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400"
+            >
               {group.title}
             </h3>
-            <dl className="mt-2 divide-y divide-zinc-100 dark:divide-zinc-800">
+            <dl className="mt-1.5">
               {group.shortcuts.map((shortcut) => (
-                <div key={shortcut.action} className="flex items-center justify-between py-2">
+                <div
+                  key={shortcut.action}
+                  className="flex min-h-8 items-center justify-between gap-4 py-1"
+                >
                   <dt className="text-sm text-zinc-700 dark:text-zinc-300">{shortcut.action}</dt>
-                  <dd className="flex gap-1">
+                  <dd className="flex shrink-0 gap-1">
                     {shortcut.keys.map((key) => (
-                      <Kbd key={key}>{key}</Kbd>
+                      <Kbd key={key}>
+                        <KeyLabel name={key} />
+                      </Kbd>
                     ))}
                   </dd>
                 </div>

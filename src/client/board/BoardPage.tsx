@@ -41,7 +41,7 @@ import {
   SearchIcon,
   XIcon,
 } from "../ui/icons.tsx"
-import { buttonClass, isTypingTarget } from "../ui/primitives.tsx"
+import { buttonClass, isTypingTarget, Kbd, Popover, touchTarget } from "../ui/primitives.tsx"
 import { RepoPaletteProvider } from "../ui/repo-palette.tsx"
 import { useToast } from "../ui/toast.tsx"
 import type { CardActions } from "./BoardCardView.tsx"
@@ -175,14 +175,14 @@ const BoardSkeleton = () => (
       <div
         // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have no identity
         key={column}
-        className="flex min-w-[14.5rem] flex-1 flex-col gap-2 rounded-2xl bg-zinc-100/80 p-2 dark:bg-zinc-900/80"
+        className="flex min-w-[14.5rem] flex-1 flex-col gap-1.5 rounded-xl bg-zinc-100/70 p-1.5 dark:bg-zinc-900/60"
       >
         <div className="mx-1.5 my-2.5 h-4 w-24 animate-shimmer rounded bg-zinc-200 dark:bg-zinc-800" />
         {Array.from({ length: count }, (_, card) => (
           <div
             // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have no identity
             key={card}
-            className="h-24 animate-shimmer rounded-xl border border-zinc-200/70 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+            className="h-[5.5rem] animate-shimmer rounded-xl border border-zinc-200/70 bg-white dark:border-zinc-800 dark:bg-zinc-900"
             style={{ animationDelay: `${(column + card) * 80}ms` }}
           />
         ))}
@@ -194,7 +194,7 @@ const BoardSkeleton = () => (
 const EmptyBoard = ({ onChoose }: { onChoose: () => void }) => (
   <div className="grid flex-1 place-items-center px-6 pb-16">
     <div className="max-w-sm text-center">
-      <div className="mx-auto flex h-20 w-28 items-end justify-center gap-1.5 rounded-2xl bg-gradient-to-b from-indigo-50 to-white p-3 ring-1 ring-indigo-100 dark:from-indigo-500/10 dark:to-transparent dark:ring-indigo-500/20">
+      <div className="mx-auto flex h-20 w-28 items-end justify-center gap-1.5 rounded-xl bg-gradient-to-b from-indigo-50 to-white p-3 ring-1 ring-indigo-100 dark:from-indigo-500/10 dark:to-transparent dark:ring-indigo-500/20">
         {[70, 45, 58].map((height) => (
           <span
             key={height}
@@ -242,7 +242,7 @@ const Problem = ({
 }) => (
   <div className="grid flex-1 place-items-center px-6 pb-16">
     <div role="alert" className="max-w-md text-center">
-      <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-amber-50 text-amber-500 dark:bg-amber-500/10">
+      <div className="mx-auto grid size-12 place-items-center rounded-xl bg-amber-50 text-amber-500 dark:bg-amber-500/10">
         <AlertIcon className="size-5" />
       </div>
       <h2 className="mt-5 text-base font-semibold tracking-tight">{title}</h2>
@@ -297,7 +297,7 @@ const ReposFailed = ({
 const NoMatches = ({ query, onClear }: { query: string; onClear: () => void }) => (
   <div className="grid flex-1 place-items-center px-6 pb-16">
     <div className="max-w-sm text-center">
-      <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-zinc-100 text-zinc-400 dark:bg-zinc-900">
+      <div className="mx-auto grid size-12 place-items-center rounded-xl bg-zinc-100 text-zinc-400 dark:bg-zinc-900">
         <SearchIcon className="size-5" />
       </div>
       <h2 className="mt-5 text-base font-semibold tracking-tight">
@@ -311,6 +311,79 @@ const NoMatches = ({ query, onClear }: { query: string; onClear: () => void }) =
       </button>
     </div>
   </div>
+)
+
+const boardMenuItem =
+  "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm text-zinc-700 transition hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none dark:text-zinc-300 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
+
+/** The board's quieter actions: refreshing, which also says when the board was read, and help. */
+const BoardMenu = ({
+  updated,
+  refreshing,
+  onRefresh,
+  onShortcuts,
+}: {
+  /** When the board was last read, in words; null before it first loads. */
+  updated: string | null
+  refreshing: boolean
+  onRefresh: () => void
+  onShortcuts: () => void
+}) => (
+  <Popover
+    align="end"
+    chevron={false}
+    focusFirstItem
+    accessibleLabel={`Board options${updated === null ? "" : `. ${updated}`}`}
+    triggerClass={buttonClass.icon}
+    panelClass="w-60 p-1"
+    label={
+      refreshing ? (
+        <RefreshIcon className="size-4 animate-spin" />
+      ) : (
+        <svg aria-hidden="true" viewBox="0 0 16 16" className="size-4" fill="currentColor">
+          <circle cx="3.5" cy="8" r="1.25" />
+          <circle cx="8" cy="8" r="1.25" />
+          <circle cx="12.5" cy="8" r="1.25" />
+        </svg>
+      )
+    }
+  >
+    {(close) => (
+      <div role="menu" aria-label="Board options">
+        <button
+          type="button"
+          role="menuitem"
+          className={boardMenuItem}
+          onClick={() => {
+            close()
+            onRefresh()
+          }}
+        >
+          <RefreshIcon className="size-4 text-zinc-500 dark:text-zinc-400" />
+          <span className="flex min-w-0 flex-1 flex-col">
+            Refresh
+            {updated !== null && (
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">{updated}</span>
+            )}
+          </span>
+          <Kbd>R</Kbd>
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          className={`${boardMenuItem} [@media(hover:none)]:hidden`}
+          onClick={() => {
+            close()
+            onShortcuts()
+          }}
+        >
+          <KeyboardIcon className="size-4 text-zinc-500 dark:text-zinc-400" />
+          <span className="flex-1">Keyboard shortcuts</span>
+          <Kbd>?</Kbd>
+        </button>
+      </div>
+    )}
+  </Popover>
 )
 
 export const BoardPage = ({ org }: { org: string }) => {
@@ -784,11 +857,15 @@ export const BoardPage = ({ org }: { org: string }) => {
 
   return (
     <RepoPaletteProvider repos={data?.repos ?? selected}>
-      <main className="flex h-[calc(100dvh-3.5rem-1px)] min-h-0 flex-col">
+      <main className="flex h-[calc(100dvh-3.5rem-1px-var(--tab-bar-height))] min-h-0 flex-col">
         <h1 className="sr-only">Board for {orgTitle}</h1>
-        <div className="flex items-center gap-3 px-4 pt-4 pb-3 sm:px-6">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <OrgSwitcher org={org} view="board" />
+        {/*
+          One row on a wide screen: scope, search and filters, then the board's actions. Narrower,
+          the filters take a row of their own under the scope and actions.
+        */}
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2.5 px-4 pt-3 pb-3 sm:px-6 min-[84rem]:grid-cols-[auto_minmax(0,1fr)_auto]">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <OrgSwitcher org={org} view="board" compact />
             {!orgMissing && (
               <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-700">
                 /
@@ -804,50 +881,43 @@ export const BoardPage = ({ org }: { org: string }) => {
               />
             )}
           </div>
-          <div className="flex shrink-0 items-center gap-1">
-            {!online ? (
+          {data !== undefined && !allFailed && (
+            <BoardFiltersBar
+              cards={data.cards}
+              filters={filters}
+              setParams={setParams}
+              searchInput={searchInput}
+              shown={shownCount}
+              total={data.cards.length}
+              className="col-span-2 row-start-2 min-[84rem]:col-span-1 min-[84rem]:col-start-2 min-[84rem]:row-start-1 min-[84rem]:ml-2"
+            />
+          )}
+          <div className="col-start-2 row-start-1 flex shrink-0 items-center justify-end gap-1 min-[84rem]:col-start-3">
+            {!online && (
               <span className="mr-1 inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-500/15 dark:text-amber-200">
                 <span aria-hidden="true" className="size-1.5 rounded-full bg-amber-500" />
                 Offline
               </span>
-            ) : (
-              data !== undefined && (
-                <span
-                  className="mr-1 hidden text-xs text-zinc-500 lg:inline dark:text-zinc-400"
-                  title={new Date(board.dataUpdatedAt).toLocaleString()}
-                >
-                  {board.isFetching
-                    ? "Refreshing…"
-                    : `Updated ${relativeTime(new Date(board.dataUpdatedAt).toISOString(), now)}`}
-                </span>
-              )
             )}
             {hasSelection && (
-              <button
-                type="button"
-                onClick={() => void board.refetch()}
-                disabled={board.isFetching}
-                aria-label="Refresh the board"
-                title="Refresh (R)"
-                className={`${buttonClass.icon} max-sm:hidden`}
-              >
-                <RefreshIcon className={`size-4 ${board.isFetching ? "animate-spin" : ""}`} />
-              </button>
+              <BoardMenu
+                updated={
+                  data === undefined
+                    ? null
+                    : board.isFetching
+                      ? "Refreshing…"
+                      : `Updated ${relativeTime(new Date(board.dataUpdatedAt).toISOString(), now)}`
+                }
+                refreshing={board.isFetching}
+                onRefresh={() => void board.refetch()}
+                onShortcuts={() => setShortcutsOpen(true)}
+              />
             )}
-            <button
-              type="button"
-              onClick={() => setShortcutsOpen(true)}
-              aria-label="Keyboard shortcuts"
-              title="Keyboard shortcuts (?)"
-              className={`${buttonClass.icon} max-sm:hidden`}
-            >
-              <KeyboardIcon />
-            </button>
             {canCreate && firstCreatable !== undefined && (
               <button
                 type="button"
                 onClick={() => openComposer(firstCreatable.key)}
-                className={`${buttonClass.primary} ml-1`}
+                className={`${buttonClass.primary} ${touchTarget} ml-1 max-sm:w-8 max-sm:px-0`}
                 title="New issue (N)"
               >
                 <PlusIcon className="size-4" />
@@ -859,17 +929,6 @@ export const BoardPage = ({ org }: { org: string }) => {
             {board.isFetching ? "Refreshing board" : ""}
           </p>
         </div>
-
-        {data !== undefined && !allFailed && (
-          <BoardFiltersBar
-            cards={data.cards}
-            filters={filters}
-            setParams={setParams}
-            searchInput={searchInput}
-            shown={shownCount}
-            total={data.cards.length}
-          />
-        )}
 
         {repos.isError && !orgMissing && (
           <Notice tone="error">
