@@ -38,12 +38,19 @@ import { ColumnDot, LabelName, RepoIssueRef } from "./BoardCardView.tsx"
 import type { CardUpdate } from "./BoardPage.tsx"
 import { commentDraftKey, drafts } from "./drafts.ts"
 
-/** Forgejo already sanitizes rendered Markdown; this keeps Tabulo safe if it ever does not. */
+/**
+ * Forgejo already sanitizes rendered Markdown; this keeps Tabulo safe if it ever does not. No
+ * form control survives except a task list's checkbox, so no text can post as the reader.
+ */
 const sanitize = (html: string) => {
-  const clean = DOMPurify.sanitize(html, { USE_PROFILES: { html: true } })
-  const template = document.createElement("template")
-  template.innerHTML = clean
-  for (const link of template.content.querySelectorAll("a[href]")) {
+  const content = DOMPurify.sanitize(html, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: ["button", "dialog", "form", "option", "select", "style", "textarea"],
+    FORBID_ATTR: ["action", "formaction", "popover", "popovertarget", "style"],
+    RETURN_DOM_FRAGMENT: true,
+  })
+  for (const link of content.querySelectorAll("a[href]")) {
+    if (link.getAttribute("href")?.startsWith("#")) continue
     link.setAttribute("target", "_blank")
     link.setAttribute("rel", "noreferrer")
     const hint = document.createElement("span")
@@ -52,19 +59,26 @@ const sanitize = (html: string) => {
     link.append(hint)
   }
   // The panel's own headings are h2 and h3, so a text's highest heading becomes h4.
-  const headings = [...template.content.querySelectorAll("h1, h2, h3, h4, h5, h6")]
+  const headings = [...content.querySelectorAll("h1, h2, h3, h4, h5, h6")]
   const top = Math.min(...headings.map((heading) => Number(heading.tagName.slice(1))))
   for (const heading of headings) {
     const level = Math.min(6, Number(heading.tagName.slice(1)) - top + 4)
     const demoted = document.createElement(`h${level}`)
+    for (const { name, value } of heading.attributes) demoted.setAttribute(name, value)
     demoted.append(...heading.childNodes)
     heading.replaceWith(demoted)
   }
-  for (const box of template.content.querySelectorAll("input")) {
-    box.setAttribute("disabled", "")
-    box.setAttribute("aria-label", box.closest("li")?.textContent?.trim() || "Task")
+  for (const input of content.querySelectorAll("input")) {
+    if (input.type !== "checkbox") {
+      input.remove()
+      continue
+    }
+    input.setAttribute("disabled", "")
+    input.setAttribute("aria-label", input.closest("li")?.textContent?.trim() || "Task")
   }
-  return template.innerHTML
+  const container = document.createElement("div")
+  container.append(content)
+  return container.innerHTML
 }
 
 const Rendered = ({ html }: { html: string }) => (
