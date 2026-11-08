@@ -11,12 +11,14 @@ import { PaletteProvider, usePalette } from "./palette/PaletteProvider.tsx"
 import { ORGS, OrgPicker } from "./scope/OrgPicker.tsx"
 import { useLastScope } from "./scope/remembered.ts"
 import { isOrgViewPath, ORG_VIEWS, type OrgViewId, orgViewHref } from "./scope/views.ts"
-import { SESSION_USER, useSession } from "./session.ts"
+import { forgetSignedInUser, SESSION_USER, useSession } from "./session.ts"
+import { RETURN_KEY } from "./stored-data.ts"
 import { ThemeControl } from "./ThemeControl.tsx"
 import { ErrorBoundary } from "./ui/ErrorBoundary.tsx"
+import { sentence } from "./ui/ErrorNotice.tsx"
 import { ArrowRightIcon, LogoMark, SignOutIcon } from "./ui/icons.tsx"
 import { buttonClass, Popover, touchTarget } from "./ui/primitives.tsx"
-import { useClearToasts } from "./ui/toast.tsx"
+import { useClearToasts, useToast } from "./ui/toast.tsx"
 
 /** A still life of a board, drawn with the app's own surfaces, for the sign-in page. */
 const BoardSketch = () => {
@@ -79,12 +81,20 @@ const useDocumentTitle = (title: string) => {
   }, [title])
 }
 
+const decodePathSegment = (segment: string) => {
+  try {
+    return decodeURIComponent(segment)
+  } catch {
+    return segment
+  }
+}
+
 /** Names the browser tab after the view and organization, so tabs and history stay apart. */
 const useRouteTitle = () => {
   const [path] = useLocation()
   const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
   const view = ORG_VIEWS.find((candidate) => isOrgViewPath(candidate, path))
-  const org = view === undefined ? undefined : decodeURIComponent(path.split("/")[2] ?? "")
+  const org = view === undefined ? undefined : decodePathSegment(path.split("/")[2] ?? "")
   const orgName =
     orgs.data?.find((candidate) => candidate.name.toLowerCase() === org?.toLowerCase())?.fullName ||
     org
@@ -101,7 +111,6 @@ const useRouteTitle = () => {
 
 // Sign-in always lands on "/", so the address a signed-out visitor opened, such as a shared card
 // link, waits here for the trip through Forgejo.
-const RETURN_KEY = "tabulo.returnTo"
 
 const rememberReturn = () => {
   const here = `${window.location.pathname}${window.location.search}`
@@ -221,12 +230,16 @@ const useNav = (): ReadonlyArray<NavItem> => {
 const useSignOut = () => {
   const queryClient = useQueryClient()
   const clearToasts = useClearToasts()
+  const toast = useToast()
   return useMutation({
     mutationFn: signOut,
+    onError: (error) =>
+      toast({ tone: "error", title: "You are still signed in", detail: sentence(error.message) }),
     onSuccess: () => {
       // The session goes null first, so the app shows sign-in before the signed-in views lose
       // their data; clearing everything first left them rendering without a viewer.
       signedOut.current = true
+      forgetSignedInUser()
       queryClient.setQueryData(SESSION_USER, null)
       clearToasts()
       void queryClient.cancelQueries()

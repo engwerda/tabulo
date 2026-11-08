@@ -1,5 +1,6 @@
 import { Cause, Clock, Effect, Exit, Schema } from "effect"
 import { type Context, Hono } from "hono"
+import { bodyLimit } from "hono/body-limit"
 import { deleteCookie, getCookie, setCookie } from "hono/cookie"
 import {
   AddCommentRequest,
@@ -103,6 +104,11 @@ const cookieOptions = (maxAgeMs: number) =>
     maxAge: Math.floor(maxAgeMs / 1000),
   }) as const
 
+const sendsNonJsonBody = (contentType: string | undefined) =>
+  contentType !== undefined && !/^application\/json\s*(;|$)/i.test(contentType)
+
+const MAX_BODY_BYTES = 1024 * 1024
+
 const unauthenticated = (c: AppContext) => {
   if (getCookie(c, SESSION_COOKIE) !== undefined) {
     deleteCookie(c, SESSION_COOKIE, { path: "/", secure: true })
@@ -200,10 +206,11 @@ export const createApp = (dependencies: Dependencies) => {
 
   const app = new Hono<{ Bindings: Env }>()
 
-  app.use("/api/*", async (c, next) => {
+  app.use(async (c, next) => {
     await next()
     c.header("Cache-Control", "no-store")
     c.header("X-Content-Type-Options", "nosniff")
+    c.header("Strict-Transport-Security", "max-age=31536000")
   })
 
   app.use(async (c, next) => {
@@ -212,8 +219,18 @@ export const createApp = (dependencies: Dependencies) => {
     if (appOrigin === undefined || c.req.header("origin") !== appOrigin) {
       return c.json({ error: "Cross-origin request refused" }, 403)
     }
+    if (sendsNonJsonBody(c.req.header("content-type"))) {
+      return c.json({ error: "Send the request body as application/json" }, 415)
+    }
     return next()
   })
+
+  app.use(
+    bodyLimit({
+      maxSize: MAX_BODY_BYTES,
+      onError: (c) => c.json({ error: "The request body is too large" }, 413),
+    }),
+  )
 
   app.get("/auth/login", (c) =>
     run(

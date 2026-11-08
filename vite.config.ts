@@ -21,7 +21,7 @@ const securityHeaders = (): Plugin => ({
       `img-src 'self' data: ${forgejoOrigin}`,
       "object-src 'none'",
       "base-uri 'none'",
-      "form-action 'self'",
+      "form-action 'none'",
       "frame-ancestors 'none'",
     ].join("; ")
     this.emitFile({
@@ -31,6 +31,7 @@ const securityHeaders = (): Plugin => ({
         "/*",
         `  Content-Security-Policy: ${csp}`,
         "  Referrer-Policy: strict-origin-when-cross-origin",
+        "  Strict-Transport-Security: max-age=31536000",
         "  X-Content-Type-Options: nosniff",
         "",
       ].join("\n"),

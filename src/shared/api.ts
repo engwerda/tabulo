@@ -37,6 +37,8 @@ export type Section<A> =
   | { readonly _tag: "Failed"; readonly message: string }
 
 export const User = Schema.Struct({
+  /** Forgejo's user id, which a rename does not change. */
+  id: Schema.Number,
   login: Schema.String,
   name: Schema.String,
   avatarUrl: Schema.String,

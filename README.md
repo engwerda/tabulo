@@ -283,17 +283,28 @@ The token needs read access to issues, repositories, notifications, and the user
 
 - Sign-in uses OAuth2 with PKCE (S256) and a single-use `state` that expires after 10 minutes
   and is bound to the browser that started the sign-in.
+- Tabulo asks Forgejo for the token scopes `read:user`, `read:organization`, `read:repository`,
+  `write:issue`, `read:notification`, and `read:misc`, so its tokens cannot change repositories,
+  settings, or anything an administrator can. Forgejo keeps the scopes of a user's first grant
+  to the OAuth2 application. If your users signed in to a Tabulo that asked for no scopes, their
+  grants still allow everything: create a new OAuth2 application, set its client ID and secret,
+  and each user grants the narrower scopes at their next sign-in.
 - The session cookie is a random value marked `HttpOnly`, `Secure`, and `SameSite=Lax`. D1
   stores only its SHA-256 hash. A session ends 30 days after sign-in.
 - Access and refresh tokens are encrypted with AES-GCM before they are written to D1, and never
   reach the browser.
-- Requests that change state must send an `Origin` header equal to `APP_URL`.
+- Requests that change state must send an `Origin` header equal to `APP_URL`, and a JSON body
+  of at most 1 MB or none, so an HTML form cannot send them.
 - A card move checks that you are a member of the organization and that the repository is not
   archived. Forgejo then authorizes each issue write as you.
 - The app is served with a Content Security Policy that allows only Tabulo's own scripts,
   styles, and requests, and images from Tabulo and `FORGEJO_URL`. It also forbids framing.
   `npm run build` writes the policy to `dist/client/_headers` from `FORGEJO_URL` in
   `wrangler.jsonc`, so rebuild after you change it. API responses are never cached.
+- Signing out, or another user signing in in the same browser, clears what Tabulo kept in the
+  browser's storage, except the theme.
+- The shared card order spans repositories with different readers, so a member can tell from
+  the ranks that cards they cannot read lie between two of theirs, though not which issues.
 
 ## License
 

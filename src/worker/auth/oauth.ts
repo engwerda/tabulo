@@ -32,9 +32,9 @@ export const completeLogin = ({ code, state, browserState, previousSession }: Ca
     if (code === undefined || state === undefined) {
       return yield* new OAuthCallbackInvalid({ message: "code and state are required" })
     }
+    if (state !== browserState) return yield* new OAuthStateInvalid()
     const store = yield* SessionStore
     const codeVerifier = yield* store.takeOAuthState(state)
-    if (state !== browserState) return yield* new OAuthStateInvalid()
 
     const forgejo = yield* ForgejoClient
     const tokens = yield* forgejo.exchangeCode(code, codeVerifier)

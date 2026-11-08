@@ -34,6 +34,14 @@ const awaitConcurrentRefresh = (session: Session) =>
     ),
   )
 
+const reloadUser = (session: Session) =>
+  Effect.gen(function* () {
+    const forgejo = yield* ForgejoClient
+    const store = yield* SessionStore
+    const user = yield* forgejo.currentUser(session.tokens.accessToken)
+    return yield* store.updateUser(session, user)
+  }).pipe(Effect.catch(() => Effect.succeed(session)))
+
 const refresh = (session: Session) =>
   Effect.gen(function* () {
     const forgejo = yield* ForgejoClient
@@ -41,6 +49,7 @@ const refresh = (session: Session) =>
     return yield* forgejo.refresh(session.tokens.refreshToken).pipe(
       Effect.flatMap((tokens) => store.replaceTokens(session, tokens)),
       Effect.catchTag("OAuthGrantRejected", () => awaitConcurrentRefresh(session)),
+      Effect.flatMap(reloadUser),
     )
   })
 

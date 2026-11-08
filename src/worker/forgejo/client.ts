@@ -63,7 +63,7 @@ export type PageBudget = { remaining: number }
 // Workers allow 1,000 subrequests per request. Listing pages share this budget, which leaves
 // room for the reads besides them: on each of at most two attempts, each of at most 20
 // repositories reads itself (and, for Insights, its languages), and the session may refresh
-// its token once.
+// its token and reread the user once.
 export const PAGE_BUDGET = 800
 
 /**
@@ -139,12 +139,6 @@ export class ForgejoClient extends Context.Service<
       token: AccessToken,
       org: string,
     ) => Effect.Effect<ReadonlyArray<ForgejoRepo>, ForgejoError>
-    /** Whether `login` is a member of the organization. Ask only about the token's own user. */
-    readonly isOrgMember: (
-      token: AccessToken,
-      org: string,
-      login: string,
-    ) => Effect.Effect<boolean, ForgejoError>
     /** The labels, as far as `budget` reaches (100 pages by default). */
     readonly orgLabels: (
       token: AccessToken,
@@ -156,7 +150,7 @@ export class ForgejoClient extends Context.Service<
       token: AccessToken,
       repo: RepoRef,
       listing: IssueListing,
-    ) => Effect.Effect<ReadonlyArray<ForgejoRepoIssue>, ForgejoError>
+    ) => Effect.Effect<Listing<ForgejoRepoIssue>, ForgejoError>
     readonly repoEpicIssues: (
       token: AccessToken,
       repo: RepoRef,
@@ -340,6 +334,15 @@ const knownTotal = <A>(page: {
 
 const PAGE_SIZE = 50
 const MAX_PAGES = 100
+
+export const OAUTH_SCOPES = [
+  "read:user",
+  "read:organization",
+  "read:repository",
+  "write:issue",
+  "read:notification",
+  "read:misc",
+].join(" ")
 
 const repoPath = (repo: RepoRef) =>
   `/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`
@@ -545,6 +548,7 @@ export const makeForgejoClient = (
         redirect_uri: config.redirectUri,
         response_type: "code",
         state,
+        scope: OAUTH_SCOPES,
         code_challenge: codeChallenge,
         code_challenge_method: "S256",
       })}`,
@@ -579,25 +583,12 @@ export const makeForgejoClient = (
       ),
     userOrgs: (token) => all(token, "/user/orgs", {}, ForgejoOrg),
     orgRepos: (token, org) => all(token, `/orgs/${encodeURIComponent(org)}/repos`, {}, ForgejoRepo),
-    // 204 for a member and 404 otherwise. Forgejo redirects a non-member asking about
-    // themselves to the public_members check, which fetch follows and which also answers 404.
-    isOrgMember: (token, org, login) =>
-      request(
-        token,
-        `/orgs/${encodeURIComponent(org)}/members/${encodeURIComponent(login)}`,
-        {},
-      ).pipe(
-        Effect.as(true),
-        Effect.catchTag("ForgejoNotFound", () => Effect.succeed(false)),
-      ),
     orgLabels: (token, org, budget = { remaining: MAX_PAGES }) =>
       listing(token, `/orgs/${encodeURIComponent(org)}/labels`, {}, ForgejoLabel, budget),
     repo: (token, repo) =>
       api(token, repoPath(repo), {}, ForgejoRepo).pipe(Effect.map(({ body }) => body)),
     repoIssues: (token, repo, issues) =>
-      listRepoIssues(token, repo, issues, ForgejoRepoIssue, { remaining: MAX_PAGES }).pipe(
-        Effect.map(({ items }) => items),
-      ),
+      listRepoIssues(token, repo, issues, ForgejoRepoIssue, { remaining: MAX_PAGES }),
     repoEpicIssues: (token, repo, issues, budget) =>
       listRepoIssues(token, repo, issues, ForgejoEpicIssue, budget),
     issue: (token, repo, number) =>

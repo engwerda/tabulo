@@ -174,28 +174,38 @@ export const toBoardCard = (
   readOnlyReason: repo.archived ? "archived" : null,
 })
 
-const NAME = /^[A-Za-z0-9_.-]+$/
-const CARD_KEY = /^[a-z0-9_.-]+\/[a-z0-9_.-]+#[1-9][0-9]*$/
+const NAME = /^[A-Za-z0-9_.-]{1,100}$/
+const isName = (value: string) => NAME.test(value) && value !== "." && value !== ".."
+const CARD_KEY = /^([^/]+)\/([^#]+)#([1-9][0-9]{0,9})$/
 const MAX_CARD_KEY_LENGTH = 200
+
+const cardIssue = (key: string) => {
+  const [, owner, name, number] = CARD_KEY.exec(key) ?? []
+  return owner !== undefined && name !== undefined && isName(owner) && isName(name)
+    ? { repo: { owner, name }, number: Number(number) }
+    : undefined
+}
 
 /** A card key of `org` from a request, lowercased, or null when the request names none. */
 export const parseCardKey = (org: string, what: string, value: string | null) => {
   if (value === null) return Effect.succeed(null)
   const key = value.toLowerCase()
-  return key.length <= MAX_CARD_KEY_LENGTH && CARD_KEY.test(key) && key.startsWith(`${org}/`)
+  return key.length <= MAX_CARD_KEY_LENGTH &&
+    cardIssue(key) !== undefined &&
+    key.startsWith(`${org}/`)
     ? Effect.succeed(key)
     : Effect.fail(new BoardRequestInvalid({ message: `${what} is not a card of ${org}` }))
 }
 
 /** An organization or repository name that is safe to put in a Forgejo API path. */
 export const parseName = (what: string, value: string | undefined) =>
-  value !== undefined && NAME.test(value) && value !== "." && value !== ".."
+  value !== undefined && isName(value)
     ? Effect.succeed(value.toLowerCase())
     : Effect.fail(new BoardRequestInvalid({ message: `${what} is not a valid name` }))
 
 /** A Forgejo login, kept in the case the request gives. */
 const parseLogin = (value: string) =>
-  NAME.test(value)
+  isName(value)
     ? Effect.succeed(value)
     : Effect.fail(new BoardRequestInvalid({ message: "login is not a valid login" }))
 
@@ -239,6 +249,11 @@ export const parseBoardQuery = (org: string | undefined, repos: string | undefin
     return { org: yield* parseName("org", org), repos: names }
   })
 
+const isOrgMember = (token: AccessToken, org: string) =>
+  ForgejoClient.use((forgejo) => forgejo.userOrgs(token)).pipe(
+    Effect.map((orgs) => orgs.some(({ name }) => name.toLowerCase() === org)),
+  )
+
 export const listOrgs = (token: AccessToken) =>
   ForgejoClient.use((forgejo) => forgejo.userOrgs(token)).pipe(
     Effect.map((orgs) =>
@@ -265,7 +280,12 @@ export const listOrgRepos = (token: AccessToken, org: string) =>
   )
 
 type RepoCards =
-  | { readonly _tag: "Loaded"; readonly repo: string; readonly cards: ReadonlyArray<UnrankedCard> }
+  | {
+      readonly _tag: "Loaded"
+      readonly repo: string
+      readonly cards: ReadonlyArray<UnrankedCard>
+      readonly complete: boolean
+    }
   | { readonly _tag: "Failed"; readonly repo: string; readonly message: string }
 
 /**
@@ -300,7 +320,7 @@ export const loadBoard = (
     const settings = yield* BoardConfig
     const forgejo = yield* ForgejoClient
     const [layout, viewerCanArrange] = yield* Effect.all(
-      [loadLayout(token, query.org), forgejo.isOrgMember(token, query.org, login)],
+      [loadLayout(token, query.org), isOrgMember(token, query.org)],
       { concurrency: "unbounded" },
     )
     const windowStart = (yield* Clock.currentTimeMillis) - settings.doneDays * DAY_MS
@@ -323,9 +343,10 @@ export const loadBoard = (
           ([repo, open, closed]): RepoCards => ({
             _tag: "Loaded",
             repo: name,
-            cards: [...open, ...closed.filter(closedInWindow)].map((issue) =>
+            cards: [...open.items, ...closed.items.filter(closedInWindow)].map((issue) =>
               toBoardCard(layout, query.org, repo, issue),
             ),
+            complete: open.complete && closed.complete,
           }),
         ),
         Effect.catchTag(FORGEJO_READ_ERRORS, (error) =>
@@ -348,13 +369,12 @@ export const loadBoard = (
       stored,
       loaded.flatMap((result) => result.cards),
     )
-    // Rows of issues that a loaded repository no longer lists: closed before the Done window,
-    // deleted, or transferred. Rows of other repositories belong to other boards.
     const listed = new Set([...kept, ...fresh].map((card) => card.key))
-    const loadedRepos = new Set(loaded.map((result) => result.repo))
+    const fullyListedRepos = new Set(
+      loaded.flatMap((result) => (result.complete ? [result.repo] : [])),
+    )
     const removed = [...stored.keys()].filter(
-      (key) =>
-        !listed.has(key) && loadedRepos.has(key.slice(query.org.length + 1, key.lastIndexOf("#"))),
+      (key) => !listed.has(key) && fullyListedRepos.has(cardIssue(key)?.repo.name ?? ""),
     )
     yield* ranks.materialize(
       query.org,
@@ -507,16 +527,28 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
     }
 
     const forgejo = yield* ForgejoClient
-    if (!(yield* forgejo.isOrgMember(token, org, login))) {
+    if (!(yield* isOrgMember(token, org))) {
       return yield* new BoardWriteForbidden({
         message: `Only members of ${org} can arrange its board`,
       })
     }
-    const [repo, issue, orgLabels] = yield* Effect.all(
+    const canRead = (key: string | null) => {
+      const neighbour = key === null ? undefined : cardIssue(key)
+      return neighbour === undefined
+        ? Effect.succeed(true)
+        : forgejo.issue(token, neighbour.repo, neighbour.number).pipe(
+            Effect.as(true),
+            Effect.catchTag(["ForgejoNotFound", "ForgejoForbidden"], () => Effect.succeed(false)),
+          )
+    }
+    const [repo, issue, orgLabels, neighboursReadable] = yield* Effect.all(
       [
         forgejo.repo(token, repoRef),
         forgejo.issue(token, repoRef, request.number),
         readOrgLabels(token, org),
+        Effect.all([canRead(afterKey), canRead(beforeKey)], { concurrency: "unbounded" }).pipe(
+          Effect.map((readable) => readable.every(Boolean)),
+        ),
       ],
       { concurrency: "unbounded" },
     )
@@ -537,6 +569,7 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
     // A card that left the column the client saw was moved by someone else; acting on the
     // stale view would undo their status change in Forgejo.
     if (layout.columnOf(issue) !== request.fromColumn) return yield* new BoardChanged()
+    if (!neighboursReadable) return yield* new BoardChanged()
 
     const ranks = yield* CardRanks
     const rank = rankForDrop(yield* ranks.forOrg(org), {
@@ -609,7 +642,7 @@ export const createCard = (token: AccessToken, login: string, request: CreateCar
     const repoRef = { owner: org, name: yield* parseName("repository", request.repo) }
     const settings = yield* BoardConfig
     const forgejo = yield* ForgejoClient
-    if (!(yield* forgejo.isOrgMember(token, org, login))) {
+    if (!(yield* isOrgMember(token, org))) {
       return yield* new BoardWriteForbidden({
         message: `Only members of ${org} can add cards to its board`,
       })
@@ -811,6 +844,9 @@ const toCardComment = (comment: ForgejoComment, bodyHtml: string): CardComment =
   bodyHtml,
 })
 
+const plainHtml = (text: string) =>
+  `<p>${text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\n", "<br>\n")}</p>`
+
 /** Comments as the user who owns `token`; Forgejo decides who may comment. */
 export const addComment = (token: AccessToken, _login: string, request: AddCommentRequest) =>
   Effect.gen(function* () {
@@ -818,7 +854,14 @@ export const addComment = (token: AccessToken, _login: string, request: AddComme
     yield* editableIssue(token, repoRef, request.number)
     const forgejo = yield* ForgejoClient
     const comment = yield* forgejo.createComment(token, repoRef, request.number, request.body)
-    const bodyHtml = yield* renderIssueMarkdown(token, repoRef, comment.body)
+    const bodyHtml = yield* renderIssueMarkdown(token, repoRef, comment.body).pipe(
+      Effect.catch((error) =>
+        Effect.sync(() => {
+          console.warn(`Rendering comment ${comment.id} failed`, error)
+          return plainHtml(comment.body)
+        }),
+      ),
+    )
     return { comment: toCardComment(comment, bodyHtml) } satisfies AddCommentResult
   })
 

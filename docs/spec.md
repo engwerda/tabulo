@@ -35,7 +35,10 @@ The board, insights, and epics are views of one organization. They share its cho
 repositories, which the address holds in `?repos=a,b`. The browser remembers each
 organization's repositories and the last organization, so switching views keeps both. An
 organization opened for the first time, with at most 20 repositories that are not archived,
-starts with all of them chosen; clearing the choice is remembered too.
+starts with all of them chosen; clearing the choice is remembered too. Browser storage records
+the Forgejo user id it belongs to. Signing out clears it, except the theme and the address to
+return to after sign-in, and so does another user's sign-in in the same browser; a tab whose
+session changes to another user reloads.
 
 ## Data rules
 
@@ -63,9 +66,12 @@ starts with all of them chosen; clearing the choice is remembered too.
 ### Sign-in
 
 1. `GET /auth/login` stores a random `state` and a PKCE verifier, then redirects to Forgejo's
-   authorize endpoint.
-2. `GET /auth/callback` checks `state`, exchanges the code for access and refresh tokens, reads
-   the Forgejo user, and creates a session. It deletes the session the browser already had.
+   authorize endpoint. It asks for the scopes `read:user read:organization read:repository
+   write:issue read:notification read:misc`. Forgejo keeps the scopes of a user's first grant to
+   the application, so a grant made before Tabulo asked for scopes keeps every scope.
+2. `GET /auth/callback` checks that `state` is the one in the browser's state cookie before it
+   uses the stored state up, exchanges the code for access and refresh tokens, reads the Forgejo
+   user, and creates a session. It deletes the session the browser already had.
 3. The session cookie is random, `HttpOnly`, `Secure`, and `SameSite=Lax`. The database stores
    only its SHA-256 hash.
 4. Tokens are encrypted with AES-GCM before they reach the database. They never reach the browser.
@@ -73,9 +79,16 @@ starts with all of them chosen; clearing the choice is remembered too.
    Forgejo rejects the refresh token itself (`invalid_grant` or `unauthorized_client`). Any other
    token endpoint failure, such as `invalid_client` or a rate limit, returns HTTP 502 and keeps
    the session. Forgejo can rotate refresh tokens, so when concurrent requests refresh the same
-   session, the first stored tokens win and the other requests use them.
+   session, the first stored tokens win and the other requests use them. After a refresh,
+   Tabulo reads the user again and stores their current login, name, and avatar, so a rename
+   reaches the session within one access token's lifetime.
 6. `POST /auth/logout` deletes the session. Requests that change state must carry an `Origin`
-   header equal to `APP_URL`.
+   header equal to `APP_URL`, and a body only as `application/json` of at most 1 MB; others
+   answer 403, 415, and 413. An HTML form can post from Tabulo's own origin but cannot send JSON.
+   Organization and repository names in a request have at most 100 characters.
+7. Every Worker response carries `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`,
+   and `Strict-Transport-Security`. The static assets carry the CSP from `vite.config.ts`, which
+   allows no form submission and no framing.
 
 ### Board
 
@@ -95,8 +108,11 @@ the board.
 - **Card order.** Every card has a rank, compared by code unit, and the order belongs to the
   organization, across all its repositories. Cards sort by rank, then by key. Two moves that
   land in the same gap at the same moment can store equal ranks; the key then orders them the
-  same way for everyone, and a later move places a card after both.
-- **Who arranges.** Only members of the organization may move, reorder, or add cards. Anyone
+  same way for everyone, and a later move places a card after both. Ranks span repositories
+  that different users can read, so the ranks a user sees can show that cards they cannot read
+  lie between two of theirs, though never which issues those are.
+- **Who arranges.** Only members of the organization may move, reorder, or add cards, as
+  `/user/orgs` lists them for the user's token. Anyone
   may change a card's labels, milestone, or assignees, or comment; Forgejo decides. Forgejo
   authorizes each issue write as the user, so Tabulo does not check push access. Cards of
   archived repositories cannot be moved, added, edited, or commented on.
@@ -133,8 +149,9 @@ using part of them. Before it answers, it stores ranks in one D1 batch:
 - A shown card without a stored rank for its current column, for example one moved in Forgejo,
   gets a rank after the largest stored rank of that column in the organization. Several such
   cards are ranked most recently updated first.
-- Rows of issues that a loaded repository no longer lists (closed before the Done window,
-  deleted, or transferred) are deleted. Rows of other repositories are kept.
+- Rows of issues that a repository read to its end no longer lists (closed before the Done
+  window, deleted, or transferred) are deleted. Rows of other repositories, and of a
+  repository whose issues need more than 100 pages, are kept.
 - Neither step touches a row written after the read started. Such a row comes from a move made
   while this read's Forgejo listing was already out of date.
 
@@ -147,9 +164,11 @@ characters. The server:
 1. Answers 400 to an invalid key, and 403 unless the user is a member of the organization or
    if the repository is archived.
 2. Checks that the user's board is current. If Forgejo has the card in another column than
-   `fromColumn`, if `afterKey` or `beforeKey` has no rank in the destination column, or if
-   `beforeKey` sorts before `afterKey`, it answers 409 and changes nothing. Acting on the stale
-   view could undo someone else's change.
+   `fromColumn`, if `afterKey` or `beforeKey` has no rank in the destination column or names
+   an issue the user cannot read, or if `beforeKey` sorts before `afterKey`, it answers 409 and
+   changes nothing. Acting on the stale view could undo someone else's change. A neighbour the
+   user cannot read answers as one without a rank, so the answer does not tell which issues
+   of a repository they cannot read exist.
 3. If the column changes, writes to Forgejo as the user. To a status column it adds that label,
    and Forgejo removes the issue's other labels in the same exclusive scope; Tabulo then
    removes any other label named like a column that is left, such as a repository's
@@ -199,7 +218,9 @@ the board shows it, with its stored rank or the rank a board read would give it.
   which clears it. Forgejo answers 403 when the user cannot write the repository's issues and
   500 (Tabulo answers 502) for a milestone the repository does not have.
 - `comment` takes `{ body }`, trimmed text of 1 to 65,535 characters, and answers with the new
-  comment, its body rendered as in `GET /api/board/issue`. Anyone who can read the repository
+  comment, its body rendered as in `GET /api/board/issue`. When the render fails after the
+  comment is posted, the answer carries the comment's text as escaped HTML instead, so that a
+  token refresh does not post it twice. Anyone who can read the repository
   may comment unless Forgejo has locked the issue.
 
 `GET /api/board/issue` reads the issue's description and its comments and has Forgejo render
@@ -324,7 +345,7 @@ organization and repository selection. It shows open epics and epics closed with
   not use. Each child lookup takes one page when it starts. A listing that runs out of pages is
   named in `incomplete.listings`, and epics in its unread part are missing.
   `incomplete.children` counts the child references that were not looked up. With at most 20
-  repositories read on each of two attempts and one token refresh, a request makes at most 841
+  repositories read on each of two attempts and one token refresh, a request makes at most 842
   Forgejo requests.
 - **Display.** Each epic exposes its issue details and board column, progress segments and
   legend, completion percentage, and an expandable child list. The response is

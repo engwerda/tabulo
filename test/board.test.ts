@@ -756,6 +756,27 @@ describe("POST /api/board/move", () => {
     expect((await board()).viewerCanArrange).toBe(true)
   })
 
+  it("decides membership by the signed-in user, not by the login they had at sign-in", async () => {
+    const { forgejo, call, move } = await boardSession({
+      orgs: [{ ...boardOrg(), publicMembers: ["grace"] }],
+    })
+    const outsiderCookie = await signIn(call, forgejo, "linus")
+    forgejo.renameUser("linus", "linus-old")
+    forgejo.renameUser("grace", "linus")
+
+    const shown = await call("/api/board?org=acme&repos=api,web", {
+      headers: { cookie: outsiderCookie },
+    })
+    const before = await rankRows()
+    const reorder = await move({ repo: "api", number: 1, toColumn: "todo" }, outsiderCookie)
+
+    expect(shown.status).toBe(200)
+    expect(((await shown.json()) as BoardBody).viewerCanArrange).toBe(false)
+    expect(reorder.status).toBe(403)
+    expect(writes(forgejo)).toEqual([])
+    expect(await rankRows()).toEqual(before)
+  })
+
   it("shows the cards of an archived repository read-only and refuses to move them", async () => {
     const org = boardOrg()
     org.repos.push(
@@ -808,6 +829,9 @@ describe("POST /api/board/move", () => {
     ["issue number zero", { toColumn: "todo", afterKey: "acme/api#0" }],
     ["a space in a key", { toColumn: "todo", afterKey: "acme/a pi#1" }],
     ["a key over 200 characters", { toColumn: "todo", afterKey: `acme/${"a".repeat(196)}#1` }],
+    ["a neighbour in the repository ..", { toColumn: "todo", afterKey: "acme/..#1" }],
+    ["an issue number over ten digits", { toColumn: "todo", afterKey: "acme/api#12345678901" }],
+    ["a repository name over 100 characters", { toColumn: "todo", repo: "a".repeat(101) }],
     ["the moved card as its own neighbour", { toColumn: "todo", afterKey: "acme/api#2" }],
   ])("answers 400 to %s and writes nothing", async (_, body) => {
     const { forgejo, move } = await boardSession()
@@ -875,6 +899,25 @@ const orderOrg = () =>
   ])
 
 describe("card order", () => {
+  it("keeps the ranks of a repository whose issues do not fit in the pages it reads", async () => {
+    const issues = Array.from({ length: 101 }, (_, index) => boardIssue("api", index + 1))
+    const { board } = await boardSession({
+      orgs: [acme([boardRepo("api", { issues })])],
+      maxPageSize: 1,
+    })
+    await env.DB.prepare(
+      `INSERT INTO card_ranks (org, issue_key, column_key, rank, updated_at, updated_by)
+       VALUES ('acme', 'acme/api#101', 'todo', 'a0', 0, 'ada')`,
+    ).run()
+
+    const shown = await board(undefined, "api")
+
+    expect(shown.cards.map((card) => card.key)).not.toContain("acme/api#101")
+    expect(await rankRows()).toContainEqual(
+      expect.objectContaining({ issue_key: "acme/api#101", column_key: "todo", rank: "a0" }),
+    )
+  })
+
   it("ranks unranked cards on read after the organization's stored order, newest first", async () => {
     const { board } = await boardSession({ orgs: [orderOrg()] })
 
@@ -1019,6 +1062,36 @@ describe("card order", () => {
     const response = await move({ repo: "web", number: 1, toColumn: "todo", ...neighbours })
 
     expect(response.status).toBe(409)
+    expect(writes(forgejo)).toEqual([])
+    expect(await rankRows()).toEqual(before)
+  })
+
+  it.each([
+    ["a repository the user cannot see", { hiddenFrom: ["grace"] }],
+    ["a repository whose issues the user cannot read", { issuesHiddenFrom: ["grace"] }],
+  ])("answers a neighbour in %s as one without a rank", async (_, access) => {
+    const org = orderOrg()
+    org.repos.push(
+      boardRepo("secret", { ...access, issues: [boardIssue("secret", 1, { title: "Plans" })] }),
+    )
+    const { forgejo, move, board, call } = await boardSession({ orgs: [org] })
+    await board(undefined, "api,web,secret")
+    const graceCookie = await signIn(call, forgejo, "grace")
+    const before = await rankRows()
+    expect(before.find((row) => row.issue_key === "acme/secret#1")).toMatchObject({
+      column_key: "todo",
+    })
+
+    const statuses = []
+    for (const afterKey of ["acme/secret#1", "acme/secret#2"]) {
+      const response = await move(
+        { repo: "api", number: 1, toColumn: "todo", afterKey },
+        graceCookie,
+      )
+      statuses.push(response.status)
+    }
+
+    expect(statuses).toEqual([409, 409])
     expect(writes(forgejo)).toEqual([])
     expect(await rankRows()).toEqual(before)
   })
@@ -1537,6 +1610,31 @@ describe("POST /api/board/comment", () => {
     })
     expect(await detail.json()).toMatchObject({ comments: [comment], commentCount: 1 })
     expect(forgejo.issue("acme", "api", 1)?.comments).toBe(1)
+  })
+
+  it("posts the comment once when Forgejo rejects the token while rendering it", async () => {
+    let renders = 0
+    const { forgejo, post } = await boardSession({
+      intercept: (method, path) =>
+        method === "POST" && path === "/api/v1/markdown" && renders++ === 0
+          ? new Response(null, { status: 401 })
+          : undefined,
+    })
+
+    const response = await post("/api/board/comment", {
+      org: "acme",
+      repo: "api",
+      number: 1,
+      body: "Once <only>",
+    })
+
+    expect(response.status).toBe(200)
+    expect(
+      writes(forgejo).filter((write) => write.path === "/api/v1/repos/acme/api/issues/1/comments"),
+    ).toHaveLength(1)
+    expect(((await response.json()) as { comment: { bodyHtml: string } }).comment.bodyHtml).toBe(
+      "<p>Once &lt;only&gt;</p>",
+    )
   })
 
   it("lets someone outside the organization comment when Forgejo allows it", async () => {

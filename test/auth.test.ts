@@ -26,6 +26,9 @@ describe("GET /auth/login", () => {
     expect(location.searchParams.get("code_challenge_method")).toBe("S256")
     expect(location.searchParams.get("code_challenge")).toMatch(/^[A-Za-z0-9_-]{43}$/)
     expect(location.searchParams.get("state")).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(location.searchParams.get("scope")).toBe(
+      "read:user read:organization read:repository write:issue read:notification read:misc",
+    )
   })
 })
 
@@ -101,6 +104,20 @@ describe("GET /auth/callback", () => {
     expect(await sessionCount()).toBe(1)
   })
 
+  it("leaves the state usable when a callback comes from a browser without it", async () => {
+    const forgejo = createFakeForgejo()
+    const call = tabulo(forgejo.fetch)
+    const login = await startLogin(call)
+    const code = forgejo.approve(login.codeChallenge)
+
+    const foreign = await callback(call, { code: "other", state: login.state }, "")
+    const own = await callback(call, { code, state: login.state }, login.browserState)
+
+    expect(foreign.status).toBe(400)
+    expect(own.status).toBe(302)
+    expect(setCookies(own).has(SESSION_COOKIE)).toBe(true)
+  })
+
   it("rejects a state issued to another browser", async () => {
     const forgejo = createFakeForgejo()
     const call = tabulo(forgejo.fetch)
@@ -152,6 +169,7 @@ describe("GET /auth/callback", () => {
 
     const me = await call("/api/me", { headers: { cookie: `${SESSION_COOKIE}=${cookie?.value}` } })
     expect(await me.json()).toEqual({
+      id: 7,
       login: "ada",
       name: "Ada Lovelace",
       avatarUrl: "https://forgejo.example/avatars/ada",
@@ -197,6 +215,24 @@ describe("POST /auth/logout", () => {
     expect(response.status).toBe(403)
     expect((await call("/api/me", { headers: { cookie } })).status).toBe(200)
   })
+
+  it.each(["application/x-www-form-urlencoded", "multipart/form-data; boundary=x", "text/plain"])(
+    "refuses a %s body from Tabulo's own Origin and keeps the session",
+    async (type) => {
+      const forgejo = createFakeForgejo()
+      const call = tabulo(forgejo.fetch)
+      const cookie = await signIn(call, forgejo)
+
+      const response = await call("/auth/logout", {
+        method: "POST",
+        headers: { cookie, origin: APP_URL, "content-type": type },
+        body: "",
+      })
+
+      expect(response.status).toBe(415)
+      expect((await call("/api/me", { headers: { cookie } })).status).toBe(200)
+    },
+  )
 
   it("refuses a request without an Origin header", async () => {
     const forgejo = createFakeForgejo()
@@ -286,5 +322,38 @@ describe("stored token encryption", () => {
 
     expect((await call("/api/me", { headers: { cookie } })).status).toBe(401)
     expect(await sessionCount()).toBe(0)
+  })
+})
+
+describe("state-changing requests", () => {
+  it("refuses a JSON-shaped text/plain body that a form could post as a comment", async () => {
+    const forgejo = createFakeForgejo()
+    const call = tabulo(forgejo.fetch)
+    const cookie = await signIn(call, forgejo)
+    const before = forgejo.requests.length
+
+    const response = await call("/api/board/comment", {
+      method: "POST",
+      headers: { cookie, origin: APP_URL, "content-type": "text/plain" },
+      body: JSON.stringify({ org: "acme", repo: "api", number: 1, body: "spam" }),
+    })
+
+    expect(response.status).toBe(415)
+    expect(forgejo.requests.length).toBe(before)
+  })
+})
+
+describe("request bodies", () => {
+  it("refuses a body over 1 MB before reading it", async () => {
+    const forgejo = createFakeForgejo()
+
+    const response = await tabulo(forgejo.fetch)("/api/board/comment", {
+      method: "POST",
+      headers: { origin: APP_URL, "content-type": "application/json" },
+      body: JSON.stringify({ org: "acme", repo: "api", number: 1, body: "x".repeat(1024 * 1024) }),
+    })
+
+    expect(response.status).toBe(413)
+    expect(forgejo.requests).toEqual([])
   })
 })

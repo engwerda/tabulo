@@ -78,6 +78,9 @@ export type FakeRepo = {
   writers: ReadonlyArray<string>
   /** Logins who may write issues without push access, as a triage team can. */
   triagers: ReadonlyArray<string>
+  hiddenFrom?: ReadonlyArray<string>
+  /** As a team with only the code unit: the repository reads, its issues answer 404. */
+  issuesHiddenFrom?: ReadonlyArray<string>
   /** Repository-level labels, beside the organization's. */
   labels: ReadonlyArray<FakeLabel>
   /** Open and closed milestones. None when left out. */
@@ -129,6 +132,7 @@ export type FakeOrg = {
   full_name: string
   avatar_url: string
   members: ReadonlyArray<string>
+  publicMembers?: ReadonlyArray<string>
   labels: ReadonlyArray<FakeLabel>
   repos: Array<FakeRepo>
 }
@@ -630,7 +634,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     if (repoRead === null) return undefined
     const [, owner = "", name = "", what] = repoRead
     const repo = findRepo(owner, name)
-    if (repo === undefined) return notFound()
+    if (repo === undefined || repo.hiddenFrom?.includes(login)) return notFound()
     if (what === "languages") return json(repo.languages ?? {})
     if (repo.actionRuns === undefined) return notFound()
     const limit = Math.min(Number(query.get("limit") ?? 30) || 30, fixtures.maxPageSize)
@@ -698,14 +702,27 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
         headers: { "x-total-count": String(fixtures.totals[filter] ?? items.length) },
       })
     }
-    // Forgejo redirects a non-member to the public_members check, which answers 404 unless
-    // the membership is public; Tabulo only ever asks about the signed-in user.
+    // Forgejo 17's IsMember: a member learns whether another user is a member, a non-member
+    // asking about themselves gets 404, and a non-member asking about someone else is
+    // redirected to the public_members check.
     const memberPath = /^\/api\/v1\/orgs\/([^/]+)\/members\/([^/]+)$/.exec(path)
     if (memberPath !== null) {
       const [, orgName = "", member = ""] = memberPath
       const org = findOrg(orgName)
       if (org === undefined) return notFound()
-      return org.members.includes(member) && org.members.includes(login)
+      if (org.members.includes(login)) {
+        return org.members.includes(member) ? new Response(null, { status: 204 }) : notFound()
+      }
+      if (member === login) return notFound()
+      return new Response(null, {
+        status: 303,
+        headers: { location: `${FORGEJO_URL}/api/v1/orgs/${org.name}/public_members/${member}` },
+      })
+    }
+    const publicMemberPath = /^\/api\/v1\/orgs\/([^/]+)\/public_members\/([^/]+)$/.exec(path)
+    if (publicMemberPath !== null) {
+      const [, orgName = "", member = ""] = publicMemberPath
+      return findOrg(orgName)?.publicMembers?.includes(member)
         ? new Response(null, { status: 204 })
         : notFound()
     }
@@ -717,7 +734,9 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
       return what === "labels"
         ? paged(org.labels, query)
         : paged(
-            org.repos.map((repo) => repoJson(org.name, repo, login)),
+            org.repos
+              .filter((repo) => repo.hiddenFrom?.includes(login) !== true)
+              .map((repo) => repoJson(org.name, repo, login)),
             query,
           )
     }
@@ -729,6 +748,8 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
       const org = findOrg(owner)
       const repo = findRepo(owner, name)
       if (org === undefined || repo === undefined) return notFound()
+      if (repo.hiddenFrom?.includes(login)) return notFound()
+      if (rest.startsWith("/issues") && repo.issuesHiddenFrom?.includes(login)) return notFound()
       if (rest === "") return json(repoJson(owner, repo, login))
       if (rest === "/labels") return paged(repo.labels, query)
       if (rest === "/milestones") {
@@ -779,7 +800,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     return notFound()
   }
 
-  const fetch = async (request: Request): Promise<Response> => {
+  const answer = async (request: Request): Promise<Response> => {
     const url = new URL(request.url)
     if (url.origin !== FORGEJO_URL) throw new Error(`unexpected outbound request to ${url.origin}`)
     const body = request.method === "GET" || request.method === "DELETE" ? "" : await request.text()
@@ -810,6 +831,18 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     return api(request.method, url.pathname, url.searchParams, login, parsed)
   }
 
+  // The Workers runtime's fetch follows redirects, and Tabulo's requests do not opt out.
+  const fetch = async (request: Request): Promise<Response> => {
+    const response = await answer(request)
+    const location = response.headers.get("location")
+    return request.redirect === "follow" &&
+      location !== null &&
+      response.status >= 300 &&
+      response.status < 400
+      ? fetch(new Request(location, { headers: request.headers }))
+      : response
+  }
+
   return {
     fetch,
     requests,
@@ -823,5 +856,19 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     issue: (owner: string, repo: string, number: number) =>
       findRepo(owner, repo)?.issues.find((issue) => issue.number === number),
     revokeAccessTokens: () => validAccessTokens.clear(),
+    renameUser: (from: string, to: string) => {
+      const index = users.findIndex((user) => user.login === from)
+      const user = users[index]
+      if (user === undefined) throw new Error(`no user ${from}`)
+      users[index] = { ...user, login: to }
+      for (const tokens of [validAccessTokens, validRefreshTokens]) {
+        for (const [token, login] of tokens) if (login === from) tokens.set(token, to)
+      }
+      const rename = (name: string) => (name === from ? to : name)
+      for (const org of orgs) {
+        org.members = org.members.map(rename)
+        if (org.publicMembers !== undefined) org.publicMembers = org.publicMembers.map(rename)
+      }
+    },
   }
 }
