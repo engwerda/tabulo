@@ -72,18 +72,34 @@ export const AllClear = () => (
 // Idle issues and pull requests link to them, and their detail starts with "#12".
 const ISSUE_URL = /\/(?:issues|pulls)\/(\d+)$/
 
-/** Where the item is: its issue reference when it is an issue or pull request, else its repository. */
-const Where = ({ item }: { readonly item: AttentionItem }) => {
+/**
+ * The title and detail lines of an item. An issue or pull request names its repository in its
+ * reference; a milestone or workflow names it in the title, since "v1.4" or "ci on main" can be
+ * in several repositories.
+ */
+const ItemText = ({ item }: { readonly item: AttentionItem }) => {
   const number = item.url.match(ISSUE_URL)?.[1]
-  return number === undefined ? (
-    <>
-      {item.repo} · {item.detail}
-    </>
-  ) : (
-    <>
-      <IssueRef repo={item.repo} number={Number(number)} /> ·{" "}
-      {item.detail.replace(/^#\d+,?\s*/, "")}
-    </>
+  return (
+    <span className="min-w-0 flex-1">
+      <span className="line-clamp-2 text-sm font-medium text-zinc-900 dark:text-zinc-100">
+        {item.title}
+        {number === undefined && (
+          <span className="font-normal text-zinc-500 dark:text-zinc-400"> · {item.repo}</span>
+        )}
+      </span>
+      <span className="line-clamp-2 text-xs text-zinc-500 dark:text-zinc-400">
+        <span className="text-zinc-700 dark:text-zinc-300">{ATTENTION_LABELS[item.kind]}</span>
+        {" · "}
+        {number === undefined ? (
+          item.detail
+        ) : (
+          <>
+            <IssueRef repo={item.repo} number={Number(number)} /> ·{" "}
+            {item.detail.replace(/^#\d+,?\s*/, "")}
+          </>
+        )}
+      </span>
+    </span>
   )
 }
 
@@ -104,18 +120,7 @@ export const AttentionList = ({ items }: { readonly items: ReadonlyArray<Attenti
               className="flex items-start gap-3 rounded-lg px-2 py-2 hover:bg-zinc-50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-indigo-500 dark:hover:bg-zinc-800/60"
             >
               <KindIcon kind={item.kind} />
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium text-zinc-900 max-md:line-clamp-2 md:truncate dark:text-zinc-100">
-                  {item.title}
-                </span>
-                <span className="block text-xs text-zinc-500 max-md:line-clamp-2 md:truncate dark:text-zinc-400">
-                  <span className="text-zinc-700 dark:text-zinc-300">
-                    {ATTENTION_LABELS[item.kind]}
-                  </span>
-                  {" · "}
-                  <Where item={item} />
-                </span>
-              </span>
+              <ItemText item={item} />
               <span
                 className="shrink-0 pt-0.5 text-xs text-zinc-500 tabular-nums dark:text-zinc-400"
                 title={`${item.ageDays} days`}

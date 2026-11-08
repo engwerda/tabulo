@@ -24,7 +24,7 @@ import { cardClass, Segmented } from "../ui/primitives.tsx"
 import { AllClear, AttentionList } from "./AttentionList.tsx"
 import { type Cell, packRows, type Row } from "./layout.ts"
 import { RepoHealthTable } from "./RepoHealthTable.tsx"
-import { RANGE_LABELS } from "./summary.ts"
+import { priorLabel } from "./summary.ts"
 import { bucketTotals, formatDate, type Grain, spansYears, timeBuckets } from "./weeks.ts"
 
 const SERIES = {
@@ -93,7 +93,7 @@ const TimeLegend = ({
 const Headline = ({ insights }: { readonly insights: Insights }) => {
   const { tiles, weekly } = insights
   const since = `since ${formatDay(insights.window.start)}`
-  const prior = `vs prior ${RANGE_LABELS[insights.days].long}`
+  const prior = priorLabel(insights.window)
   const secondary = [
     <StatFigure
       key="opened"
@@ -407,11 +407,12 @@ const MergeTime = ({
 
 const CiHealth = ({
   ci,
-  days,
+  since,
   className,
 }: {
   readonly ci: NonNullable<Insights["ci"]>
-  readonly days: Insights["days"]
+  /** The window's first day. */
+  readonly since: string
   readonly className: string
 }) => {
   const { ref, grain, buckets } = useTimeBuckets(ci.weekly, 6)
@@ -424,7 +425,7 @@ const CiHealth = ({
     <ChartCard
       ref={ref}
       title="CI health"
-      description={`${formatCount(ci.runs)} workflow runs in the last ${RANGE_LABELS[days].long}`}
+      description={`${formatCount(ci.runs)} workflow runs since ${formatDay(since)}`}
       className={className}
       table={
         <DataTable
@@ -592,6 +593,19 @@ const IssueAge = ({
 
 const LIST_LIMIT = 7
 
+/** A label's name with its scope in a lighter tone, as `LabelChip` shows it. */
+const LabelName = ({ name }: { readonly name: string }) => {
+  const slash = name.lastIndexOf("/")
+  return slash > 0 ? (
+    <>
+      <span className="text-zinc-600 dark:text-zinc-400">{name.slice(0, slash + 1)}</span>
+      {name.slice(slash + 1)}
+    </>
+  ) : (
+    name
+  )
+}
+
 const Labels = ({
   insights,
   className,
@@ -605,7 +619,7 @@ const Labels = ({
       limit={LIST_LIMIT}
       rows={insights.labels.map((label) => ({
         key: label.name,
-        name: label.name,
+        name: <LabelName name={label.name} />,
         lead: (
           <span
             aria-hidden="true"
@@ -712,7 +726,7 @@ const Milestones = ({
               <Meter
                 value={milestone.closedIssues}
                 max={total}
-                tone={overdue ? "danger" : "accent"}
+                tone={overdue ? "danger" : "done"}
                 ariaLabel={
                   total === 0
                     ? `${milestone.title}: no issues yet`
@@ -888,7 +902,12 @@ export const InsightsDashboard = ({ insights }: { readonly insights: Insights })
               empty: insights.ci.runs === 0 ? "CI health (no runs)" : null,
               render: (className: string) =>
                 insights.ci === null ? null : (
-                  <CiHealth key="ci" ci={insights.ci} days={insights.days} className={className} />
+                  <CiHealth
+                    key="ci"
+                    ci={insights.ci}
+                    since={insights.window.start}
+                    className={className}
+                  />
                 ),
             },
           },

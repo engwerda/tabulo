@@ -1,7 +1,5 @@
 import { Sparkline } from "./Sparkline.tsx"
-import { formatCount } from "./scale.ts"
-
-type DeltaMode = "percent" | "absolute" | "points"
+import { type ChangeMode, formatChange, formatCount } from "./scale.ts"
 
 type StatProps = {
   readonly label: string
@@ -10,18 +8,9 @@ type StatProps = {
   readonly format?: (value: number) => string
   /** Whether a rise is good news, which colors the change. */
   readonly goodWhen: "up" | "down" | "neutral"
-  readonly deltaMode?: DeltaMode
+  readonly deltaMode?: ChangeMode
   /** What the change compares with, such as "vs prior 90 days". */
   readonly comparison: string
-}
-
-const describeChange = (value: number, previous: number, mode: DeltaMode) => {
-  const change = value - previous
-  if (mode === "points") return `${change > 0 ? "+" : "−"}${Math.abs(Math.round(change * 100))} pts`
-  if (mode === "percent" && previous !== 0) {
-    return `${change > 0 ? "+" : "−"}${Math.abs(Math.round((change / previous) * 100))}%`
-  }
-  return `${change > 0 ? "+" : "−"}${formatCount(Math.abs(change))}`
 }
 
 const Arrow = ({ up }: { readonly up: boolean }) => (
@@ -37,11 +26,14 @@ const Arrow = ({ up }: { readonly up: boolean }) => (
 const Change = ({
   value,
   previous,
+  format,
   goodWhen,
   deltaMode,
   comparison,
   showComparison,
-}: Required<Pick<StatProps, "value" | "previous" | "goodWhen" | "deltaMode" | "comparison">> & {
+}: Required<
+  Pick<StatProps, "value" | "previous" | "format" | "goodWhen" | "deltaMode" | "comparison">
+> & {
   readonly showComparison: boolean
 }) => {
   if (previous === null) {
@@ -58,9 +50,13 @@ const Change = ({
     <span className="inline-flex flex-wrap items-center gap-x-1">
       <span className={`inline-flex items-center gap-0.5 font-medium tabular-nums ${tone}`}>
         {change !== 0 && <Arrow up={change > 0} />}
-        {change === 0 ? "No change" : describeChange(value, previous, deltaMode)}
+        {change === 0 ? "No change" : formatChange(value, previous, deltaMode, format)}
       </span>
-      <span className={showComparison ? "text-zinc-500 dark:text-zinc-400" : "sr-only"}>
+      <span
+        className={
+          showComparison ? "text-zinc-500 max-sm:basis-full dark:text-zinc-400" : "sr-only"
+        }
+      >
         {comparison}
       </span>
     </span>
@@ -90,6 +86,7 @@ export const StatTile = ({
       <Change
         value={value}
         previous={previous}
+        format={format}
         goodWhen={goodWhen}
         deltaMode={deltaMode}
         comparison={comparison}
@@ -121,6 +118,7 @@ export const StatFigure = ({
       <Change
         value={value}
         previous={previous}
+        format={format}
         goodWhen={goodWhen}
         deltaMode={deltaMode}
         comparison={comparison}

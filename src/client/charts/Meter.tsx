@@ -4,15 +4,15 @@ import { useEntrance } from "./use-entrance.ts"
 export const Meter = ({
   value,
   max,
-  tone = "accent",
+  tone = "done",
   ariaLabel,
 }: {
   readonly value: number
   readonly max: number
-  readonly tone?: "accent" | "danger"
+  readonly tone?: "done" | "danger"
   readonly ariaLabel: string
 }) => {
-  const color = tone === "danger" ? "var(--chart-negative)" : "var(--chart-1)"
+  const color = tone === "danger" ? "var(--chart-negative)" : "var(--chart-positive)"
   const play = useEntrance(`meter:${ariaLabel}:${value}/${max}`)
   return (
     <div

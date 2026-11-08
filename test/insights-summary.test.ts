@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { formatHours, formatSpan, niceTicks } from "../src/client/charts/scale.ts"
-import { insightsSummary } from "../src/client/insights/summary.ts"
+import { formatChange, formatHours, formatSpan, niceTicks } from "../src/client/charts/scale.ts"
+import { insightsSummary, priorLabel } from "../src/client/insights/summary.ts"
 import type { Insights } from "../src/shared/api.ts"
 
 const insights: Insights = {
@@ -136,5 +136,25 @@ describe("chart scale", () => {
   it("names the year of a span of days once, or at both ends across a new year", () => {
     expect(formatSpan("2026-10-05", "2026-11-07")).toBe("Oct 5 to Nov 7, 2026")
     expect(formatSpan("2025-11-03", "2026-11-07")).toBe("Nov 3, 2025 to Nov 7, 2026")
+  })
+
+  it("shows a change as a percentage only from an earlier value of 10", () => {
+    expect(formatChange(81, 3, "percent")).toBe("+78")
+    expect(formatChange(107, 7, "percent")).toBe("+100")
+    expect(formatChange(5, 0, "percent")).toBe("+5")
+    expect(formatChange(15, 10, "percent")).toBe("+50%")
+    expect(formatChange(30, 40, "percent")).toBe("−25%")
+    expect(formatChange(30, 4, "absolute")).toBe("+26")
+    expect(formatChange(8, 5, "percent", formatHours)).toBe("+3h")
+    expect(formatChange(130, 80, "percent", formatHours)).toBe("+63%")
+    expect(formatChange(0.88, 0.75, "points")).toBe("+13 pts")
+  })
+})
+
+describe("priorLabel", () => {
+  it("names the days the window covers, which start on a Monday", () => {
+    expect(priorLabel({ start: "2026-10-05", end: "2026-11-08" })).toBe("vs prior 35 days")
+    expect(priorLabel({ start: "2025-11-03", end: "2026-11-08" })).toBe("vs prior 371 days")
+    expect(priorLabel({ start: "2026-03-23", end: "2026-04-05" })).toBe("vs prior 14 days")
   })
 })

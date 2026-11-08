@@ -66,3 +66,29 @@ export const formatSpan = (start: string, end: string) => {
     ? `${formatDay(start)} to ${formatDay(end)}, ${endYear}`
     : `${formatDay(start)}, ${startYear} to ${formatDay(end)}, ${endYear}`
 }
+
+/** How a change against an earlier value reads: a percentage, a count, or percentage points. */
+export type ChangeMode = "percent" | "absolute" | "points"
+
+// Below this earlier value a percentage overstates the change ("+2600%" from 3 to 81).
+const PERCENT_MIN_BASE = 10
+
+/**
+ * The change from `previous` to `value` with its sign: "+12%", "−4" in the value's own `format`,
+ * or "+3 pts" for ratios. A percentage falls back to the difference when the earlier value is
+ * under 10.
+ */
+export const formatChange = (
+  value: number,
+  previous: number,
+  mode: ChangeMode,
+  format: (value: number) => string = formatCount,
+) => {
+  const change = value - previous
+  const sign = change > 0 ? "+" : "−"
+  if (mode === "points") return `${sign}${Math.abs(Math.round(change * 100))} pts`
+  if (mode === "percent" && Math.abs(previous) >= PERCENT_MIN_BASE) {
+    return `${sign}${Math.abs(Math.round((change / previous) * 100))}%`
+  }
+  return `${sign}${format(Math.abs(change))}`
+}

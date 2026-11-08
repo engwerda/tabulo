@@ -217,7 +217,10 @@ export const InsightsPage = ({ org }: { org: string }) => {
               `The last ${RANGE_LABELS[days].long}`
             ) : (
               <>
-                <span className="tabular-nums">
+                <span
+                  className="tabular-nums"
+                  title={`From the Monday of the week ${data.days} days ago, so every week is whole`}
+                >
                   {formatSpan(data.window.start, data.window.end)}
                 </span>
                 {" · "}
@@ -242,7 +245,7 @@ export const InsightsPage = ({ org }: { org: string }) => {
                 options={INSIGHT_DAYS.map((option) => ({
                   value: String(option),
                   label: RANGE_LABELS[option].short,
-                  title: `Last ${RANGE_LABELS[option].long}`,
+                  title: `Last ${RANGE_LABELS[option].long}, in whole weeks`,
                 }))}
               />
               <CopySummary insights={data} />
