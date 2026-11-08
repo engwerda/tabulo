@@ -45,6 +45,7 @@ describe("GET /api/dashboard", () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
       user: {
+        id: 7,
         login: "ada",
         name: "Ada Lovelace",
         avatarUrl: "https://forgejo.example/avatars/ada",

@@ -10,7 +10,6 @@ export const OAUTH_STATE_LIFETIME_MS = 10 * 60 * 1000
 
 export type Session = {
   readonly idHash: string
-  readonly forgejoUserId: number
   readonly user: User
   readonly tokens: TokenGrant
   /** Moves on every token write; a refresh stores its tokens only if it has not moved. */
@@ -32,7 +31,6 @@ export class SessionStore extends Context.Service<
       session: Session,
       tokens: TokenGrant,
     ) => Effect.Effect<Session, SessionNotFound>
-    /** Stores the user's login, name, and avatar as Forgejo names them now. */
     readonly updateUser: (session: Session, user: ForgejoUser) => Effect.Effect<Session>
     readonly remove: (idHash: string) => Effect.Effect<void>
     /** Deletes the session unless a concurrent request has stored newer tokens. */
@@ -60,6 +58,7 @@ type SessionRow = {
 const query = <A>(run: () => Promise<A>) => Effect.promise(run)
 
 const sessionUser = (user: ForgejoUser): User => ({
+  id: user.id,
   login: user.login,
   name: user.full_name.trim() || user.login,
   avatarUrl: user.avatar_url,
@@ -104,8 +103,12 @@ export const makeSessionStore = (db: D1Database, key: CryptoKey): SessionStore["
       )
       return {
         idHash,
-        forgejoUserId: row.forgejo_user_id,
-        user: { login: row.login, name: row.name, avatarUrl: row.avatar_url },
+        user: {
+          id: row.forgejo_user_id,
+          login: row.login,
+          name: row.name,
+          avatarUrl: row.avatar_url,
+        },
         tokens,
         tokenVersion: row.token_version,
       } satisfies Session
@@ -118,7 +121,7 @@ export const makeSessionStore = (db: D1Database, key: CryptoKey): SessionStore["
         const idHash = yield* sha256Hex(cookieValue)
         const [accessEnc, refreshEnc] = yield* sealTokens(idHash, tokens)
         const now = yield* Clock.currentTimeMillis
-        const { login, name, avatarUrl } = sessionUser(user)
+        const { id, login, name, avatarUrl } = sessionUser(user)
         yield* query(() =>
           db.batch([
             db.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(now),
@@ -130,7 +133,7 @@ export const makeSessionStore = (db: D1Database, key: CryptoKey): SessionStore["
               )
               .bind(
                 idHash,
-                user.id,
+                id,
                 login,
                 name,
                 avatarUrl,
@@ -176,7 +179,7 @@ export const makeSessionStore = (db: D1Database, key: CryptoKey): SessionStore["
       Effect.gen(function* () {
         const user = sessionUser(forgejoUser)
         if (
-          forgejoUser.id !== session.forgejoUserId ||
+          user.id !== session.user.id ||
           (user.login === session.user.login &&
             user.name === session.user.name &&
             user.avatarUrl === session.user.avatarUrl)

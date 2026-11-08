@@ -35,7 +35,10 @@ The board, insights, and epics are views of one organization. They share its cho
 repositories, which the address holds in `?repos=a,b`. The browser remembers each
 organization's repositories and the last organization, so switching views keeps both. An
 organization opened for the first time, with at most 20 repositories that are not archived,
-starts with all of them chosen; clearing the choice is remembered too.
+starts with all of them chosen; clearing the choice is remembered too. Browser storage records
+the Forgejo user id it belongs to. Signing out clears it, except the theme and the address to
+return to after sign-in, and so does another user's sign-in in the same browser; a tab whose
+session changes to another user reloads.
 
 ## Data rules
 

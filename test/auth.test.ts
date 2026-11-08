@@ -169,6 +169,7 @@ describe("GET /auth/callback", () => {
 
     const me = await call("/api/me", { headers: { cookie: `${SESSION_COOKIE}=${cookie?.value}` } })
     expect(await me.json()).toEqual({
+      id: 7,
       login: "ada",
       name: "Ada Lovelace",
       avatarUrl: "https://forgejo.example/avatars/ada",

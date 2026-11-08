@@ -1,11 +1,10 @@
 import { useSyncExternalStore } from "react"
+import { THEME_KEY } from "./stored-data.ts"
 
 export const THEME_PREFERENCES = ["system", "light", "dark"] as const
 export type ThemePreference = (typeof THEME_PREFERENCES)[number]
 export type ResolvedTheme = "light" | "dark"
 
-// public/theme-init.js applies the same key and rule before first paint.
-const STORAGE_KEY = "tabulo.theme"
 const darkQuery = window.matchMedia("(prefers-color-scheme: dark)")
 
 const isPreference = (value: string | null): value is ThemePreference =>
@@ -13,7 +12,7 @@ const isPreference = (value: string | null): value is ThemePreference =>
 
 const readPreference = (): ThemePreference => {
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY)
+    const stored = window.localStorage.getItem(THEME_KEY)
     return isPreference(stored) ? stored : "system"
   } catch {
     return "system"
@@ -41,8 +40,8 @@ const apply = (next: ThemeState) => {
 
 export const setThemePreference = (preference: ThemePreference) => {
   try {
-    if (preference === "system") window.localStorage.removeItem(STORAGE_KEY)
-    else window.localStorage.setItem(STORAGE_KEY, preference)
+    if (preference === "system") window.localStorage.removeItem(THEME_KEY)
+    else window.localStorage.setItem(THEME_KEY, preference)
   } catch {}
   apply(resolve(preference))
 }
@@ -52,7 +51,7 @@ export const startTheme = () => {
   apply(resolve(readPreference()))
   darkQuery.addEventListener("change", () => apply(resolve(state.preference)))
   window.addEventListener("storage", (event) => {
-    if (event.key === STORAGE_KEY || event.key === null) apply(resolve(readPreference()))
+    if (event.key === THEME_KEY || event.key === null) apply(resolve(readPreference()))
   })
 }
 

@@ -11,7 +11,8 @@ import { PaletteProvider, usePalette } from "./palette/PaletteProvider.tsx"
 import { ORGS, OrgPicker } from "./scope/OrgPicker.tsx"
 import { useLastScope } from "./scope/remembered.ts"
 import { isOrgViewPath, ORG_VIEWS, type OrgViewId, orgViewHref } from "./scope/views.ts"
-import { SESSION_USER, useSession } from "./session.ts"
+import { forgetSignedInUser, SESSION_USER, useSession } from "./session.ts"
+import { RETURN_KEY } from "./stored-data.ts"
 import { ThemeControl } from "./ThemeControl.tsx"
 import { ErrorBoundary } from "./ui/ErrorBoundary.tsx"
 import { sentence } from "./ui/ErrorNotice.tsx"
@@ -110,7 +111,6 @@ const useRouteTitle = () => {
 
 // Sign-in always lands on "/", so the address a signed-out visitor opened, such as a shared card
 // link, waits here for the trip through Forgejo.
-const RETURN_KEY = "tabulo.returnTo"
 
 const rememberReturn = () => {
   const here = `${window.location.pathname}${window.location.search}`
@@ -239,6 +239,7 @@ const useSignOut = () => {
       // The session goes null first, so the app shows sign-in before the signed-in views lose
       // their data; clearing everything first left them rendering without a viewer.
       signedOut.current = true
+      forgetSignedInUser()
       queryClient.setQueryData(SESSION_USER, null)
       clearToasts()
       void queryClient.cancelQueries()
