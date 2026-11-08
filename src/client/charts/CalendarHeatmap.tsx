@@ -117,7 +117,8 @@ export const CalendarHeatmap = ({
 
   return (
     <div ref={ref} className="relative">
-      <div className="flex">
+      {/* Once cells reach their largest size, the grid sits at the end, under its legend. */}
+      <div className="flex justify-end">
         {width > 0 && (
           <svg aria-hidden="true" width={LEFT} height={height} className="shrink-0">
             {ROW_LABELS.map((label, row) =>
@@ -138,7 +139,7 @@ export const CalendarHeatmap = ({
         <div
           ref={scroller}
           onScroll={(event) => setScrollLeft(event.currentTarget.scrollLeft)}
-          className={`min-w-0 flex-1 overflow-x-auto overflow-y-hidden pb-1 ${
+          className={`min-w-0 flex-initial overflow-x-auto overflow-y-hidden pb-1 ${
             scrollLeft > 1 && svgWidth > width - LEFT
               ? "[mask-image:linear-gradient(to_right,transparent,black_2rem)]"
               : ""

@@ -81,9 +81,15 @@ export const ItemRow = ({ item, alsoIn }: { item: DashboardItem; alsoIn?: string
   <div className={rowClass}>
     <span className={glyphClass}>{item.kind === "pull" ? <PullIcon /> : <IssueOpenIcon />}</span>
     <div className="min-w-0 flex-1">
-      <a href={item.url} className={`block ${titleClass} ${stretchedLink}`}>
+      <a
+        href={item.url}
+        target="_blank"
+        rel="noreferrer"
+        className={`block ${titleClass} ${stretchedLink}`}
+      >
         <span className="sr-only">{item.kind === "pull" ? "Pull request: " : "Issue: "}</span>
         {item.title}
+        <span className="sr-only"> (opens in Forgejo)</span>
       </a>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs leading-5">
         <p className={`min-w-0 truncate ${metaClass}`}>
@@ -119,8 +125,14 @@ export const NotificationRow = ({ notification }: { notification: NotificationIt
         {notification.url === "" ? (
           <p className={titleClass}>{notification.title}</p>
         ) : (
-          <a href={notification.url} className={`block ${titleClass} ${stretchedLink}`}>
+          <a
+            href={notification.url}
+            target="_blank"
+            rel="noreferrer"
+            className={`block ${titleClass} ${stretchedLink}`}
+          >
             {notification.title}
+            <span className="sr-only"> (opens in Forgejo)</span>
           </a>
         )}
         <p className={`truncate ${metaClass}`}>
