@@ -139,8 +139,6 @@ export class ForgejoClient extends Context.Service<
       token: AccessToken,
       org: string,
     ) => Effect.Effect<ReadonlyArray<ForgejoRepo>, ForgejoError>
-    /** Whether the token's user is a member of the organization. */
-    readonly isOrgMember: (token: AccessToken, org: string) => Effect.Effect<boolean, ForgejoError>
     /** The labels, as far as `budget` reaches (100 pages by default). */
     readonly orgLabels: (
       token: AccessToken,
@@ -148,7 +146,6 @@ export class ForgejoClient extends Context.Service<
       budget?: PageBudget,
     ) => Effect.Effect<Listing<ForgejoLabel>, ForgejoError>
     readonly repo: (token: AccessToken, repo: RepoRef) => Effect.Effect<ForgejoRepo, ForgejoError>
-    /** The issues, as far as 100 pages reach. */
     readonly repoIssues: (
       token: AccessToken,
       repo: RepoRef,
@@ -338,10 +335,6 @@ const knownTotal = <A>(page: {
 const PAGE_SIZE = 50
 const MAX_PAGES = 100
 
-/**
- * The token scopes Tabulo asks for: what its reads and issue writes need, and no more. Forgejo
- * keeps the scopes of a user's first grant, so a grant made without scopes keeps every scope.
- */
 export const OAUTH_SCOPES = [
   "read:user",
   "read:organization",
@@ -590,13 +583,6 @@ export const makeForgejoClient = (
       ),
     userOrgs: (token) => all(token, "/user/orgs", {}, ForgejoOrg),
     orgRepos: (token, org) => all(token, `/orgs/${encodeURIComponent(org)}/repos`, {}, ForgejoRepo),
-    // The token's own organizations, not /orgs/{org}/members/{login}: that asks about a login,
-    // which can name someone else once the user is renamed, and Forgejo answers a non-member
-    // asking about someone else with the public membership of that user.
-    isOrgMember: (token, org) =>
-      all(token, "/user/orgs", {}, ForgejoOrg).pipe(
-        Effect.map((orgs) => orgs.some(({ name }) => name.toLowerCase() === org.toLowerCase())),
-      ),
     orgLabels: (token, org, budget = { remaining: MAX_PAGES }) =>
       listing(token, `/orgs/${encodeURIComponent(org)}/labels`, {}, ForgejoLabel, budget),
     repo: (token, repo) =>
