@@ -7,7 +7,10 @@
 /*
  * Chart colors, validated with the dataviz palette checks against zinc-50 and white (light) and
  * zinc-950 and zinc-900 (dark). Series follow the slot order; the first three also stay apart
- * when every pair can touch, as in a scatter plot.
+ * when every pair can touch, as in a scatter plot. Positive and negative (CI passed and failed)
+ * also differ in lightness, at least 2:1 in luminance and 2:1 under simulated protanopia and
+ * deuteranopia, so they never rely on hue alone; the failed one is the louder against the
+ * surface. Neutral is the third outcome (cancelled or skipped), apart from both.
  */
 :root {
   --chart-1: #615fff;
@@ -18,8 +21,9 @@
   --chart-6: #8e51ff;
   --chart-grid: #ececef;
   --chart-axis: #71717b;
-  --chart-positive: #008236;
-  --chart-negative: #e7000b;
+  --chart-positive: #00a63e;
+  --chart-negative: #9f0712;
+  --chart-neutral: #71717b;
 }
 
 .dark {
@@ -31,8 +35,9 @@
   --chart-6: #8e51ff;
   --chart-grid: #27272a;
   --chart-axis: #9f9fa9;
-  --chart-positive: #00a63e;
-  --chart-negative: #ff6467;
+  --chart-positive: #008236;
+  --chart-negative: #ffa2a2;
+  --chart-neutral: #8b8b95;
 }
 
 @theme inline {
@@ -46,6 +51,7 @@
   --color-chart-axis: var(--chart-axis);
   --color-chart-positive: var(--chart-positive);
   --color-chart-negative: var(--chart-negative);
+  --color-chart-neutral: var(--chart-neutral);
 }
 
 @theme {

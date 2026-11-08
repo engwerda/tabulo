@@ -2,10 +2,11 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { useState } from "react"
 import { useSearchParams } from "wouter"
 import { INSIGHT_DAYS, type InsightDays, type Insights } from "../../shared/api.ts"
-import { browserTimeZone, fetchInsights } from "../api.ts"
+import { browserTimeZone, fetchInsights, fetchOrgs } from "../api.ts"
 import { formatSpan } from "../charts/scale.ts"
 import { relativeTime } from "../format.ts"
 import { ChooseRepos } from "../scope/ChooseRepos.tsx"
+import { ORGS } from "../scope/OrgPicker.tsx"
 import { ScopeBar } from "../scope/ScopeBar.tsx"
 import { useRepoSelection } from "../scope/use-repo-selection.ts"
 import { ErrorNotice } from "../ui/ErrorNotice.tsx"
@@ -54,12 +55,18 @@ const CopyIcon = ({ copied }: { readonly copied: boolean }) => (
   </svg>
 )
 
-const CopySummary = ({ insights }: { readonly insights: Insights | undefined }) => {
+const CopySummary = ({
+  insights,
+  orgName,
+}: {
+  readonly insights: Insights | undefined
+  readonly orgName: string
+}) => {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle")
   const copy = async () => {
     if (insights === undefined) return
     try {
-      await navigator.clipboard.writeText(insightsSummary(insights))
+      await navigator.clipboard.writeText(insightsSummary(insights, orgName))
       setState("copied")
     } catch {
       setState("failed")
@@ -130,6 +137,10 @@ const failures = (failed: Insights["failedRepos"]) =>
 
 export const InsightsPage = ({ org }: { org: string }) => {
   const repoSelection = useRepoSelection(org)
+  const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
+  const orgName =
+    orgs.data?.find((candidate) => candidate.name.toLowerCase() === org.toLowerCase())?.fullName ||
+    org
   const [days, setDays] = useRange()
   const [tz] = useState(browserTimeZone)
   const chosen = repoSelection.selected.length > 0
@@ -184,7 +195,7 @@ export const InsightsPage = ({ org }: { org: string }) => {
                   title: `Last ${RANGE_LABELS[option].long}, in whole weeks`,
                 }))}
               />
-              <CopySummary insights={data} />
+              <CopySummary insights={data} orgName={orgName} />
             </>
           }
         />
@@ -216,6 +227,7 @@ export const InsightsPage = ({ org }: { org: string }) => {
           >
             {insights.isError && (
               <ErrorNotice
+                tone="warning"
                 title="Could not refresh insights"
                 onRetry={() => void insights.refetch()}
                 retrying={insights.isFetching}

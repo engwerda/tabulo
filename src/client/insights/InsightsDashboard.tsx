@@ -24,7 +24,7 @@ import { cardClass, Segmented } from "../ui/primitives.tsx"
 import { AllClear, AttentionList } from "./AttentionList.tsx"
 import { type Cell, packRows, type Row } from "./layout.ts"
 import { RepoHealthTable } from "./RepoHealthTable.tsx"
-import { priorLabel } from "./summary.ts"
+import { formatWindowStart, priorLabel } from "./summary.ts"
 import { bucketTotals, formatDate, type Grain, spansYears, timeBuckets } from "./weeks.ts"
 
 const SERIES = {
@@ -32,7 +32,7 @@ const SERIES = {
   closed: "var(--chart-2)",
   success: "var(--chart-positive)",
   failure: "var(--chart-negative)",
-  other: "var(--chart-axis)",
+  other: "var(--chart-neutral)",
 } as const
 
 const LANGUAGE_SLOTS = [
@@ -85,14 +85,14 @@ const TimeLegend = ({
   <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
     <Legend items={items} />
     <span className="ml-auto text-2xs text-zinc-500 dark:text-zinc-400">
-      {grain === "week" ? "Per week" : "Per month, by week start"}
+      {grain === "week" ? "Per week" : "Weeks grouped by month"}
     </span>
   </div>
 )
 
 const Headline = ({ insights }: { readonly insights: Insights }) => {
   const { tiles, weekly } = insights
-  const since = `since ${formatDay(insights.window.start)}`
+  const since = `since ${formatWindowStart(insights.window)}`
   const prior = priorLabel(insights.window)
   const secondary = [
     <StatFigure
@@ -298,7 +298,7 @@ const Backlog = ({
 }) => {
   // The same baseline as the headline tile: the count when the window opened, then the count
   // each Monday as the week before it closed, then now.
-  const { start, end } = insights.window
+  const { end } = insights.window
   const { value: now, previous: atStart } = insights.tiles.openIssues
   const dates = [...insights.weekly.map((week) => week.weekStart), end]
   const values = [atStart, ...insights.weekly.map((week) => week.openIssues)]
@@ -314,7 +314,7 @@ const Backlog = ({
         change === 0
           ? "no change"
           : `${change > 0 ? "up" : "down"} ${formatCount(Math.abs(change))}`
-      } since ${formatDay(start)}`}
+      } since ${formatWindowStart(insights.window)}`}
       className={className}
       table={
         <DataTable
@@ -330,11 +330,15 @@ const Backlog = ({
       }
     >
       <AreaChart
-        labels={dates.map((date) => formatDay(date))}
+        labels={dates.map((date) =>
+          date.slice(0, 4) === end.slice(0, 4)
+            ? formatDay(date)
+            : `${formatDay(date)} ’${date.slice(2, 4)}`,
+        )}
         values={values}
         seriesLabel="open issues"
         partialLast
-        ariaLabel={`Open issues went from ${atStart} on ${formatDay(start)} to ${now} now.`}
+        ariaLabel={`Open issues went from ${atStart} on ${formatWindowStart(insights.window)} to ${now} now.`}
         tooltipTitle={pointTitle}
       />
     </ChartCard>
@@ -407,12 +411,11 @@ const MergeTime = ({
 
 const CiHealth = ({
   ci,
-  since,
+  period,
   className,
 }: {
   readonly ci: NonNullable<Insights["ci"]>
-  /** The window's first day. */
-  readonly since: string
+  readonly period: Insights["window"]
   readonly className: string
 }) => {
   const { ref, grain, buckets } = useTimeBuckets(ci.weekly, 6)
@@ -425,7 +428,7 @@ const CiHealth = ({
     <ChartCard
       ref={ref}
       title="CI health"
-      description={`${formatCount(ci.runs)} workflow runs since ${formatDay(since)}`}
+      description={`${formatCount(ci.runs)} workflow runs since ${formatWindowStart(period)}`}
       className={className}
       table={
         <DataTable
@@ -681,6 +684,11 @@ const Contributors = ({
 const MILESTONE_LIMIT = 5
 
 const dueFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" })
+const dueWithYearFormat = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+})
 
 const Milestones = ({
   insights,
@@ -690,6 +698,11 @@ const Milestones = ({
   readonly className: string
 }) => {
   const now = Date.parse(insights.generatedAt)
+  const thisYear = new Date(now).getFullYear()
+  const formatDue = (dueOn: string) => {
+    const due = new Date(dueOn)
+    return (due.getFullYear() === thisYear ? dueFormat : dueWithYearFormat).format(due)
+  }
   const [expanded, setExpanded] = useState(false)
   const { milestones } = insights
   return (
@@ -716,6 +729,7 @@ const Milestones = ({
                 >
                   <span className="text-zinc-800 dark:text-zinc-200">{milestone.title}</span>{" "}
                   <span className="text-xs text-zinc-500 dark:text-zinc-400">{milestone.repo}</span>
+                  <span className="sr-only"> (opens in Forgejo)</span>
                 </a>
                 {total > 0 && (
                   <span className="shrink-0 text-xs font-medium text-zinc-700 tabular-nums dark:text-zinc-300">
@@ -739,8 +753,7 @@ const Milestones = ({
                   <>
                     {" · "}
                     <span className={overdue ? "font-medium text-red-700 dark:text-red-400" : ""}>
-                      {overdue ? "overdue since" : "due"}{" "}
-                      {dueFormat.format(new Date(milestone.dueOn))}
+                      {overdue ? "overdue since" : "due"} {formatDue(milestone.dueOn)}
                     </span>
                   </>
                 )}
@@ -905,7 +918,7 @@ export const InsightsDashboard = ({ insights }: { readonly insights: Insights })
                   <CiHealth
                     key="ci"
                     ci={insights.ci}
-                    since={insights.window.start}
+                    period={insights.window}
                     className={className}
                   />
                 ),

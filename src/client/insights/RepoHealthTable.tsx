@@ -264,6 +264,7 @@ export const RepoHealthTable = ({
                         className="truncate text-zinc-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 dark:text-zinc-100"
                       >
                         {repo.name}
+                        <span className="sr-only"> (opens in Forgejo)</span>
                       </a>
                       {repo.archived && (
                         <span className="rounded-md bg-zinc-100 px-1.5 py-0.5 text-2xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">

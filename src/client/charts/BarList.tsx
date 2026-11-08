@@ -66,6 +66,7 @@ export const BarList = ({
                     className="min-w-0 rounded hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
                   >
                     {name}
+                    <span className="sr-only"> (opens in Forgejo)</span>
                   </a>
                 )}
                 <span

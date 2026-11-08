@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { formatChange, formatHours, formatSpan, niceTicks } from "../src/client/charts/scale.ts"
-import { insightsSummary, priorLabel } from "../src/client/insights/summary.ts"
+import { formatWindowStart, insightsSummary, priorLabel } from "../src/client/insights/summary.ts"
 import type { Insights } from "../src/shared/api.ts"
 
 const insights: Insights = {
@@ -75,7 +75,7 @@ const insights: Insights = {
 
 describe("insightsSummary", () => {
   it("summarizes the headline numbers, attention, and health, riskiest first", () => {
-    expect(insightsSummary(insights)).toBe(`# acme insights
+    expect(insightsSummary(insights, "Acme Corporation")).toBe(`# Acme Corporation insights
 
 2 repositories, last 30 days in whole weeks (Oct 5 to Nov 7, 2026, Europe/Amsterdam).
 
@@ -103,15 +103,38 @@ Not included, because they failed to load: old.
   })
 })
 
+describe("insightsSummary across a new year", () => {
+  it("dates the changes since a start in an earlier year with that year", () => {
+    const summary = insightsSummary(
+      { ...insights, days: 365, window: { start: "2025-11-03", end: "2026-11-08" } },
+      "acme",
+    )
+
+    expect(summary).toContain("(Nov 3, 2025 to Nov 8, 2026, Europe/Amsterdam)")
+    expect(summary).toContain("- **Open issues:** 12 (+3 since Nov 3, 2025)")
+    expect(summary).toContain("- **Open pull requests:** 3 (-1 since Nov 3, 2025)")
+  })
+})
+
+describe("formatWindowStart", () => {
+  it("names the start's year only when the window ends in a later year", () => {
+    expect(formatWindowStart({ start: "2026-10-05", end: "2026-11-07" })).toBe("Oct 5")
+    expect(formatWindowStart({ start: "2025-11-03", end: "2026-11-08" })).toBe("Nov 3, 2025")
+  })
+})
+
 describe("insightsSummary with listings read in part", () => {
   it("says which listings Tabulo did not read to the end", () => {
-    const summary = insightsSummary({
-      ...insights,
-      incomplete: [
-        { repo: "api", listing: "runs" },
-        { repo: "web", listing: "closed" },
-      ],
-    })
+    const summary = insightsSummary(
+      {
+        ...insights,
+        incomplete: [
+          { repo: "api", listing: "runs" },
+          { repo: "web", listing: "closed" },
+        ],
+      },
+      "acme",
+    )
 
     expect(summary.trimEnd().split("\n").at(-1)).toBe(
       "Tabulo reached its limit of Forgejo requests and read only part of the CI runs of api, closed issues and pull requests of web. Numbers that count them are too low.",

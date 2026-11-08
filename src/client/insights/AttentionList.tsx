@@ -121,6 +121,7 @@ export const AttentionList = ({ items }: { readonly items: ReadonlyArray<Attenti
             >
               <KindIcon kind={item.kind} />
               <ItemText item={item} />
+              <span className="sr-only"> (opens in Forgejo)</span>
               <span
                 className="shrink-0 pt-0.5 text-xs text-zinc-500 tabular-nums dark:text-zinc-400"
                 title={`${item.ageDays} days`}
