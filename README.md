@@ -88,7 +88,15 @@ Before you start, check these:
 `wrangler.deploy.jsonc`, which git ignores. `npm run build` merges that file over the template.
 Its `routes` replace the template's routes. Each of its `vars` replaces the template's var of
 the same name, so it can also set `BOARD_*` and `EPIC_LABEL`. Each of its `d1_databases`
-entries merges into the template entry with the same `binding`. Any other key stops the build.
+entries merges into the template entry with the same `binding`. Its `workers_dev` replaces the
+template's `workers_dev`. Any other key stops the build.
+
+To serve Tabulo on its `workers.dev` address instead of a custom domain, set
+`"workers_dev": true`, `"routes": []`, and `APP_URL` to
+`https://tabulo.<your subdomain>.workers.dev` in `wrangler.deploy.jsonc`, and use that address in
+the Forgejo redirect URI. Leave the preview URLs off, because sign-in works only on `APP_URL`.
+Cloudflare's rate limiting rules do not apply to `workers.dev`, so the `/auth/login` rule
+described below is not available there.
 
 1. Sign in to Cloudflare:
 

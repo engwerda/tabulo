@@ -11,7 +11,7 @@ import {
 } from "wrangler"
 
 const DEPLOY_OVERRIDE = "wrangler.deploy.jsonc"
-const OVERRIDE_KEYS = ["routes", "vars", "d1_databases"] as const
+const OVERRIDE_KEYS = ["routes", "vars", "d1_databases", "workers_dev"] as const
 type OverrideKey = (typeof OVERRIDE_KEYS)[number]
 type DeployOverride = Pick<Unstable_RawConfig, OverrideKey>
 
@@ -33,6 +33,7 @@ const applyDeployOverride = (
   override: DeployOverride,
 ): void => {
   if (override.routes) config.routes = override.routes
+  if (override.workers_dev !== undefined) config.workers_dev = override.workers_dev
   config.vars = { ...config.vars, ...override.vars }
   for (const database of override.d1_databases ?? []) {
     const index = config.d1_databases.findIndex(({ binding }) => binding === database.binding)
