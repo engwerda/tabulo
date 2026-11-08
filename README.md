@@ -74,36 +74,66 @@ The fake keeps its data in memory, so restarting it resets the demo and signs yo
 Tabulo needs a Cloudflare account with Workers and D1. The steps use `wrangler`, which is
 installed as a development dependency.
 
-Tabulo runs on a custom domain that you have added to Cloudflare, such as
-`tabulo.example.com`. The `workers.dev` and preview URLs are turned off in `wrangler.jsonc`,
-because sign-in and the session cookie work only on the one origin in `APP_URL`.
+Before you start, check these:
 
-1. Create an OAuth2 application in Forgejo as in the local setup, with the redirect URI
+- Tabulo runs on a custom domain, such as `tabulo.example.com`, in a zone you have added to
+  Cloudflare. The `workers.dev` and preview URLs are turned off in `wrangler.jsonc`, because
+  sign-in and the session cookie work only on the one origin in `APP_URL`.
+- If the hostname already has a DNS record, delete it. Cloudflare cannot attach the Worker to a
+  hostname that has one.
+- Forgejo must be reachable from the internet over HTTPS. The Worker calls it from
+  Cloudflare's network, not from your machine.
+
+`wrangler.jsonc` is a template, so leave it as it is. Put your deployment's values in
+`wrangler.deploy.jsonc`, which git ignores. `npm run build` merges that file over the template.
+Its `routes` replace the template's routes. Each of its `vars` replaces the template's var of
+the same name, so it can also set `BOARD_*` and `EPIC_LABEL`. Each of its `d1_databases`
+entries merges into the template entry with the same `binding`. Any other key stops the build.
+
+1. Sign in to Cloudflare:
+
+   ```sh
+   npx wrangler login
+   ```
+
+2. Create an OAuth2 application in Forgejo as in the local setup, with the redirect URI
    `https://<your Tabulo host>/auth/callback`.
-2. Create the database, then copy the `database_id` it prints into the `d1_databases` entry in
-   `wrangler.jsonc`:
+3. Copy the example deployment settings:
+
+   ```sh
+   cp wrangler.deploy.example.jsonc wrangler.deploy.jsonc
+   ```
+
+4. Create the database. When Wrangler offers to add it to your configuration, answer no, so
+   that `wrangler.jsonc` stays unchanged. Copy the `database_id` it prints into
+   `wrangler.deploy.jsonc`.
 
    ```sh
    npx wrangler d1 create tabulo
    ```
 
-3. In `wrangler.jsonc`, set the `routes` pattern to your Tabulo host, `APP_URL` to
+   Keep the name `tabulo`. `npm run db:migrate:remote` reads `wrangler.jsonc` and finds the
+   database by that name.
+5. In `wrangler.deploy.jsonc`, set the `routes` pattern to your Tabulo host, `APP_URL` to
    `https://<your Tabulo host>`, `FORGEJO_URL` to your Forgejo URL, and `FORGEJO_CLIENT_ID` to
    the client ID. Wrangler attaches the custom domain when you deploy.
-4. Store the two secrets. Generate the encryption key with `openssl rand -base64 32`.
+6. Store the two secrets, because the Worker does not deploy without them. The first command
+   asks whether to create the Worker. Answer yes. The second generates the encryption key and
+   passes it straight to Wrangler, so the key never goes through your clipboard.
 
    ```sh
    npx wrangler secret put FORGEJO_CLIENT_SECRET
-   npx wrangler secret put SESSION_ENCRYPTION_KEY
+   openssl rand -base64 32 | npx wrangler secret put SESSION_ENCRYPTION_KEY
    ```
 
-5. Create the tables in the remote database:
+7. Create the tables in the remote database:
 
    ```sh
    npm run db:migrate:remote
    ```
 
-6. Build and deploy:
+8. Build and deploy. The build prints `Applying wrangler.deploy.jsonc over wrangler.jsonc`
+   when it uses your values.
 
    ```sh
    npm run deploy
@@ -114,7 +144,28 @@ Tabulo is reachable from the internet, add a
 [rate limiting rule](https://developers.cloudflare.com/waf/rate-limiting-rules/) for the path
 `/auth/login` in the Cloudflare dashboard.
 
+### Update a deployment
+
+Pull the new version, build it, migrate the remote database, and deploy:
+
+```sh
+git pull
+npm ci
+npm run build
+npm run db:migrate:remote
+npm run deploy
+```
+
+The build comes first so that a failing build stops you before the migration changes the
+remote database.
+
+After you change `wrangler.deploy.jsonc`, run `npm run deploy` to apply it. Always deploy with
+`npm run deploy`, which builds first. `npx wrangler deploy` on its own deploys the last build.
+
 ## Configuration
+
+A deployment sets its vars in `wrangler.deploy.jsonc` and its secrets with
+`npx wrangler secret put`. Local development sets both in `.dev.vars`.
 
 | Variable | Kind | Purpose |
 |---|---|---|
@@ -299,8 +350,9 @@ The token needs read access to issues, repositories, notifications, and the user
   archived. Forgejo then authorizes each issue write as you.
 - The app is served with a Content Security Policy that allows only Tabulo's own scripts,
   styles, and requests, and images from Tabulo and `FORGEJO_URL`. It also forbids framing.
-  `npm run build` writes the policy to `dist/client/_headers` from `FORGEJO_URL` in
-  `wrangler.jsonc`, so rebuild after you change it. API responses are never cached.
+  `npm run build` writes the policy to `dist/client/_headers` from `FORGEJO_URL` as
+  `wrangler.deploy.jsonc` sets it over `wrangler.jsonc`, so rebuild after you change it. API
+  responses are never cached.
 - Signing out, or another user signing in in the same browser, clears what Tabulo kept in the
   browser's storage, except the theme.
 - The shared card order spans repositories with different readers, so a member can tell from
