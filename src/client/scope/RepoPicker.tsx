@@ -21,7 +21,7 @@ const RepoDot = ({ repo, chosen }: { repo: string; chosen: boolean }) => {
   return (
     <span
       aria-hidden="true"
-      className="size-2 shrink-0 rounded-full bg-zinc-300 dark:bg-zinc-600"
+      className="size-2 shrink-0 rounded-[2px] bg-zinc-300 dark:bg-zinc-600"
       style={chosen ? { backgroundColor: color } : undefined}
     />
   )
@@ -94,7 +94,7 @@ export const RepoPicker = ({ repos, selected, onChange, open, onOpenChange }: Re
           </label>
           {visible.length > 0 && (
             <div className="mt-1.5 mb-1 border-b border-zinc-100 pb-1 dark:border-zinc-800">
-              <label className={`${rowClass} h-9 font-medium`}>
+              <label className={`${rowClass} h-9 font-medium pointer-coarse:h-11`}>
                 <input
                   ref={selectAll}
                   type="checkbox"

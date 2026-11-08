@@ -32,11 +32,13 @@ describe("timeBuckets", () => {
       "Oct",
       "Nov",
     ])
-    expect(months[0]?.title).toBe("Nov 2025")
-    expect(months.at(-1)?.title).toBe("Nov 2026, so far")
+    expect(months[0]?.title).toBe("Weeks starting in Nov 2025")
+    expect(months.at(-1)?.title).toBe("Weeks starting in Nov 2026, so far")
     expect(months.at(-1)?.partial).toBe(true)
     expect(months[0]?.partial).toBe(false)
-    expect(timeBuckets(year.slice(3), "month")[0]?.title).toBe("Nov 2025, from Nov 24")
+    expect(timeBuckets(year.slice(3), "month")[0]?.title).toBe(
+      "Weeks starting in Nov 2025, from Nov 24",
+    )
   })
 
   it("puts every week in exactly one month and keeps the totals", () => {

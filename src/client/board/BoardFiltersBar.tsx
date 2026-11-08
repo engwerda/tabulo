@@ -11,14 +11,7 @@ import {
   UserIcon,
   XIcon,
 } from "../ui/icons.tsx"
-import {
-  buttonClass,
-  inputClass,
-  Kbd,
-  MenuOption,
-  Popover,
-  touchTarget,
-} from "../ui/primitives.tsx"
+import { buttonClass, inputClass, Kbd, MenuOption, Popover, touchArea } from "../ui/primitives.tsx"
 import {
   type BoardFilters,
   FILTER_PARAMS,
@@ -463,7 +456,7 @@ export const BoardFiltersBar = ({
                 searchInput.current?.focus()
               }}
               aria-label="Clear the search"
-              className={`absolute top-1/2 right-1.5 grid size-5 -translate-y-1/2 place-items-center rounded text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 ${touchTarget}`}
+              className={`absolute top-1/2 right-1.5 grid size-5 -translate-y-1/2 place-items-center rounded text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 ${touchArea}`}
             >
               <XIcon className="size-3.5" />
             </button>

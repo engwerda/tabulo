@@ -49,7 +49,7 @@ export const RepoIssueRef = ({ repo, number }: { repo: string; number: number })
     <span className="flex min-w-0 items-center gap-1.5">
       <span
         aria-hidden="true"
-        className="size-2 shrink-0 rounded-[3px]"
+        className="size-2 shrink-0 rounded-[2px]"
         style={{ backgroundColor: color }}
       />
       <IssueRef repo={repo} number={number} className="min-w-0 truncate" />
@@ -58,7 +58,7 @@ export const RepoIssueRef = ({ repo, number }: { repo: string; number: number })
 }
 
 const menuItemClass =
-  "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-zinc-700 transition hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none dark:text-zinc-300 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
+  "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-zinc-700 transition pointer-coarse:min-h-11 hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none dark:text-zinc-300 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
 
 const CardMenu = ({
   card,

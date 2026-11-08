@@ -16,16 +16,19 @@ import { ChevronDownIcon } from "./icons.tsx"
  * On a touch screen a small control gets an invisible 44px hit area around it, so compact
  * desktop sizing stays and a finger still lands. The control must not clip its overflow.
  */
-export const touchTarget =
-  "relative pointer-coarse:before:absolute pointer-coarse:before:top-1/2 pointer-coarse:before:left-1/2 pointer-coarse:before:size-11 pointer-coarse:before:-translate-1/2"
+export const touchArea =
+  "pointer-coarse:before:absolute pointer-coarse:before:top-1/2 pointer-coarse:before:left-1/2 pointer-coarse:before:size-11 pointer-coarse:before:-translate-1/2"
+
+/** `touchArea` on a control that is not itself positioned. */
+export const touchTarget = `relative ${touchArea}`
 
 export const buttonClass = {
   primary:
-    "inline-flex h-8 pointer-coarse:h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-indigo-600 px-3 text-sm font-medium text-white shadow-sm shadow-indigo-600/20 transition hover:bg-indigo-500 active:bg-indigo-700 disabled:pointer-events-none disabled:opacity-60",
+    "inline-flex h-8 pointer-coarse:h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-indigo-600 px-3 text-sm font-medium text-white shadow-sm shadow-indigo-600/20 transition hover:bg-indigo-500 active:bg-indigo-700 disabled:pointer-events-none disabled:opacity-60",
   secondary:
-    "inline-flex h-8 pointer-coarse:h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-800 shadow-card transition hover:border-zinc-300 hover:bg-zinc-50 disabled:pointer-events-none disabled:opacity-60 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/70",
+    "inline-flex h-8 pointer-coarse:h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-800 shadow-card transition hover:border-zinc-300 hover:bg-zinc-50 disabled:pointer-events-none disabled:opacity-60 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/70",
   ghost:
-    "inline-flex h-8 pointer-coarse:h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-60 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
+    "inline-flex h-8 pointer-coarse:h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-60 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
   icon: `inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 ${touchTarget}`,
   iconSmall: `inline-flex size-7 shrink-0 items-center justify-center rounded-md text-zinc-500 transition hover:bg-zinc-200/70 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 ${touchTarget}`,
 } as const
@@ -36,7 +39,7 @@ export const cardClass =
 
 // 16px text on phones keeps iOS from zooming in when a field takes focus.
 export const inputClass =
-  "h-8 pointer-coarse:h-10 w-full rounded-lg border border-zinc-200 bg-white px-2.5 text-base sm:text-sm text-zinc-900 shadow-card transition placeholder:text-zinc-500 hover:border-zinc-300 focus:border-indigo-400 focus:outline-none focus:ring-3 focus:ring-indigo-500/15 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:hover:border-zinc-700 dark:focus:border-indigo-500"
+  "h-8 pointer-coarse:h-11 w-full rounded-lg border border-zinc-200 bg-white px-2.5 text-base sm:text-sm text-zinc-900 shadow-card transition placeholder:text-zinc-500 hover:border-zinc-300 focus:border-indigo-400 focus:outline-none focus:ring-3 focus:ring-indigo-500/15 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-400 dark:hover:border-zinc-700 dark:focus:border-indigo-500"
 
 export const panelClass =
   "rounded-xl border border-zinc-200 bg-white shadow-pop dark:border-zinc-800 dark:bg-zinc-900"
@@ -341,7 +344,7 @@ export const MenuOption = ({
     role={multiple ? "menuitemcheckbox" : "menuitemradio"}
     aria-checked={selected}
     onClick={onSelect}
-    className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800 ${
+    className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition pointer-coarse:min-h-11 hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800 ${
       selected ? "font-medium text-zinc-900 dark:text-zinc-50" : "text-zinc-700 dark:text-zinc-300"
     }`}
   >
@@ -392,8 +395,8 @@ export const Segmented = <T extends string>({
           onClick={() => onChange(option.value)}
           className={`inline-flex items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap tabular-nums transition ${
             size === "sm"
-              ? "h-6 px-2 text-xs pointer-coarse:h-10 pointer-coarse:px-3"
-              : "h-7 px-2.5 text-sm pointer-coarse:h-10 pointer-coarse:px-3"
+              ? "h-6 px-2 text-xs pointer-coarse:h-11 pointer-coarse:px-3"
+              : "h-7 px-2.5 text-sm pointer-coarse:h-11 pointer-coarse:px-3"
           } ${
             selected
               ? "bg-white text-zinc-900 shadow-card ring-1 ring-zinc-900/5 dark:bg-zinc-700 dark:text-zinc-50 dark:ring-white/5"

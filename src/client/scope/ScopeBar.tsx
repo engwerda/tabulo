@@ -43,7 +43,7 @@ export const ScopeBar = ({ org, view, repoSelection, children }: ScopeBarProps) 
           {repos.isPending && (
             <span
               aria-hidden="true"
-              className="h-8 w-36 animate-shimmer rounded-lg bg-zinc-200/60 pointer-coarse:h-10 max-sm:w-24 dark:bg-zinc-800/60"
+              className="h-8 w-36 animate-shimmer rounded-lg bg-zinc-200/60 pointer-coarse:h-11 max-sm:w-24 dark:bg-zinc-800/60"
             />
           )}
           {repos.data !== undefined && (

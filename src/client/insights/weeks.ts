@@ -63,7 +63,8 @@ export const timeBuckets = (
         withYear && (month.endsWith("-01") || month === weekStarts[0]?.slice(0, 7))
           ? `${monthOf(first)} ’${month.slice(2, 4)}`
           : monthOf(first),
-      title: `${monthOf(first)} ${month.slice(0, 4)}${from}${partial ? ", so far" : ""}`,
+      // Weeks are never split, so a month holds the weeks that start in it, and says so.
+      title: `Weeks starting in ${monthOf(first)} ${month.slice(0, 4)}${from}${partial ? ", so far" : ""}`,
       partial,
       weeks,
     }

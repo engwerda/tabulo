@@ -15,7 +15,7 @@ export const RepoPaletteProvider = ({
   children: ReactNode
 }) => {
   const palette = new Map(
-    repos.map((repo, index) => [repo, REPO_COLORS[index % REPO_COLORS.length] ?? "#6366f1"]),
+    repos.map((repo, index) => [repo, REPO_COLORS[index % REPO_COLORS.length] ?? "#0ea5e9"]),
   )
   return <RepoPalette.Provider value={palette}>{children}</RepoPalette.Provider>
 }

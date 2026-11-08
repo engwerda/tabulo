@@ -273,7 +273,7 @@ export const EpicCard = ({
             aria-expanded={expanded}
             aria-controls={childrenId}
             onClick={() => setExpanded((value) => !value)}
-            className="flex h-10 w-full items-center justify-between gap-2 border-t border-zinc-100 px-4 text-left text-xs font-medium text-zinc-600 transition hover:bg-zinc-50 hover:text-zinc-900 focus-visible:-outline-offset-2 sm:px-5 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-100"
+            className="flex h-10 w-full items-center justify-between gap-2 border-t pointer-coarse:h-11 border-zinc-100 px-4 text-left text-xs font-medium text-zinc-600 transition hover:bg-zinc-50 hover:text-zinc-900 focus-visible:-outline-offset-2 sm:px-5 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-100"
           >
             <span>
               {expanded ? "Hide" : "Show"} {count} {count === 1 ? "child" : "children"}

@@ -85,7 +85,7 @@ const TimeLegend = ({
   <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
     <Legend items={items} />
     <span className="ml-auto text-2xs text-zinc-500 dark:text-zinc-400">
-      {grain === "week" ? "Per week" : "Per month"}
+      {grain === "week" ? "Per week" : "Per month, by week start"}
     </span>
   </div>
 )

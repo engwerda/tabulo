@@ -267,7 +267,7 @@ const CommentBox = ({ onSubmit }: { onSubmit: (body: string) => Promise<unknown>
           }
           if (event.key === "Escape") event.currentTarget.blur()
         }}
-        className="block max-h-64 min-h-[4.5rem] w-full resize-none rounded-t-xl bg-transparent px-3 py-2.5 [field-sizing:content] text-base text-zinc-900 sm:text-sm placeholder:text-zinc-400 read-only:opacity-60 focus:outline-none dark:text-zinc-100"
+        className="block max-h-64 min-h-[4.5rem] w-full resize-none rounded-t-xl bg-transparent px-3 py-2.5 [field-sizing:content] text-base text-zinc-900 sm:text-sm placeholder:text-zinc-500 dark:placeholder:text-zinc-400 read-only:opacity-60 focus:outline-none dark:text-zinc-100"
       />
       <div className="flex items-center justify-end gap-2 border-t border-zinc-100 px-2 py-1.5 dark:border-zinc-800">
         <span className="mr-auto hidden items-center gap-1 pl-1 text-2xs text-zinc-500 sm:flex dark:text-zinc-400 [@media(hover:none)]:hidden">

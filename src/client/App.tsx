@@ -108,7 +108,7 @@ const SignInPage = () => (
       aria-hidden="true"
       className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(56rem_28rem_at_15%_-10%,rgb(99_102_241/0.16),transparent),radial-gradient(40rem_24rem_at_100%_110%,rgb(139_92_246/0.10),transparent)] dark:bg-[radial-gradient(56rem_28rem_at_15%_-10%,rgb(99_102_241/0.22),transparent),radial-gradient(40rem_24rem_at_100%_110%,rgb(139_92_246/0.14),transparent)]"
     />
-    <div className="mx-auto flex w-full max-w-md flex-col justify-center lg:mx-0 lg:justify-self-end">
+    <div className="mx-auto flex w-full max-w-lg flex-col justify-center lg:mx-0 lg:justify-self-end">
       <div className="flex items-center gap-2.5">
         <LogoMark className="size-9" />
         <span className="text-lg font-semibold tracking-tight">Tabulo</span>
@@ -203,11 +203,11 @@ const SearchButton = () => {
       onClick={openPalette}
       aria-haspopup="dialog"
       aria-keyshortcuts="Control+K Meta+K"
-      className="flex h-8 shrink-0 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-2 text-sm text-zinc-500 pointer-coarse:h-10 pointer-coarse:px-3 shadow-[0_1px_0_rgb(0_0_0/0.03)] transition-colors hover:border-zinc-300 hover:text-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 sm:w-52 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-none dark:hover:border-zinc-600 dark:hover:text-zinc-200"
+      className="flex h-8 shrink-0 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-2 text-sm text-zinc-500 pointer-coarse:h-11 pointer-coarse:px-3 shadow-[0_1px_0_rgb(0_0_0/0.03)] transition-colors hover:border-zinc-300 hover:text-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 lg:w-52 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-none dark:hover:border-zinc-600 dark:hover:text-zinc-200"
     >
       <SearchIcon className="size-4 shrink-0" />
-      <span className="sr-only sm:not-sr-only sm:flex-1 sm:text-left">Search…</span>
-      <span className="hidden sm:block">
+      <span className="sr-only lg:not-sr-only lg:flex-1 lg:text-left">Search…</span>
+      <span className="hidden lg:block">
         <ShortcutKeys id="palette" />
       </span>
     </button>
