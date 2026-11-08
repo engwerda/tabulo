@@ -4,5 +4,6 @@ dist/
 .dev.vars
 .dev.vars.*
 !.dev.vars.example
+wrangler.deploy.jsonc
 worker-configuration.d.ts
 *.tsbuildinfo
