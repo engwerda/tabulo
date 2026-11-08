@@ -12,6 +12,13 @@ import {
 import { createPortal } from "react-dom"
 import { ChevronDownIcon } from "./icons.tsx"
 
+/**
+ * On a touch screen a small control gets an invisible 44px hit area around it, so compact
+ * desktop sizing stays and a finger still lands. The control must not clip its overflow.
+ */
+export const touchTarget =
+  "relative pointer-coarse:before:absolute pointer-coarse:before:top-1/2 pointer-coarse:before:left-1/2 pointer-coarse:before:size-11 pointer-coarse:before:-translate-1/2"
+
 export const buttonClass = {
   primary:
     "inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-indigo-600 px-3 text-sm font-medium text-white shadow-sm shadow-indigo-600/20 transition hover:bg-indigo-500 active:bg-indigo-700 disabled:pointer-events-none disabled:opacity-60",
@@ -19,10 +26,13 @@ export const buttonClass = {
     "inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-800 shadow-card transition hover:border-zinc-300 hover:bg-zinc-50 disabled:pointer-events-none disabled:opacity-60 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/70",
   ghost:
     "inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-60 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
-  icon: "inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
-  iconSmall:
-    "inline-flex size-7 shrink-0 items-center justify-center rounded-md text-zinc-500 transition hover:bg-zinc-200/70 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
+  icon: `inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 ${touchTarget}`,
+  iconSmall: `inline-flex size-7 shrink-0 items-center justify-center rounded-md text-zinc-500 transition hover:bg-zinc-200/70 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 ${touchTarget}`,
 } as const
+
+/** The surface of every card and section on a page. Floating panels use `panelClass`. */
+export const cardClass =
+  "rounded-xl border border-zinc-200/80 bg-white shadow-card dark:border-zinc-800 dark:bg-zinc-900"
 
 // 16px text on phones keeps iOS from zooming in when a field takes focus.
 export const inputClass =
@@ -32,7 +42,7 @@ export const panelClass =
   "rounded-xl border border-zinc-200 bg-white shadow-pop dark:border-zinc-800 dark:bg-zinc-900"
 
 export const Kbd = ({ children }: { children: ReactNode }) => (
-  <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border leading-none border-zinc-200 bg-zinc-50 px-1 font-sans text-[0.6875rem] font-medium text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400">
+  <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-b-2 border-zinc-200 bg-white px-1 font-sans text-2xs leading-none font-medium text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400">
     {children}
   </kbd>
 )
@@ -114,6 +124,23 @@ const moveMenuFocus = (event: ReactKeyboardEvent<HTMLElement>) => {
             ? items.length - 1
             : (current - 1 + items.length) % items.length
   items[next]?.focus()
+}
+
+const TAB_STOPS =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+/**
+ * The Tab stops of a panel that holds form controls, such as checkboxes, beside or instead of
+ * menu items; null for a menu, whose only other stop is its search box.
+ */
+const formStops = (panel: HTMLElement): HTMLElement[] | null => {
+  const stops = [...panel.querySelectorAll<HTMLElement>(TAB_STOPS)].filter(
+    (element) => element.tabIndex >= 0 && element.getClientRects().length > 0,
+  )
+  const isMenuStop = (element: HTMLElement) =>
+    element.matches(MENU_ITEMS) ||
+    (element instanceof HTMLInputElement && ["search", "text"].includes(element.type))
+  return stops.every(isMenuStop) ? null : stops
 }
 
 const GAP = 6
@@ -255,7 +282,9 @@ export const Popover = ({
           <div
             ref={panel}
             id={panelId}
-            style={position ?? { visibility: "hidden", top: 0, left: 0 }}
+            // Transparent rather than `visibility: hidden` while it is measured: under reduced
+            // motion every property transitions for 1ms, and a still-hidden panel refuses focus.
+            style={position ?? { opacity: 0, pointerEvents: "none", top: 0, left: 0 }}
             // A press inside the panel must not reach a draggable card around its trigger.
             onMouseDown={(event) => event.stopPropagation()}
             onTouchStart={(event) => event.stopPropagation()}
@@ -263,11 +292,19 @@ export const Popover = ({
             // ancestors, such as a card that opens its details on click.
             onClick={(event) => event.stopPropagation()}
             onKeyDown={(event) => {
-              // Tab leaves a menu: it closes and focus goes back to where it was opened.
               if (event.key === "Tab") {
                 event.preventDefault()
-                setOpen(false)
-                ;(returnFocus ?? trigger).current?.focus()
+                const stops = formStops(event.currentTarget)
+                if (stops === null) {
+                  // Tab leaves a menu: it closes and focus goes back to where it was opened.
+                  setOpen(false)
+                  ;(returnFocus ?? trigger).current?.focus()
+                } else {
+                  // A panel of form controls keeps Tab inside it, so every control is reachable.
+                  const current = stops.indexOf(document.activeElement as HTMLElement)
+                  const step = event.shiftKey ? -1 : 1
+                  stops[(current + step + stops.length) % stops.length]?.focus()
+                }
                 return
               }
               moveMenuFocus(event)
@@ -319,3 +356,51 @@ export const isTypingTarget = (target: EventTarget | null) =>
     target.tagName === "INPUT" ||
     target.tagName === "TEXTAREA" ||
     target.tagName === "SELECT")
+
+/**
+ * One choice among a few, as a row of pressed buttons: periods, chart series, the theme. The
+ * selected option is a raised white segment on the zinc track.
+ */
+export const Segmented = <T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+  size = "md",
+  className = "",
+}: {
+  /** What the group chooses, for assistive technology. */
+  label: string
+  options: ReadonlyArray<{ readonly value: T; readonly label: ReactNode; readonly title?: string }>
+  value: T
+  onChange: (value: T) => void
+  size?: "sm" | "md"
+  className?: string
+}) => (
+  <fieldset
+    className={`inline-flex shrink-0 items-center rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800/80 ${className}`}
+  >
+    <legend className="sr-only">{label}</legend>
+    {options.map((option) => {
+      const selected = option.value === value
+      return (
+        <button
+          key={option.value}
+          type="button"
+          aria-pressed={selected}
+          title={option.title}
+          onClick={() => onChange(option.value)}
+          className={`inline-flex items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap tabular-nums transition ${
+            size === "sm" ? "h-6 px-2 text-xs" : "h-7 px-2.5 text-sm"
+          } ${
+            selected
+              ? "bg-white text-zinc-900 shadow-card ring-1 ring-zinc-900/5 dark:bg-zinc-700 dark:text-zinc-50 dark:ring-white/5"
+              : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+          }`}
+        >
+          {option.label}
+        </button>
+      )
+    })}
+  </fieldset>
+)

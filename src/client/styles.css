@@ -16,7 +16,7 @@
   --chart-4: #0084d1;
   --chart-5: #ff2056;
   --chart-6: #8e51ff;
-  --chart-grid: #e4e4e7;
+  --chart-grid: #ececef;
   --chart-axis: #71717b;
   --chart-positive: #008236;
   --chart-negative: #e7000b;
@@ -50,7 +50,12 @@
 
 @theme {
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
-  --shadow-card: 0 1px 2px 0 rgb(24 24 27 / 0.05), 0 1px 1px -1px rgb(24 24 27 / 0.04);
+  --font-mono:
+    ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  /* The smallest text: chips, keys, chart axes, and eyebrows. Nothing goes below it. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --shadow-card: 0 1px 2px 0 rgb(24 24 27 / 0.04);
   --shadow-lift: 0 12px 28px -8px rgb(24 24 27 / 0.22), 0 4px 10px -4px rgb(24 24 27 / 0.12);
   --shadow-pop: 0 16px 40px -12px rgb(24 24 27 / 0.28), 0 2px 6px -2px rgb(24 24 27 / 0.1);
   --animate-fade-in: fade-in 140ms ease-out;
@@ -60,6 +65,7 @@
   --animate-shimmer: shimmer 1.4s ease-in-out infinite;
   --animate-palette-in: palette-in 140ms cubic-bezier(0.16, 1, 0.3, 1);
   --animate-palette-fade: palette-fade 120ms ease-out;
+  --animate-sketch-in: sketch-in 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 
   @keyframes fade-in {
     from {
@@ -95,10 +101,26 @@
       transform: translateY(-6px) scale(0.98);
     }
   }
+  @keyframes sketch-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
   @keyframes palette-fade {
     from {
       opacity: 0;
     }
+  }
+}
+
+/* The phone's bottom tab bar, which the content and any full-height view leave room for. */
+:root {
+  --tab-bar-height: 0px;
+}
+@media (width < 48rem) {
+  :root {
+    --tab-bar-height: calc(3.5rem + env(safe-area-inset-bottom));
   }
 }
 
@@ -109,7 +131,8 @@
     overflow-x: clip;
   }
   html {
-    font-feature-settings: "cv11", "ss01";
+    /* Inter's open digits and single-storey a, and a straight-legged l that never reads as 1. */
+    font-feature-settings: "cv11", "ss01", "cv05";
     -webkit-tap-highlight-color: transparent;
   }
   body {
