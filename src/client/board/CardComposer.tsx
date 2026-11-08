@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react"
-import { RepoIcon } from "../ui/icons.tsx"
+import { ChevronDownIcon, RepoIcon } from "../ui/icons.tsx"
 import { buttonClass } from "../ui/primitives.tsx"
 
 type CardComposerProps = {
@@ -8,6 +8,9 @@ type CardComposerProps = {
   readonly repos: ReadonlyArray<string>
   readonly repo: string
   readonly onRepoChange: (repo: string) => void
+  /** The title typed before the composer last closed in this column. */
+  readonly draft: string
+  readonly onDraftChange: (title: string) => void
   /** Resolves once the issue exists; the composer then clears for the next one. */
   readonly onCreate: (repo: string, title: string) => Promise<void>
   readonly onClose: () => void
@@ -19,15 +22,26 @@ export const CardComposer = ({
   repos,
   repo,
   onRepoChange,
+  draft,
+  onDraftChange,
   onCreate,
   onClose,
 }: CardComposerProps) => {
-  const [title, setTitle] = useState("")
+  const [title, setTitleState] = useState(draft)
+  const setTitle = (next: string) => {
+    setTitleState(next)
+    onDraftChange(next)
+  }
   const [pending, setPending] = useState(false)
   const input = useRef<HTMLTextAreaElement>(null)
   const repoId = useId()
 
-  useEffect(() => input.current?.focus(), [])
+  useEffect(() => {
+    const element = input.current
+    element?.focus()
+    // A restored draft is picked up where it was left: the caret goes to its end.
+    element?.setSelectionRange(element.value.length, element.value.length)
+  }, [])
 
   const submit = () => {
     const trimmed = title.trim()
@@ -78,14 +92,15 @@ export const CardComposer = ({
       />
       <div className="mt-2 flex items-center gap-2">
         {repos.length > 1 ? (
-          <label className="flex min-w-0 items-center gap-1 rounded-md bg-zinc-100 py-0.5 pr-1 pl-1.5 text-xs pointer-coarse:min-h-11 pointer-coarse:px-2.5 text-zinc-600 has-[select:focus-visible]:outline-2 has-[select:focus-visible]:outline-offset-2 has-[select:focus-visible]:outline-indigo-500 dark:bg-zinc-800 dark:text-zinc-300">
-            <RepoIcon className="size-3.5 text-zinc-400" />
+          // The select fills the chip, so a tap anywhere on it opens the list.
+          <label className="relative flex min-w-0 items-center rounded-md bg-zinc-100 text-xs text-zinc-600 has-[select:focus-visible]:outline-2 has-[select:focus-visible]:outline-offset-2 has-[select:focus-visible]:outline-indigo-500 dark:bg-zinc-800 dark:text-zinc-300">
+            <RepoIcon className="pointer-events-none absolute left-1.5 size-3.5 text-zinc-500 pointer-coarse:left-2.5 dark:text-zinc-400" />
             <span className="sr-only">Repository</span>
             <select
               value={repo}
               onChange={(event) => onRepoChange(event.target.value)}
               disabled={pending}
-              className="min-w-0 max-w-32 truncate bg-transparent font-medium focus:outline-none"
+              className="h-6 max-w-40 min-w-0 cursor-pointer appearance-none truncate rounded-md bg-transparent pr-5 pl-6 font-medium [field-sizing:content] focus:outline-none pointer-coarse:h-11 pointer-coarse:pr-7 pointer-coarse:pl-8"
             >
               {repos.map((name) => (
                 <option key={name} value={name}>
@@ -93,6 +108,7 @@ export const CardComposer = ({
                 </option>
               ))}
             </select>
+            <ChevronDownIcon className="pointer-events-none absolute right-1 size-3 opacity-60 pointer-coarse:right-2.5" />
           </label>
         ) : (
           <span className="flex min-w-0 items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">

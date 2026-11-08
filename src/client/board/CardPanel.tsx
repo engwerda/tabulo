@@ -19,15 +19,15 @@ import {
   IssueClosedIcon,
   LinkIcon,
   LockIcon,
-  SearchIcon,
   UserMinusIcon,
   UserPlusIcon,
   XIcon,
 } from "../ui/icons.tsx"
 import { LabelChip, LabelList } from "../ui/LabelChip.tsx"
-import { buttonClass, inputClass, Kbd, Popover } from "../ui/primitives.tsx"
+import { buttonClass, Kbd, Popover } from "../ui/primitives.tsx"
+import { SearchField } from "../ui/SearchField.tsx"
 import { useToast } from "../ui/toast.tsx"
-import { ColumnDot, RepoIssueRef } from "./BoardCardView.tsx"
+import { ColumnDot, LabelName, RepoIssueRef } from "./BoardCardView.tsx"
 import type { CardUpdate } from "./BoardPage.tsx"
 
 /** Forgejo already sanitizes rendered Markdown; this keeps Tabulo safe if it ever does not. */
@@ -136,7 +136,14 @@ const editTrigger =
 const menuItem =
   "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-zinc-700 transition hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none disabled:opacity-60 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
 
-type Choice = { readonly value: string; readonly label: string; readonly icon?: ReactNode }
+type Choice = {
+  readonly value: string
+  /** The choice in words, which the search matches. */
+  readonly label: string
+  readonly icon?: ReactNode
+  /** How the menu shows the label, when it differs from the words. */
+  readonly display?: ReactNode
+}
 
 /** A searchable menu of choices: several stay picked for labels and assignees, one for others. */
 const Picker = ({
@@ -179,17 +186,13 @@ const Picker = ({
     >
       {(close) => (
         <>
-          <label className="relative mb-1 block">
-            <span className="sr-only">Search {searchName}</span>
-            <SearchIcon className="pointer-events-none absolute top-2 left-2.5 size-4 text-zinc-400" />
-            <input
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder={`Search ${searchName}`}
-              className={`${inputClass} pl-8 shadow-none`}
-            />
-          </label>
+          <SearchField
+            label={`Search ${searchName}`}
+            value={search}
+            onChange={setSearch}
+            inMenu
+            className="mb-1"
+          />
           <div role="menu" aria-label={name} className="scroll-thin max-h-72 overflow-y-auto">
             {choices === undefined && <p className="px-2 py-1.5 text-sm text-zinc-500">Loading…</p>}
             {shown.map((choice) => {
@@ -211,7 +214,7 @@ const Picker = ({
                   className={menuItem}
                 >
                   {choice.icon}
-                  <span className="min-w-0 flex-1 truncate">{choice.label}</span>
+                  <span className="min-w-0 flex-1 truncate">{choice.display ?? choice.label}</span>
                   {on && <CheckIcon className="size-4 text-indigo-600 dark:text-indigo-400" />}
                 </button>
               )
@@ -226,7 +229,14 @@ const Picker = ({
   )
 }
 
-const CommentBox = ({ onSubmit }: { onSubmit: (body: string) => Promise<unknown> }) => {
+const CommentBox = ({
+  onSubmit,
+  onEscape,
+}: {
+  onSubmit: (body: string) => Promise<unknown>
+  /** Escape leaves the box; the panel decides where focus goes. */
+  onEscape: () => void
+}) => {
   const [body, setBody] = useState("")
   const [pending, setPending] = useState(false)
   const submit = () => {
@@ -265,12 +275,12 @@ const CommentBox = ({ onSubmit }: { onSubmit: (body: string) => Promise<unknown>
             event.preventDefault()
             submit()
           }
-          if (event.key === "Escape") event.currentTarget.blur()
+          if (event.key === "Escape") onEscape()
         }}
         className="block max-h-64 min-h-[4.5rem] w-full resize-none rounded-t-xl bg-transparent px-3 py-2.5 [field-sizing:content] text-base text-zinc-900 sm:text-sm placeholder:text-zinc-500 dark:placeholder:text-zinc-400 read-only:opacity-60 focus:outline-none dark:text-zinc-100"
       />
       <div className="flex items-center justify-end gap-2 border-t border-zinc-100 px-2 py-1.5 dark:border-zinc-800">
-        <span className="mr-auto hidden items-center gap-1 pl-1 text-2xs text-zinc-500 sm:flex dark:text-zinc-400 [@media(hover:none)]:hidden">
+        <span className="mr-auto hidden items-center gap-1 pl-1 text-2xs text-zinc-500 sm:flex pointer-coarse:hidden dark:text-zinc-400">
           <Kbd>{IS_MAC ? "⌘" : "Ctrl"}</Kbd>
           <Kbd>Enter</Kbd> to comment
         </span>
@@ -404,6 +414,7 @@ export const CardPanel = ({
   const labelChoices = options.data?.labels.map((label) => ({
     value: String(label.id),
     label: label.name,
+    display: <LabelName name={label.name} />,
     icon: (
       <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: label.color }} />
     ),
@@ -861,7 +872,11 @@ export const CardPanel = ({
               )}
               {editable && (
                 <div className="mt-4">
-                  <CommentBox onSubmit={(body) => comment.mutateAsync(body)} />
+                  <CommentBox
+                    onSubmit={(body) => comment.mutateAsync(body)}
+                    // The heading holds focus between edits; a second Escape closes the panel.
+                    onEscape={() => heading.current?.focus({ preventScroll: true })}
+                  />
                 </div>
               )}
             </section>

@@ -7,17 +7,17 @@ import { Glyph } from "../palette/icons.tsx"
 import { ChooseRepos } from "../scope/ChooseRepos.tsx"
 import { ScopeBar } from "../scope/ScopeBar.tsx"
 import { useRepoSelection } from "../scope/use-repo-selection.ts"
-import { AlertIcon, CopyIcon, ExternalIcon, SearchIcon, SortIcon, XIcon } from "../ui/icons.tsx"
+import { AlertIcon, CopyIcon, ExternalIcon, SortIcon, XIcon } from "../ui/icons.tsx"
 import { PageTitle } from "../ui/PageTitle.tsx"
 import {
   buttonClass,
   cardClass,
-  inputClass,
   MenuOption,
   Popover,
   Segmented,
   touchTarget,
 } from "../ui/primitives.tsx"
+import { SearchField } from "../ui/SearchField.tsx"
 import { useToast } from "../ui/toast.tsx"
 import { EpicCard } from "./EpicCard.tsx"
 import { epicSummary, incompleteNotice, readEpicFilters, visibleEpics } from "./epics-view.ts"
@@ -339,17 +339,13 @@ export const EpicsPage = ({ org }: { org: string }) => {
                   aria-label="Filter epics"
                   className="mt-6 mb-4 flex flex-wrap items-center gap-2"
                 >
-                  <label className="relative w-full sm:w-64">
-                    <span className="sr-only">Search epics</span>
-                    <SearchIcon className="pointer-events-none absolute top-2 left-2.5 size-4 text-zinc-500 dark:text-zinc-400" />
-                    <input
-                      type="search"
-                      placeholder="Search epics or #number"
-                      value={filters.text}
-                      onChange={(event) => set("q", event.target.value)}
-                      className={`${inputClass} pl-8`}
-                    />
-                  </label>
+                  <SearchField
+                    label="Search epics"
+                    placeholder="Search epics or #number"
+                    value={filters.text}
+                    onChange={(text) => set("q", text)}
+                    className="w-full sm:w-64"
+                  />
                   <Segmented
                     label="Epic state"
                     options={STATES}

@@ -187,6 +187,18 @@ const CardMenu = ({
   </Popover>
 )
 
+/** A label's name in a menu, with its scope in a lighter tone as `LabelChip` shows it. */
+export const LabelName = ({ name }: { name: string }) => {
+  const slash = name.lastIndexOf("/")
+  if (slash <= 0) return name
+  return (
+    <>
+      <span className="text-zinc-500 dark:text-zinc-400">{name.slice(0, slash + 1)}</span>
+      {name.slice(slash + 1)}
+    </>
+  )
+}
+
 /** A column's mark, always in the same 16px box so lists of columns line up. */
 export const ColumnDot = ({ column }: { column: BoardColumn }) => (
   <span aria-hidden="true" className="grid size-4 shrink-0 place-items-center">

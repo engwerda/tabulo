@@ -100,6 +100,24 @@ const storage = {
   },
 }
 
+/** Titles typed in a column's composer and not yet added, kept while the tab is open. */
+const drafts = {
+  key: (org: string, column: string) => `tabulo.board.draft.${org.toLowerCase()}.${column}`,
+  read: (org: string, column: string) => {
+    try {
+      return window.sessionStorage.getItem(drafts.key(org, column)) ?? ""
+    } catch {
+      return ""
+    }
+  },
+  write: (org: string, column: string, title: string) => {
+    try {
+      if (title.trim() === "") window.sessionStorage.removeItem(drafts.key(org, column))
+      else window.sessionStorage.setItem(drafts.key(org, column), title)
+    } catch {}
+  },
+}
+
 const collapsedKey = (org: string) => `tabulo.board.collapsed.${org.toLowerCase()}`
 const composerRepoKey = (org: string) => `tabulo.board.new-issue-repo.${org.toLowerCase()}`
 
@@ -320,7 +338,7 @@ const NoMatches = ({ query, onClear }: { query: string; onClear: () => void }) =
 )
 
 const boardMenuItem =
-  "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm text-zinc-700 transition hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none dark:text-zinc-300 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
+  "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm text-zinc-700 transition pointer-coarse:min-h-11 hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none dark:text-zinc-300 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
 
 /** The board's quieter actions: refreshing, which also says when the board was read, and help. */
 const BoardMenu = ({
@@ -372,12 +390,14 @@ const BoardMenu = ({
               <span className="text-xs text-zinc-500 dark:text-zinc-400">{updated}</span>
             )}
           </span>
-          <Kbd>R</Kbd>
+          <span className="pointer-coarse:hidden">
+            <Kbd>R</Kbd>
+          </span>
         </button>
         <button
           type="button"
           role="menuitem"
-          className={`${boardMenuItem} [@media(hover:none)]:hidden`}
+          className={`${boardMenuItem} pointer-coarse:hidden`}
           onClick={() => {
             close()
             onShortcuts()
@@ -413,6 +433,17 @@ export const BoardPage = ({ org }: { org: string }) => {
   const [composing, setComposing] = useState<string | null>(null)
   const [composerRepo, setComposerRepo] = useState(() => storage.read(composerRepoKey(org)))
   const searchInput = useRef<HTMLInputElement>(null)
+  // Where focus goes when the shortcuts dialog closes and what had it before is gone: the control
+  // it was opened from, or the board's options after a key press from the page.
+  const shortcutsOpener = useRef<HTMLElement | null>(null)
+  const openShortcuts = () => {
+    const active = document.activeElement
+    shortcutsOpener.current =
+      active instanceof HTMLElement && active !== document.body
+        ? active
+        : document.querySelector<HTMLElement>('button[aria-label^="Board options"]')
+    setShortcutsOpen(true)
+  }
 
   const repos = useQuery({ queryKey: ["org-repos", org], queryFn: () => fetchOrgRepos(org) })
   const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
@@ -802,7 +833,7 @@ export const BoardPage = ({ org }: { org: string }) => {
     if (isTypingTarget(event.target) || shortcutsOpen || dragging) return
     if (document.querySelector("dialog[open]") !== null) return
     const key = event.key
-    if (key === "?") setShortcutsOpen(true)
+    if (key === "?") openShortcuts()
     else if (key === "/") searchInput.current?.focus()
     else if (key === "r" || key === "R") void board.refetch()
     else if (key === "m" || key === "M") toggleMine()
@@ -899,7 +930,7 @@ export const BoardPage = ({ org }: { org: string }) => {
           <div className="flex min-w-0 items-center gap-1.5">
             <OrgSwitcher org={org} view="board" />
             {!orgMissing && (
-              <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-700">
+              <span aria-hidden="true" className="text-zinc-300 max-sm:hidden dark:text-zinc-700">
                 /
               </span>
             )}
@@ -942,7 +973,7 @@ export const BoardPage = ({ org }: { org: string }) => {
                 }
                 refreshing={board.isFetching}
                 onRefresh={() => void board.refetch()}
-                onShortcuts={() => setShortcutsOpen(true)}
+                onShortcuts={openShortcuts}
               />
             )}
             {canCreate && firstCreatable !== undefined && (
@@ -1053,7 +1084,10 @@ export const BoardPage = ({ org }: { org: string }) => {
                   composing !== null &&
                   composerTarget !== undefined && (
                     <CardComposer
+                      key={composing}
                       columnTitle={columnTitle(composing)}
+                      draft={drafts.read(org, composing)}
+                      onDraftChange={(title) => drafts.write(org, composing, title)}
                       repos={creatableRepos}
                       repo={composerTarget}
                       onRepoChange={(repo) => {
@@ -1115,7 +1149,11 @@ export const BoardPage = ({ org }: { org: string }) => {
             />
           )}
         </div>
-        <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+        <ShortcutsDialog
+          open={shortcutsOpen}
+          onClose={() => setShortcutsOpen(false)}
+          returnFocus={shortcutsOpener}
+        />
       </main>
     </RepoPaletteProvider>
   )

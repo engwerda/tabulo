@@ -2,16 +2,10 @@ import { type ReactNode, type RefObject, useEffect, useRef, useState } from "rea
 import type { SetSearchParams } from "wouter"
 import type { BoardCard } from "../../shared/api.ts"
 import { Avatar } from "../Avatar.tsx"
-import {
-  CheckIcon,
-  MilestoneIcon,
-  SearchIcon,
-  SlidersIcon,
-  TagIcon,
-  UserIcon,
-  XIcon,
-} from "../ui/icons.tsx"
-import { buttonClass, inputClass, Kbd, MenuOption, Popover, touchArea } from "../ui/primitives.tsx"
+import { CheckIcon, MilestoneIcon, SlidersIcon, TagIcon, UserIcon, XIcon } from "../ui/icons.tsx"
+import { buttonClass, MenuOption, Popover } from "../ui/primitives.tsx"
+import { SearchField } from "../ui/SearchField.tsx"
+import { LabelName } from "./BoardCardView.tsx"
 import {
   type BoardFilters,
   FILTER_PARAMS,
@@ -21,7 +15,14 @@ import {
   NONE,
 } from "./board-view.ts"
 
-type Choice = { readonly value: string; readonly label: string; readonly icon?: ReactNode }
+type Choice = {
+  readonly value: string
+  /** The choice in words, which the search matches. */
+  readonly label: string
+  readonly icon?: ReactNode
+  /** How the menu shows the label, when it differs from the words. */
+  readonly display?: ReactNode
+}
 
 /**
  * One of the menu filters (assignee, label, milestone): what the desktop menu and the phone
@@ -49,7 +50,7 @@ const toggled = (values: ReadonlyArray<string>, value: string) =>
   values.includes(value) ? values.filter((other) => other !== value) : [...values, value]
 
 const chipClass = (active: boolean) =>
-  `inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 text-sm font-medium transition ${
+  `inline-flex h-8 pointer-coarse:h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 text-sm font-medium transition ${
     active
       ? "border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100/70 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200 dark:hover:bg-indigo-500/15"
       : "border-zinc-200 bg-white text-zinc-700 shadow-card hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/70"
@@ -103,18 +104,14 @@ const FilterMenu = ({ spec }: { spec: FilterSpec }) => {
       {(close) => (
         <>
           {all.length > 6 && (
-            <label className="relative mb-1 block">
-              <span className="sr-only">Search {plural}</span>
-              <SearchIcon className="pointer-events-none absolute top-2 left-2.5 size-4 text-zinc-400" />
-              <input
-                type="search"
-                ref={search}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={`Search ${plural}`}
-                className={`${inputClass} pl-8 shadow-none`}
-              />
-            </label>
+            <SearchField
+              label={`Search ${plural}`}
+              value={query}
+              onChange={setQuery}
+              inputRef={search}
+              inMenu
+              className="mb-1"
+            />
           )}
           {multiple && (
             <p className="px-2 pt-1 pb-1.5 text-2xs text-zinc-500 dark:text-zinc-400">
@@ -154,7 +151,7 @@ const FilterMenu = ({ spec }: { spec: FilterSpec }) => {
                   }}
                 >
                   {choice.icon}
-                  <span className="min-w-0 flex-1 truncate">{choice.label}</span>
+                  <span className="min-w-0 flex-1 truncate">{choice.display ?? choice.label}</span>
                   {on && <CheckIcon className="size-4 text-indigo-600 dark:text-indigo-400" />}
                 </MenuOption>
               )
@@ -256,7 +253,7 @@ const FilterSheet = ({
             {allChoices(spec).map((choice) => (
               <label key={choice.value} className={sheetRow}>
                 <span className="grid w-5 shrink-0 place-items-center">{choice.icon}</span>
-                <span className="min-w-0 flex-1 truncate">{choice.label}</span>
+                <span className="min-w-0 flex-1 truncate">{choice.display ?? choice.label}</span>
                 <input
                   type={spec.multiple ? "checkbox" : "radio"}
                   name={spec.multiple ? undefined : `sheet-${spec.name}`}
@@ -378,6 +375,7 @@ export const BoardFiltersBar = ({
         ...choices.labels.map(({ name, color }) => ({
           value: name,
           label: name,
+          display: <LabelName name={name} />,
           icon: (
             <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
           ),
@@ -422,52 +420,27 @@ export const BoardFiltersBar = ({
   return (
     <search className={`flex min-w-0 flex-col gap-2 ${className}`} aria-label="Filter cards">
       <div className="flex min-w-0 items-center gap-2 md:flex-wrap">
-        <label className="relative min-w-0 flex-1 md:w-52 md:flex-none min-[84rem]:w-auto min-[84rem]:max-w-52 min-[84rem]:min-w-36 min-[84rem]:flex-1">
-          <span className="sr-only">Search cards</span>
-          <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-zinc-400" />
-          <input
-            ref={searchInput}
-            type="search"
-            value={filters.text}
-            onChange={(event) => set("text", event.target.value)}
-            onKeyDown={(event) => {
-              // Escape clears the search and stays; on an empty search it goes to the first card.
-              if (event.key === "Escape") {
-                if (filters.text !== "") set("text", null)
-                else document.querySelector<HTMLElement>("a[data-card-link]")?.focus()
-              }
-            }}
-            placeholder="Search cards"
-            title="Search titles, or type #12 for issue 12"
-            aria-keyshortcuts="/"
-            className={`${inputClass} peer pr-8 pl-8 max-md:h-9 max-md:pointer-coarse:h-11 [&::-webkit-search-cancel-button]:appearance-none`}
-          />
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute top-1/2 right-2 hidden -translate-y-1/2 peer-placeholder-shown:md:flex"
-          >
-            <Kbd>/</Kbd>
-          </span>
-          {filters.text !== "" && (
-            <button
-              type="button"
-              onClick={() => {
-                set("text", null)
-                searchInput.current?.focus()
-              }}
-              aria-label="Clear the search"
-              className={`absolute top-1/2 right-1.5 grid size-5 -translate-y-1/2 place-items-center rounded text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 ${touchArea}`}
-            >
-              <XIcon className="size-3.5" />
-            </button>
-          )}
-        </label>
+        <SearchField
+          label="Search cards"
+          value={filters.text}
+          onChange={(text) => set("text", text)}
+          inputRef={searchInput}
+          shortcut="/"
+          title="Search titles, or type #12 for issue 12"
+          onKeyDown={(event) => {
+            // On an empty search Escape goes to the first card; with text it clears the search.
+            if (event.key === "Escape" && filters.text === "") {
+              document.querySelector<HTMLElement>("a[data-card-link]")?.focus()
+            }
+          }}
+          className="min-w-0 flex-1 md:w-52 md:flex-none min-[84rem]:w-auto min-[84rem]:max-w-52 min-[84rem]:min-w-36 min-[84rem]:flex-1"
+        />
 
         <button
           type="button"
           aria-haspopup="dialog"
           onClick={() => setSheetOpen(true)}
-          className={`${chipClass(menuFilterCount > 0)} h-9 pointer-coarse:h-11 md:hidden`}
+          className={`${chipClass(menuFilterCount > 0)} md:hidden`}
         >
           <SlidersIcon className="size-4 opacity-70" />
           Filters
@@ -495,11 +468,7 @@ export const BoardFiltersBar = ({
             <FilterMenu key={spec.name} spec={spec} />
           ))}
           {filtered && (
-            <button
-              type="button"
-              onClick={clear}
-              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-2 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-            >
+            <button type="button" onClick={clear} className={`${buttonClass.ghost} shrink-0`}>
               <XIcon className="size-3.5" />
               Clear
             </button>

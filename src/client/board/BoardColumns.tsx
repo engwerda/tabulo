@@ -19,7 +19,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
-import { type ReactNode, useEffect, useRef, useState } from "react"
+import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react"
 import type { Board, BoardCard, BoardColumn } from "../../shared/api.ts"
 import { CollapseIcon, ExpandIcon, PlusIcon } from "../ui/icons.tsx"
 import { buttonClass, Segmented } from "../ui/primitives.tsx"
@@ -66,6 +66,44 @@ const keyboardCoordinates: KeyboardCoordinateGetter = (event, args) => {
   return { x: target.left + (target.width - collisionRect.width) / 2, y: target.top + 4 }
 }
 
+/** The narrowest a column gets so that whole columns fill the board beside the details panel. */
+const FITTED_MIN = 224
+const FITTED_MAX = 384
+const wideQuery = window.matchMedia("(min-width: 64rem)")
+
+/**
+ * Beside the details panel the board shows whole columns: as many as fit at FITTED_MIN or
+ * wider share its width, and scrolling snaps from column to column. Null lets columns size
+ * themselves, as they do without the panel or where the panel covers the board.
+ */
+const useFittedWidth = (scroller: RefObject<HTMLDivElement | null>, panelOpen: boolean) => {
+  const [width, setWidth] = useState<number | null>(null)
+  useLayoutEffect(() => {
+    const element = scroller.current
+    if (!panelOpen || element === null) {
+      setWidth(null)
+      return
+    }
+    const measure = () => {
+      if (!wideQuery.matches) {
+        setWidth(null)
+        return
+      }
+      const style = getComputedStyle(element)
+      const space =
+        element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+      const gap = parseFloat(style.columnGap) || 0
+      const fit = Math.max(1, Math.floor((space + gap) / (FITTED_MIN + gap)))
+      setWidth(Math.min(FITTED_MAX, Math.floor((space - (fit - 1) * gap) / fit)))
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [scroller, panelOpen])
+  return width
+}
+
 const screenReaderInstructions = {
   draggable:
     "Press Enter to open the card's details, or Space to pick it up. While it is picked up, the arrow keys move it, Space drops it, and Escape cancels. Arrow keys move between cards, and the period key opens the card's menu.",
@@ -107,6 +145,8 @@ type ColumnProps = {
   readonly children: ReactNode
   readonly header: ReactNode
   readonly onToggleCollapsed: () => void
+  /** A fixed width that makes whole columns fill the board beside the panel. */
+  readonly width: number | null
 }
 
 const Column = ({
@@ -120,6 +160,7 @@ const Column = ({
   children,
   header,
   onToggleCollapsed,
+  width,
 }: ColumnProps) => {
   const droppable = useDroppable({
     id: `${COLUMN_PREFIX}${column.key}`,
@@ -143,7 +184,7 @@ const Column = ({
       <section
         ref={droppable.setNodeRef}
         aria-labelledby={headingId}
-        className={`flex w-11 shrink-0 flex-col items-center gap-3 rounded-xl py-2 transition-colors ${
+        className={`flex w-11 shrink-0 snap-start flex-col items-center gap-3 rounded-xl py-2 transition-colors ${
           highlighted
             ? columnHighlight
             : `${columnSurface} hover:bg-zinc-200/50 dark:hover:bg-zinc-900`
@@ -174,6 +215,7 @@ const Column = ({
   return (
     <section
       aria-labelledby={headingId}
+      style={width === null ? undefined : { flex: "none", width, minWidth: 0 }}
       className={`group/column flex h-full min-w-[14.5rem] max-w-[24rem] shrink grow basis-[16.5rem] snap-start flex-col rounded-xl transition-colors max-sm:w-[85vw] max-sm:max-w-none max-sm:shrink-0 max-sm:grow-0 max-sm:basis-auto ${
         highlighted ? columnHighlight : columnSurface
       }`}
@@ -410,13 +452,16 @@ export const BoardColumns = ({
     setInView(Math.max(0, index))
   }
   const tabs = useRef<HTMLDivElement>(null)
-  // The open card stays in view beside the details panel, also while J and K browse.
+  const fittedWidth = useFittedWidth(scroller, panelOpen)
+  // The open card stays in view beside the details panel, also while J and K browse and once
+  // the columns have been fitted beside the panel.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs again once the columns are fitted
   useEffect(() => {
     if (selectedKey === null) return
     document
       .querySelector(`[data-card-key="${CSS.escape(selectedKey)}"]`)
       ?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" })
-  }, [selectedKey])
+  }, [selectedKey, fittedWidth])
   // The tab of the column in view stays in view too.
   useEffect(() => {
     const tab = tabs.current?.querySelectorAll("button")[inView]
@@ -458,12 +503,18 @@ export const BoardColumns = ({
                 block: "nearest",
               })
             }}
-            options={board.columns.map((column) => ({
+            options={board.columns.map((column, index) => ({
               value: column.key,
               label: (
                 <>
                   {column.title}
-                  <span className="text-zinc-600 dark:text-zinc-400">
+                  <span
+                    className={
+                      index === inView
+                        ? "text-zinc-600 dark:text-zinc-300"
+                        : "text-zinc-600 dark:text-zinc-400"
+                    }
+                  >
                     {columnCards(board.cards, column.key).filter(visible).length}
                   </span>
                 </>
@@ -479,9 +530,9 @@ export const BoardColumns = ({
           // No transition: reduced motion gives every element a 1ms one, and the open card's
           // scroll into view must measure the board already narrowed beside the panel.
           className={`scroll-thin flex min-h-0 flex-1 snap-x snap-mandatory scroll-px-4 gap-2.5 overflow-x-auto px-4 pb-4 transition-none sm:snap-none sm:px-6 ${
-            // Beside the panel the board ends in a fade, so a column cut at its edge reads as scrollable.
+            // The gutters fade, so the edge of the next column reads as more to scroll to.
             panelOpen
-              ? "lg:mr-[32rem] lg:scroll-pr-10 lg:[mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)]"
+              ? "lg:mr-[32rem] lg:snap-x lg:snap-mandatory lg:scroll-px-6 lg:[mask-image:linear-gradient(to_right,transparent,black_1.5rem,black_calc(100%-1.5rem),transparent)]"
               : ""
           }`}
         >
@@ -500,6 +551,7 @@ export const BoardColumns = ({
                 highlighted={activeKey !== null && overColumn === column.key}
                 collapsed={collapsed.has(column.key) && !isComposing}
                 onToggleCollapsed={() => onToggleCollapsed(column.key)}
+                width={fittedWidth}
                 header={
                   canCreate &&
                   column._tag !== "Done" && (
