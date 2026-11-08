@@ -65,9 +65,30 @@ export const REPO_COLORS = [
   "#14b8a6",
 ]
 
-/** A stable color per name, for avatars and repositories outside a board's palette. */
-export const repoColor = (name: string) => {
+const hueIndex = (name: string) => {
   let hash = 0
   for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
-  return REPO_COLORS[hash % REPO_COLORS.length] ?? "#6366f1"
+  return hash % REPO_COLORS.length
 }
+
+/** A stable color per name, for avatars and repositories outside a board's palette. */
+export const repoColor = (name: string) => REPO_COLORS[hueIndex(name)] ?? "#6366f1"
+
+/**
+ * The hue `repoColor` gives a name, dark enough (600 or 700) that white initials on it pass
+ * WCAG AA at small sizes.
+ */
+const AVATAR_FILLS = [
+  "#4f46e5",
+  "#b45309",
+  "#047857",
+  "#be185d",
+  "#0369a1",
+  "#c2410c",
+  "#7c3aed",
+  "#4d7c0f",
+  "#b91c1c",
+  "#0f766e",
+]
+
+export const avatarFill = (name: string) => AVATAR_FILLS[hueIndex(name)] ?? "#4f46e5"

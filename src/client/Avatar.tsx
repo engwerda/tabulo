@@ -1,9 +1,9 @@
 import { useState } from "react"
-import { initials, repoColor } from "./format.ts"
+import { avatarFill, initials } from "./format.ts"
 
 const SIZES = {
-  xs: "size-5 text-[0.5625rem]",
-  sm: "size-6 text-[0.625rem]",
+  xs: "size-5 text-2xs",
+  sm: "size-6 text-2xs",
   md: "size-8 text-xs",
   lg: "size-10 text-sm",
 } as const
@@ -31,8 +31,8 @@ export const Avatar = ({
     return (
       <span
         aria-hidden="true"
-        style={{ backgroundColor: repoColor(name) }}
-        className={`grid ${box} place-items-center font-semibold text-white`}
+        style={{ backgroundColor: avatarFill(name) }}
+        className={`grid ${box} place-items-center leading-none font-semibold text-white`}
       >
         {/* Two letters do not fit the smallest size. */}
         {size === "xs" ? initials(name).slice(0, 1) : initials(name)}
