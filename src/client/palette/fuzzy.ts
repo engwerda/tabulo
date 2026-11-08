@@ -162,6 +162,11 @@ type Placement = { readonly score: number; readonly field: number; readonly matc
 export const fuzzyMatchFields = (
   query: string,
   fields: ReadonlyArray<string>,
+  /**
+   * The last field holds hidden keywords, which match only as a word's beginning: with no
+   * highlight to show why, a scattered match there would look like noise.
+   */
+  { hiddenLast = false }: { readonly hiddenLast?: boolean } = {},
 ): FieldsMatch | null => {
   const terms = query.split(/\s+/).filter((term) => term !== "")
   const indices = fields.map(() => new Set<number>())
@@ -170,6 +175,16 @@ export const fuzzyMatchFields = (
   for (const term of terms) {
     let best: Placement | null = null
     for (const [field, text] of fields.entries()) {
+      const hidden = hiddenLast && field === fields.length - 1
+      if (
+        hidden &&
+        !text
+          .toLowerCase()
+          .split(/\s+/)
+          .some((word) => word.startsWith(term.toLowerCase()))
+      ) {
+        continue
+      }
       const match = fuzzyMatch(term, text)
       if (match === null) continue
       const score = match.score * FIELD_WEIGHT ** field

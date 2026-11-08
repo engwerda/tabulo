@@ -3,7 +3,7 @@ import { AlertIcon } from "./icons.tsx"
 import { buttonClass, cardClass } from "./primitives.tsx"
 
 /** Server messages often end without a full stop; every notice reads as sentences. */
-const sentence = (text: string) => (/[.!?…)]$/.test(text.trim()) ? text : `${text.trim()}.`)
+export const sentence = (text: string) => (/[.!?…)]$/.test(text.trim()) ? text : `${text.trim()}.`)
 
 /**
  * How every view says something failed or is incomplete: an icon tile, a title, the reason, and

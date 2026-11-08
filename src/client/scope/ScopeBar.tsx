@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { type ReactNode, useState } from "react"
 import { fetchOrgRepos, fetchOrgs } from "../api.ts"
-import { ErrorNotice } from "../ui/ErrorNotice.tsx"
+import { ErrorNotice, sentence } from "../ui/ErrorNotice.tsx"
 import { ORGS, OrgSwitcher } from "./OrgPicker.tsx"
 import { RepoPicker } from "./RepoPicker.tsx"
 import type { RepoSelection } from "./use-repo-selection.ts"
@@ -64,11 +64,12 @@ export const ScopeBar = ({ org, view, repoSelection, children }: ScopeBarProps) 
       {/* Without a selection the view's own notice reports the failure, with a retry. */}
       {repos.isError && repoSelection.selection !== "" && (
         <ErrorNotice
-          title={`Could not load the repositories of ${org}`}
+          tone="warning"
+          title={`Could not load the repositories of ${displayName}`}
           onRetry={() => void repos.refetch()}
           retrying={repos.isFetching}
         >
-          {repos.error.message}
+          {`${sentence(repos.error.message)} The page still shows its data; choosing repositories waits until they load.`}
         </ErrorNotice>
       )}
     </div>

@@ -86,3 +86,14 @@ describe("fuzzyMatchFields", () => {
     expect(inTitle).toBeGreaterThan(inSubtitle)
   })
 })
+
+describe("hidden keywords", () => {
+  it("match only where a keyword begins, so they never explain a match nobody can see", () => {
+    expect(
+      fuzzyMatchFields("rate", ["Refresh the board", "", "reload update"], { hiddenLast: true }),
+    ).toBeNull()
+    expect(
+      fuzzyMatchFields("upd", ["Refresh the board", "", "reload update"], { hiddenLast: true }),
+    ).not.toBeNull()
+  })
+})

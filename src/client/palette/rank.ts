@@ -101,7 +101,13 @@ export const rankSections = <T extends Searchable>(
   const local = groups.flatMap((group, order) => {
     if (!group.filter) return []
     const scored = group.items.flatMap((item) => {
-      const match = fuzzyMatchFields(query, [item.title, item.subtitle ?? "", item.keywords ?? ""])
+      const match = fuzzyMatchFields(
+        query,
+        [item.title, item.subtitle ?? "", item.keywords ?? ""],
+        {
+          hiddenLast: true,
+        },
+      )
       if (match === null) return []
       const [titleIndices = none, subtitleIndices = none] = match.indices
       return [{ match, row: { item, titleIndices, subtitleIndices } }]

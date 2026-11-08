@@ -22,6 +22,7 @@ import { useClearToasts } from "./ui/toast.tsx"
 const BoardSketch = () => {
   const columns = [
     { name: "Todo", dot: "bg-zinc-400", cards: [[70, 45], [85], [60, 50]] },
+    { name: "Blocked", dot: "bg-red-500", cards: [[75]] },
     { name: "In Progress", dot: "bg-amber-500", cards: [[90, 40], [65]] },
     { name: "Review", dot: "bg-violet-500", cards: [[75, 55]] },
     { name: "Done", dot: "bg-emerald-500", cards: [[80], [55, 35]] },
@@ -29,7 +30,7 @@ const BoardSketch = () => {
   return (
     <div
       aria-hidden="true"
-      className="grid grid-cols-4 gap-2 rounded-2xl border border-zinc-200/80 bg-zinc-100/70 p-2 shadow-[0_24px_60px_-24px_rgb(79_70_229/0.35)] dark:border-zinc-800 dark:bg-zinc-900/70 dark:shadow-[0_24px_60px_-24px_rgb(0_0_0/0.8)]"
+      className="grid grid-cols-5 gap-2 rounded-2xl border border-zinc-200/80 bg-zinc-100/70 p-2 shadow-[0_24px_60px_-24px_rgb(79_70_229/0.35)] dark:border-zinc-800 dark:bg-zinc-900/70 dark:shadow-[0_24px_60px_-24px_rgb(0_0_0/0.8)]"
     >
       {columns.map((column, columnIndex) => (
         <div key={column.name} className="flex min-w-0 flex-col gap-1.5">
@@ -122,8 +123,18 @@ const useReturnAfterSignIn = () => {
   }, [navigate])
 }
 
+/** Set by signing out, so the sign-in page knows it replaced a menu that held focus. */
+const signedOut = { current: false }
+
 const SignIn = () => {
   useDocumentTitle("Sign in")
+  // Arriving here from "Sign out" would leave focus on the page body; the one action takes it.
+  useEffect(() => {
+    if (signedOut.current && document.activeElement === document.body) {
+      signedOut.current = false
+      document.querySelector<HTMLElement>("a[href='/auth/login']")?.focus({ preventScroll: true })
+    }
+  }, [])
   return <SignInPage />
 }
 
@@ -215,6 +226,7 @@ const useSignOut = () => {
     onSuccess: () => {
       // The session goes null first, so the app shows sign-in before the signed-in views lose
       // their data; clearing everything first left them rendering without a viewer.
+      signedOut.current = true
       queryClient.setQueryData(SESSION_USER, null)
       clearToasts()
       void queryClient.cancelQueries()

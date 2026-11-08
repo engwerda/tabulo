@@ -105,7 +105,7 @@ export const OrgSwitcher = ({ org, view }: { org: string; view: OrgViewId }) => 
       containerClass="relative -ml-1.5 min-w-0"
       triggerClass="flex w-full min-w-0 items-center gap-2 rounded-lg py-1 pr-1.5 pl-1.5 text-left pointer-coarse:min-h-11 transition hover:bg-zinc-100 dark:hover:bg-zinc-800/70"
       accessibleLabel={`Organization: ${title}. ${
-        orgs.isError ? "Your organizations did not load" : "Switch organization"
+        orgs.isError ? "Could not load your organizations" : "Switch organization"
       }`}
       label={
         orgs.isPending ? (
@@ -141,7 +141,7 @@ export const OrgSwitcher = ({ org, view }: { org: string; view: OrgViewId }) => 
             <ErrorNotice
               bare
               tone="warning"
-              title="Your organizations did not load"
+              title="Could not load your organizations"
               onRetry={() => void orgs.refetch()}
               retrying={orgs.isFetching}
               className="px-2 pt-1 pb-2 [&>button]:ml-11"

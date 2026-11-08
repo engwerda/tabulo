@@ -1,4 +1,5 @@
 import { createContext, type ReactNode, useCallback, useContext, useRef, useState } from "react"
+import { sentence } from "./ErrorNotice.tsx"
 import { AlertIcon, CheckIcon, InfoIcon, XIcon } from "./icons.tsx"
 import { buttonClass, panelClass } from "./primitives.tsx"
 
@@ -108,7 +109,12 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
               <div className="min-w-0 flex-1">
                 <p className="font-medium text-zinc-900 dark:text-zinc-100">{toast.title}</p>
                 {toast.detail !== undefined && (
-                  <p className="mt-0.5 text-zinc-600 dark:text-zinc-400">{toast.detail}</p>
+                  <p className="mt-0.5 text-zinc-600 dark:text-zinc-400">
+                    {/* A success toast's detail is often an issue's title, which keeps its own form. */}
+                    {toast.tone === "error" || toast.tone === "warning"
+                      ? sentence(toast.detail)
+                      : toast.detail}
+                  </p>
                 )}
               </div>
               {toast.action !== undefined && (

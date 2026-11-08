@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query"
 import { useId } from "react"
-import { fetchOrgRepos } from "../api.ts"
+import { fetchOrgRepos, fetchOrgs } from "../api.ts"
 import { Glyph } from "../palette/icons.tsx"
 import { ErrorNotice } from "../ui/ErrorNotice.tsx"
 import { buttonClass, cardClass } from "../ui/primitives.tsx"
 import { MAX_REPOS } from "./first-visit.ts"
+import { ORGS } from "./OrgPicker.tsx"
 import type { RepoSelection } from "./use-repo-selection.ts"
 import { type OrgViewId, orgView } from "./views.ts"
 
@@ -32,11 +33,15 @@ export const ChooseRepos = ({
     // skeleton and unmounts this notice, which then mounts again when it fails: a loop.
     retryOnMount: false,
   })
+  const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
+  const orgName =
+    orgs.data?.find((candidate) => candidate.name.toLowerCase() === org.toLowerCase())?.fullName ||
+    org
   const headingId = useId()
   if (repos.isError) {
     return (
       <ErrorNotice
-        title={`Could not load the repositories of ${org}`}
+        title={`Could not load the repositories of ${orgName}`}
         onRetry={() => void repos.refetch()}
         retrying={repos.isFetching}
       >
