@@ -1,6 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import DOMPurify from "dompurify"
-import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react"
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react"
 import type { BoardCard, BoardColumn, CardDetail } from "../../shared/api.ts"
 import { Avatar } from "../Avatar.tsx"
 import {
@@ -13,7 +20,6 @@ import {
 } from "../api.ts"
 import { absoluteTime, relativeTime } from "../format.ts"
 import {
-  CheckIcon,
   ChevronDownIcon,
   ExternalIcon,
   IssueClosedIcon,
@@ -24,11 +30,12 @@ import {
   XIcon,
 } from "../ui/icons.tsx"
 import { LabelChip, LabelList } from "../ui/LabelChip.tsx"
-import { buttonClass, Kbd, Popover } from "../ui/primitives.tsx"
+import { buttonClass, Kbd, MenuOption, Popover } from "../ui/primitives.tsx"
 import { SearchField } from "../ui/SearchField.tsx"
 import { useToast } from "../ui/toast.tsx"
 import { ColumnDot, LabelName, RepoIssueRef } from "./BoardCardView.tsx"
 import type { CardUpdate } from "./BoardPage.tsx"
+import { commentDraftKey, drafts } from "./drafts.ts"
 
 /** Forgejo already sanitizes rendered Markdown; this keeps Tabulo safe if it ever does not. */
 const sanitize = (html: string) => {
@@ -127,14 +134,36 @@ const useInertOutside = (
   }, [modal, layer])
 }
 
+const FOCUSABLE =
+  'a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'
+
+/**
+ * Tab and Shift+Tab wrap around inside a modal panel. The rest of the page is inert, so without
+ * this Tab past the last control leaves for the browser's own controls. Keys from a picker's
+ * panel bubble here through the portal; the picker handles its own Tab.
+ */
+const loopFocus = (event: KeyboardEvent<HTMLElement>) => {
+  if (event.key !== "Tab" || event.defaultPrevented) return
+  const dialog = event.currentTarget
+  if (!(event.target instanceof Node) || !dialog.contains(event.target)) return
+  const stops = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+    (element) => element.getClientRects().length > 0,
+  )
+  const first = stops[0]
+  const last = stops.at(-1)
+  if (first === undefined || last === undefined) return
+  const active = document.activeElement
+  if (event.shiftKey ? active === first || active === dialog : active === last) {
+    event.preventDefault()
+    ;(event.shiftKey ? last : first).focus()
+  }
+}
+
 const sectionTitle =
   "text-2xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400"
 
 const editTrigger =
   "inline-flex max-w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-left transition hover:bg-zinc-100 disabled:pointer-events-none pointer-coarse:min-h-11 dark:hover:bg-zinc-800/70"
-
-const menuItem =
-  "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-zinc-700 transition hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none disabled:opacity-60 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
 
 type Choice = {
   readonly value: string
@@ -194,33 +223,30 @@ const Picker = ({
             className="mb-1"
           />
           <div role="menu" aria-label={name} className="scroll-thin max-h-72 overflow-y-auto">
-            {choices === undefined && <p className="px-2 py-1.5 text-sm text-zinc-500">Loading…</p>}
-            {shown.map((choice) => {
-              const on = picked.has(choice.value)
-              return (
-                // biome-ignore lint/a11y/useAriaPropsSupportedByRole: both menu item roles take aria-checked
-                <button
-                  key={choice.value}
-                  type="button"
-                  role={multiple ? "menuitemcheckbox" : "menuitemradio"}
-                  aria-checked={on}
-                  aria-disabled={disabled}
-                  onClick={() => {
-                    // Disabling the button would drop its focus to the page while it saves.
-                    if (disabled) return
-                    onPick(choice.value)
-                    if (!multiple) close()
-                  }}
-                  className={menuItem}
-                >
-                  {choice.icon}
-                  <span className="min-w-0 flex-1 truncate">{choice.display ?? choice.label}</span>
-                  {on && <CheckIcon className="size-4 text-indigo-600 dark:text-indigo-400" />}
-                </button>
-              )
-            })}
+            {choices === undefined && (
+              <p className="px-2 py-1.5 text-sm text-zinc-500 dark:text-zinc-400">Loading…</p>
+            )}
+            {shown.map((choice) => (
+              <MenuOption
+                key={choice.value}
+                selected={picked.has(choice.value)}
+                multiple={multiple}
+                disabled={disabled}
+                onSelect={() => {
+                  // Disabling the item would drop its focus to the page while a change saves.
+                  if (disabled) return
+                  onPick(choice.value)
+                  if (!multiple) close()
+                }}
+              >
+                {choice.icon}
+                <span className="min-w-0 flex-1 truncate">{choice.display ?? choice.label}</span>
+              </MenuOption>
+            ))}
             {choices !== undefined && shown.length === 0 && (
-              <p className="px-2 py-1.5 text-sm text-zinc-500">Nothing matches.</p>
+              <p className="px-2 py-1.5 text-sm text-zinc-500 dark:text-zinc-400">
+                Nothing matches.
+              </p>
             )}
           </div>
         </>
@@ -230,15 +256,23 @@ const Picker = ({
 }
 
 const CommentBox = ({
+  draftKey,
   onSubmit,
   onEscape,
 }: {
+  /** Where the unsent text is kept, so closing the panel or stepping to another card keeps it. */
+  draftKey: string
   onSubmit: (body: string) => Promise<unknown>
-  /** Escape leaves the box; the panel decides where focus goes. */
+  /** Escape leaves the box and keeps the text; the panel decides where focus goes. */
   onEscape: () => void
 }) => {
-  const [body, setBody] = useState("")
+  const [body, setBodyState] = useState(() => drafts.read(draftKey))
+  const setBody = (next: string) => {
+    setBodyState(next)
+    drafts.write(draftKey, next)
+  }
   const [pending, setPending] = useState(false)
+  const input = useRef<HTMLTextAreaElement>(null)
   const submit = () => {
     const trimmed = body.trim()
     if (trimmed === "" || pending) return
@@ -261,6 +295,7 @@ const CommentBox = ({
       </label>
       <textarea
         id="card-comment"
+        ref={input}
         value={body}
         rows={3}
         readOnly={pending}
@@ -284,10 +319,22 @@ const CommentBox = ({
           <Kbd>{IS_MAC ? "⌘" : "Ctrl"}</Kbd>
           <Kbd>Enter</Kbd> to comment
         </span>
+        {body !== "" && !pending && (
+          <button
+            type="button"
+            onClick={() => {
+              setBody("")
+              input.current?.focus()
+            }}
+            className={`${buttonClass.ghost} h-7 px-2 text-xs pointer-coarse:h-11 pointer-coarse:px-3 pointer-coarse:text-sm`}
+          >
+            Discard
+          </button>
+        )}
         <button
           type="submit"
           disabled={pending || body.trim() === ""}
-          className={`${buttonClass.primary} h-7 px-2.5 text-xs`}
+          className={`${buttonClass.primary} h-7 px-2.5 text-xs pointer-coarse:h-11 pointer-coarse:px-4 pointer-coarse:text-sm`}
         >
           {pending ? "Commenting…" : "Comment"}
         </button>
@@ -448,12 +495,14 @@ export const CardPanel = ({
         onClick={onClose}
         className="fixed inset-0 z-30 animate-fade-in bg-zinc-950/30 lg:hidden"
       />
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: the role, set below, is dialog or complementary */}
       <div
         {...{
           role: modal ? "dialog" : "complementary",
           "aria-modal": modal || undefined,
           "aria-label": `${name} details`,
         }}
+        onKeyDown={modal ? loopFocus : undefined}
         className="fixed inset-y-0 right-0 z-40 flex w-full animate-slide-in flex-col border-l border-zinc-200 bg-white shadow-pop sm:w-[32rem] lg:absolute lg:rounded-tl-xl lg:border-t dark:border-zinc-800 dark:bg-zinc-950"
       >
         <div className="flex h-14 shrink-0 items-center gap-1 border-b border-zinc-200/70 pr-2 pl-4 dark:border-zinc-800">
@@ -556,23 +605,17 @@ export const CardPanel = ({
                     {(close) => (
                       <div role="menu" aria-label="Move to column">
                         {columns.map((option) => (
-                          <button
+                          <MenuOption
                             key={option.key}
-                            type="button"
-                            role="menuitemradio"
-                            aria-checked={option.key === card.column}
-                            onClick={() => {
+                            selected={option.key === card.column}
+                            onSelect={() => {
                               close()
                               onMoveTo(option.key)
                             }}
-                            className={menuItem}
                           >
                             <ColumnDot column={option} />
-                            <span className="flex-1 truncate">{option.title}</span>
-                            {option.key === card.column && (
-                              <CheckIcon className="size-4 text-indigo-600 dark:text-indigo-400" />
-                            )}
-                          </button>
+                            <span className="min-w-0 flex-1 truncate">{option.title}</span>
+                          </MenuOption>
                         ))}
                       </div>
                     )}
@@ -582,7 +625,7 @@ export const CardPanel = ({
                     {column !== undefined && <ColumnDot column={column} />}
                     {column?.title ?? card.column}
                     {card.readOnlyReason === "archived" && (
-                      <span className="flex items-center gap-1 text-xs font-normal text-zinc-500">
+                      <span className="flex items-center gap-1 text-xs font-normal text-zinc-500 dark:text-zinc-400">
                         <LockIcon className="size-3" /> archived repository
                       </span>
                     )}
@@ -637,7 +680,7 @@ export const CardPanel = ({
                       }
                     />
                   ) : (
-                    <span className="px-1.5 py-1 text-zinc-500">
+                    <span className="px-1.5 py-1 text-zinc-500 dark:text-zinc-400">
                       {card.assignees.map((person) => person.login).join(", ") || "Nobody"}
                     </span>
                   )}
@@ -858,7 +901,9 @@ export const CardPanel = ({
                       </p>
                       <div className="mt-1 rounded-xl rounded-tl-sm bg-zinc-50 px-3 py-2 dark:bg-zinc-900">
                         {item.bodyHtml.trim() === "" ? (
-                          <p className="text-sm text-zinc-500 italic">No text.</p>
+                          <p className="text-sm text-zinc-500 italic dark:text-zinc-400">
+                            No text.
+                          </p>
                         ) : (
                           <Rendered html={item.bodyHtml} />
                         )}
@@ -873,6 +918,8 @@ export const CardPanel = ({
               {editable && (
                 <div className="mt-4">
                   <CommentBox
+                    key={card.key}
+                    draftKey={commentDraftKey(card.key)}
                     onSubmit={(body) => comment.mutateAsync(body)}
                     // The heading holds focus between edits; a second Escape closes the panel.
                     onEscape={() => heading.current?.focus({ preventScroll: true })}

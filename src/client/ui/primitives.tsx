@@ -331,20 +331,27 @@ export const MenuOption = ({
   onSelect,
   children,
   multiple = false,
+  disabled = false,
 }: {
   selected: boolean
   onSelect: () => void
   children: ReactNode
   /** A choice among several that can be picked together. */
   multiple?: boolean
+  /**
+   * Shown dimmed and announced as unavailable, while it keeps focus; `onSelect` decides what a
+   * press does meanwhile.
+   */
+  disabled?: boolean
 }) => (
   // biome-ignore lint/a11y/useAriaPropsSupportedByRole: both menu item roles take aria-checked
   <button
     type="button"
     role={multiple ? "menuitemcheckbox" : "menuitemradio"}
     aria-checked={selected}
+    aria-disabled={disabled || undefined}
     onClick={onSelect}
-    className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition pointer-coarse:min-h-11 hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800 ${
+    className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition pointer-coarse:min-h-11 aria-disabled:opacity-60 hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800 ${
       selected ? "font-medium text-zinc-900 dark:text-zinc-50" : "text-zinc-700 dark:text-zinc-300"
     }`}
   >

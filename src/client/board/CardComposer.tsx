@@ -8,7 +8,7 @@ type CardComposerProps = {
   readonly repos: ReadonlyArray<string>
   readonly repo: string
   readonly onRepoChange: (repo: string) => void
-  /** The title typed before the composer last closed in this column. */
+  /** The title typed before Escape last closed the composer in this column. */
   readonly draft: string
   readonly onDraftChange: (title: string) => void
   /** Resolves once the issue exists; the composer then clears for the next one. */
@@ -116,12 +116,16 @@ export const CardComposer = ({
             <span className="truncate">{repo}</span>
           </span>
         )}
+        {/* Escape closes and keeps the title for next time; this button throws it away. */}
         <button
           type="button"
-          onClick={onClose}
+          onClick={() => {
+            setTitle("")
+            onClose()
+          }}
           className={`${buttonClass.ghost} ml-auto h-7 px-2 text-xs pointer-coarse:h-11 pointer-coarse:px-3 pointer-coarse:text-sm`}
         >
-          Cancel
+          {title.trim() === "" ? "Cancel" : "Discard"}
         </button>
         <button
           type="submit"

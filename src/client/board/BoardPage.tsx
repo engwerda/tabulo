@@ -32,16 +32,15 @@ import { ORGS, OrgSwitcher } from "../scope/OrgPicker.tsx"
 import { RepoPicker } from "../scope/RepoPicker.tsx"
 import { useRepoSelection } from "../scope/use-repo-selection.ts"
 import { useViewer } from "../session.ts"
+import { ErrorNotice } from "../ui/ErrorNotice.tsx"
 import { IssueRef } from "../ui/IssueRef.tsx"
 import {
-  AlertIcon,
   ColumnsIcon,
   InfoIcon,
   KeyboardIcon,
   PlusIcon,
   RefreshIcon,
   SearchIcon,
-  XIcon,
 } from "../ui/icons.tsx"
 import { buttonClass, isTypingTarget, Kbd, Popover, touchTarget } from "../ui/primitives.tsx"
 import { RepoPaletteProvider } from "../ui/repo-palette.tsx"
@@ -51,6 +50,7 @@ import { BoardColumns } from "./BoardColumns.tsx"
 import { BoardFiltersBar } from "./BoardFiltersBar.tsx"
 import {
   applyMove,
+  boardQueryKey,
   type CardMove,
   columnCards,
   FILTER_PARAMS,
@@ -62,6 +62,7 @@ import {
 } from "./board-view.ts"
 import { CardComposer } from "./CardComposer.tsx"
 import { CardPanel } from "./CardPanel.tsx"
+import { drafts, titleDraftKey } from "./drafts.ts"
 import { BOARD_SHORTCUTS } from "./shortcuts.ts"
 
 const REFRESH_MS = 60_000
@@ -96,24 +97,6 @@ const storage = {
     try {
       if (value === null) window.localStorage.removeItem(key)
       else window.localStorage.setItem(key, value)
-    } catch {}
-  },
-}
-
-/** Titles typed in a column's composer and not yet added, kept while the tab is open. */
-const drafts = {
-  key: (org: string, column: string) => `tabulo.board.draft.${org.toLowerCase()}.${column}`,
-  read: (org: string, column: string) => {
-    try {
-      return window.sessionStorage.getItem(drafts.key(org, column)) ?? ""
-    } catch {
-      return ""
-    }
-  },
-  write: (org: string, column: string, title: string) => {
-    try {
-      if (title.trim() === "") window.sessionStorage.removeItem(drafts.key(org, column))
-      else window.sessionStorage.setItem(drafts.key(org, column), title)
     } catch {}
   },
 }
@@ -155,41 +138,13 @@ const useNow = () => {
   return now
 }
 
-const Notice = ({
-  tone,
-  children,
-  onDismiss,
-}: {
-  tone: "warning" | "info" | "error"
-  children: ReactNode
-  onDismiss?: () => void
-}) => (
+const Notice = ({ children }: { children: ReactNode }) => (
   <div
-    role={tone === "info" ? "status" : "alert"}
-    className={`mx-4 mb-3 flex items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-sm sm:mx-6 ${
-      tone === "error"
-        ? "border-red-200 bg-red-50 text-red-900 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200"
-        : tone === "warning"
-          ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100"
-          : "border-zinc-200 bg-white text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
-    }`}
+    role="status"
+    className="mx-4 mb-3 flex items-start gap-2.5 rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-sm text-zinc-700 sm:mx-6 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
   >
-    {tone === "info" ? (
-      <InfoIcon className="mt-0.5 size-4 text-zinc-400" />
-    ) : (
-      <AlertIcon className="mt-0.5 size-4 opacity-70" />
-    )}
+    <InfoIcon className="mt-0.5 size-4 text-zinc-400" />
     <div className="min-w-0 flex-1">{children}</div>
-    {onDismiss !== undefined && (
-      <button
-        type="button"
-        onClick={onDismiss}
-        aria-label="Dismiss"
-        className="-my-0.5 -mr-1 grid size-6 shrink-0 place-items-center rounded-md opacity-60 transition hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
-      >
-        <XIcon className="size-3.5" />
-      </button>
-    )}
   </div>
 )
 
@@ -254,68 +209,42 @@ const OrgNotFound = ({ org }: { org: string }) => (
   </div>
 )
 
-/** A centered state for something that went wrong, with what to do about it. */
-const Problem = ({
-  title,
-  detail,
-  actions,
-}: {
-  title: string
-  detail: ReactNode
-  actions: ReactNode
-}) => (
-  <div className="grid flex-1 place-items-center px-6 pb-16">
-    <div role="alert" className="max-w-md text-center">
-      <div className="mx-auto grid size-12 place-items-center rounded-xl bg-amber-50 text-amber-500 dark:bg-amber-500/10">
-        <AlertIcon className="size-5" />
-      </div>
-      <h2 className="mt-5 text-base font-semibold tracking-tight">{title}</h2>
-      <div className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">{detail}</div>
-      <div className="mt-5 flex justify-center gap-2">{actions}</div>
-    </div>
-  </div>
-)
+/** A text button inside a notice's sentence; on touch its hit area grows to 44px tall. */
+const inlineAction =
+  "relative font-medium pointer-coarse:before:absolute pointer-coarse:before:inset-x-0 pointer-coarse:before:-inset-y-3 text-zinc-700 underline decoration-zinc-300 underline-offset-2 transition hover:text-zinc-900 hover:decoration-zinc-500 dark:text-zinc-300 dark:decoration-zinc-600 dark:hover:text-zinc-100"
 
-const ReposFailed = ({
+/**
+ * Why repositories did not load, with the action that takes them off the board. A title that
+ * already names the one repository leaves only its reason here.
+ */
+const FailedRepos = ({
   failures,
+  named = false,
   onRemove,
-  onRetry,
+  onDismiss,
 }: {
   failures: ReadonlyArray<{ readonly repo: string; readonly message: string }>
+  named?: boolean
   onRemove: () => void
-  onRetry: () => void
+  onDismiss?: () => void
 }) => (
-  <Problem
-    title={
-      failures.length === 1
-        ? `${failures[0]?.repo} did not load`
-        : "These repositories did not load"
-    }
-    detail={
-      failures.length === 1 ? (
-        `${failures[0]?.message}.`
-      ) : (
-        <ul className="space-y-0.5">
-          {failures.map((failure) => (
-            <li key={failure.repo}>
-              <span className="font-medium text-zinc-800 dark:text-zinc-200">{failure.repo}</span>:{" "}
-              {failure.message}
-            </li>
-          ))}
-        </ul>
-      )
-    }
-    actions={
+  <>
+    {named
+      ? failures[0]?.message
+      : failures.map((failure) => `${failure.repo} (${failure.message})`).join(", ")}
+    .{" "}
+    <button type="button" onClick={onRemove} className={inlineAction}>
+      Remove {failures.length === 1 ? "it" : "them"} from the board
+    </button>
+    {onDismiss !== undefined && (
       <>
-        <button type="button" onClick={onRetry} className={buttonClass.secondary}>
-          Try again
-        </button>
-        <button type="button" onClick={onRemove} className={buttonClass.primary}>
-          Remove from the board
+        <span aria-hidden="true"> · </span>
+        <button type="button" onClick={onDismiss} className={inlineAction}>
+          Hide this
         </button>
       </>
-    }
-  />
+    )}
+  </>
 )
 
 const NoMatches = ({ query, onClear }: { query: string; onClear: () => void }) => (
@@ -449,7 +378,7 @@ export const BoardPage = ({ org }: { org: string }) => {
   const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
   const hasSelection = selection !== ""
 
-  const boardKey = ["board", org, selection] as const
+  const boardKey = boardQueryKey(org, selection)
   const writeKey = ["board-write", org, selection] as const
   // A refetch that lands during a drag or before a write is stored would undo it on screen.
   const moving = useIsMutating({ mutationKey: writeKey }) > 0
@@ -761,17 +690,36 @@ export const BoardPage = ({ org }: { org: string }) => {
   }
 
   // Opening the panel adds a history entry, so Back closes it. Closing goes back to that entry
-  // only if the board's address is unchanged since; otherwise it would undo a new filter.
+  // only if the board's address is unchanged since; otherwise it would undo a new filter. A card
+  // that arrives through a new entry, from the board or from elsewhere such as the command
+  // palette, counts as opened here; one in the address on load, or reached with Back or Forward,
+  // does not, since the entry before it may not be this board.
   const pushedFrom = useRef<string | null>(null)
   const boardAddress = () => {
     const next = new URLSearchParams(window.location.search)
     next.delete(CARD_PARAM)
     return next.toString()
   }
-  const openPanel = (card: BoardCard) => {
-    if (selectedRef === null) pushedFrom.current = boardAddress()
-    setCardParam(cardRef(card), selectedRef !== null)
-  }
+  const shownRef = useRef(selectedRef)
+  // The address Back or Forward last went to. Captured, so it is known before the router's own
+  // listener re-renders the board and runs the effect below.
+  const popped = useRef<string | null>(null)
+  useEffect(() => {
+    const listener = () => {
+      popped.current = window.location.href
+    }
+    window.addEventListener("popstate", listener, { capture: true })
+    return () => window.removeEventListener("popstate", listener, { capture: true })
+  }, [])
+  useEffect(() => {
+    const previous = shownRef.current
+    shownRef.current = selectedRef
+    const viaHistory = popped.current === window.location.href
+    popped.current = null
+    if (selectedRef === null) pushedFrom.current = null
+    else if (previous === null && !viaHistory) pushedFrom.current = boardAddress()
+  })
+  const openPanel = (card: BoardCard) => setCardParam(cardRef(card), selectedRef !== null)
   const closePanel = () => {
     const key = selectedCard?.key
     if (pushedFrom.current !== null && pushedFrom.current === boardAddress()) {
@@ -994,28 +942,39 @@ export const BoardPage = ({ org }: { org: string }) => {
         </div>
 
         {repos.isError && !orgMissing && (
-          <Notice tone="error">
-            Could not load the repositories of {org}: {repos.error.message}
-          </Notice>
+          <ErrorNotice
+            title={`Could not load the repositories of ${orgTitle}`}
+            onRetry={() => void repos.refetch()}
+            retrying={repos.isFetching}
+            className="mx-4 mb-3 sm:mx-6"
+          >
+            {repos.error.message}
+          </ErrorNotice>
         )}
         {failures.length > 0 &&
           failures.length < (data?.repos.length ?? 0) &&
           dismissedFailures !== failureId && (
-            <Notice tone="warning" onDismiss={() => setDismissedFailures(failureId)}>
-              Some repositories did not load:{" "}
-              {failures.map((failure) => `${failure.repo} (${failure.message})`).join(", ")}.{" "}
-              <button type="button" onClick={removeFailed} className="font-medium underline">
-                Remove {failures.length === 1 ? "it" : "them"} from the board
-              </button>
-            </Notice>
+            <ErrorNotice
+              tone="warning"
+              title="Some repositories did not load"
+              onRetry={() => void board.refetch()}
+              retrying={board.isFetching}
+              className="mx-4 mb-3 sm:mx-6"
+            >
+              <FailedRepos
+                failures={failures}
+                onRemove={removeFailed}
+                onDismiss={() => setDismissedFailures(failureId)}
+              />
+            </ErrorNotice>
           )}
         {data !== undefined && !data.viewerCanArrange && (
-          <Notice tone="info">
+          <Notice>
             You can view this board. Only members of {data.org} can move cards and add issues.
           </Notice>
         )}
         {onlyDefaultColumns && (
-          <Notice tone="info">
+          <Notice>
             <span className="flex items-center gap-1.5">
               <ColumnsIcon className="size-4 text-zinc-400" />
               Add exclusive labels such as{" "}
@@ -1039,30 +998,36 @@ export const BoardPage = ({ org }: { org: string }) => {
             )
           ) : data === undefined ? (
             board.isError ? (
-              <Problem
+              <ErrorNotice
                 title="The board did not load"
-                detail={board.error.message}
-                actions={
-                  <button
-                    type="button"
-                    onClick={() => void board.refetch()}
-                    className={buttonClass.primary}
-                  >
-                    Try again
-                  </button>
-                }
-              />
+                onRetry={() => void board.refetch()}
+                retrying={board.isFetching}
+                className="mx-4 sm:mx-6"
+              >
+                {board.error.message}
+              </ErrorNotice>
             ) : (
               <div className="min-h-0 flex-1">
                 <BoardSkeleton />
               </div>
             )
           ) : allFailed ? (
-            <ReposFailed
-              failures={data.failedRepos}
-              onRemove={removeFailed}
+            <ErrorNotice
+              title={
+                data.failedRepos.length === 1
+                  ? `${data.failedRepos[0]?.repo} did not load`
+                  : "None of the repositories loaded"
+              }
               onRetry={() => void board.refetch()}
-            />
+              retrying={board.isFetching}
+              className="mx-4 sm:mx-6"
+            >
+              <FailedRepos
+                failures={data.failedRepos}
+                named={data.failedRepos.length === 1}
+                onRemove={removeFailed}
+              />
+            </ErrorNotice>
           ) : filtered && shownCount === 0 && data.cards.length > 0 ? (
             <NoMatches query={boardFilters.text.trim()} onClear={clearFilters} />
           ) : (
@@ -1086,8 +1051,8 @@ export const BoardPage = ({ org }: { org: string }) => {
                     <CardComposer
                       key={composing}
                       columnTitle={columnTitle(composing)}
-                      draft={drafts.read(org, composing)}
-                      onDraftChange={(title) => drafts.write(org, composing, title)}
+                      draft={drafts.read(titleDraftKey(org, composing))}
+                      onDraftChange={(title) => drafts.write(titleDraftKey(org, composing), title)}
                       repos={creatableRepos}
                       repo={composerTarget}
                       onRepoChange={(repo) => {

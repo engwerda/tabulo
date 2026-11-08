@@ -164,8 +164,10 @@ const FilterMenu = ({ spec }: { spec: FilterSpec }) => {
   )
 }
 
+/** A row of the sheet, laid out like the repository picker's: the box first, then the choice. */
 const sheetRow =
-  "flex min-h-11 w-full cursor-pointer items-center gap-3 rounded-lg px-2 text-left text-sm text-zinc-800 transition active:bg-zinc-100 dark:text-zinc-200 dark:active:bg-zinc-800"
+  "flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 text-left text-sm text-zinc-800 transition active:bg-zinc-100 has-focus-visible:bg-zinc-100 dark:text-zinc-200 dark:active:bg-zinc-800 dark:has-focus-visible:bg-zinc-800"
+const sheetBox = "size-4 shrink-0 cursor-pointer accent-indigo-600"
 
 /**
  * The phone's filters: a bottom sheet with every filter's choices as plain checkboxes or radio
@@ -232,14 +234,11 @@ const FilterSheet = ({
       </div>
       <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-2 pt-2 pb-4">
         <label className={sheetRow}>
-          <UserIcon className="size-4 text-zinc-500 dark:text-zinc-400" />
+          <input type="checkbox" checked={mine} onChange={onToggleMine} className={sheetBox} />
+          <span className="grid w-5 shrink-0 place-items-center">
+            <UserIcon className="size-4 text-zinc-500 dark:text-zinc-400" />
+          </span>
           <span className="flex-1">Assigned to me</span>
-          <input
-            type="checkbox"
-            checked={mine}
-            onChange={onToggleMine}
-            className="size-4 accent-indigo-600"
-          />
         </label>
         {specs.map((spec) => (
           <fieldset key={spec.name} className="mt-3">
@@ -248,8 +247,6 @@ const FilterSheet = ({
             </legend>
             {allChoices(spec).map((choice) => (
               <label key={choice.value} className={sheetRow}>
-                <span className="grid w-5 shrink-0 place-items-center">{choice.icon}</span>
-                <span className="min-w-0 flex-1 truncate">{choice.display ?? choice.label}</span>
                 <input
                   type={spec.multiple ? "checkbox" : "radio"}
                   name={spec.multiple ? undefined : `sheet-${spec.name}`}
@@ -263,8 +260,10 @@ const FilterSheet = ({
                   onClick={() => {
                     if (!spec.multiple && spec.values.includes(choice.value)) spec.onChange([])
                   }}
-                  className="size-4 shrink-0 accent-indigo-600"
+                  className={sheetBox}
                 />
+                <span className="grid w-5 shrink-0 place-items-center">{choice.icon}</span>
+                <span className="min-w-0 flex-1 truncate">{choice.display ?? choice.label}</span>
               </label>
             ))}
           </fieldset>

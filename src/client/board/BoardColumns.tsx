@@ -21,7 +21,13 @@ import {
 } from "@dnd-kit/sortable"
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react"
 import type { Board, BoardCard, BoardColumn } from "../../shared/api.ts"
-import { CollapseIcon, ExpandIcon, PlusIcon } from "../ui/icons.tsx"
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  CollapseIcon,
+  ExpandIcon,
+  PlusIcon,
+} from "../ui/icons.tsx"
 import { buttonClass, Segmented } from "../ui/primitives.tsx"
 import { type CardActions, ColumnDot, OverlayCard, SortableCard } from "./BoardCardView.tsx"
 import {
@@ -453,6 +459,26 @@ export const BoardColumns = ({
   }
   const tabs = useRef<HTMLDivElement>(null)
   const fittedWidth = useFittedWidth(scroller, panelOpen)
+  // Beside the panel the gutters clip to whole columns, so arrows there say that more columns
+  // lie to that side, and scroll to them.
+  const [more, setMore] = useState({ before: false, after: false })
+  const measureMore = () => {
+    const element = scroller.current
+    if (element === null) return
+    const before = element.scrollLeft > 1
+    const after = element.scrollLeft + element.clientWidth < element.scrollWidth - 1
+    setMore((current) =>
+      current.before === before && current.after === after ? current : { before, after },
+    )
+  }
+  // biome-ignore lint/correctness/useExhaustiveDependencies: measures again whenever the columns change size
+  useLayoutEffect(measureMore, [fittedWidth, collapsed, board.columns.length])
+  const scrollColumns = (direction: -1 | 1) => {
+    const element = scroller.current
+    if (element === null) return
+    const gap = parseFloat(getComputedStyle(element).columnGap) || 0
+    element.scrollBy({ left: direction * ((fittedWidth ?? FITTED_MIN) + gap), behavior: "smooth" })
+  }
   // The open card stays in view beside the details panel, also while J and K browse and once
   // the columns have been fitted beside the panel.
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs again once the columns are fitted
@@ -524,71 +550,99 @@ export const BoardColumns = ({
             className="min-w-full [&>button]:h-8 [&>button]:flex-1 pointer-coarse:[&>button]:h-11"
           />
         </div>
-        <div
-          ref={scroller}
-          onScroll={trackColumn}
-          // No transition: reduced motion gives every element a 1ms one, and the open card's
-          // scroll into view must measure the board already narrowed beside the panel.
-          className={`scroll-thin flex min-h-0 flex-1 snap-x snap-mandatory scroll-px-4 gap-2.5 overflow-x-auto px-4 pb-4 transition-none sm:snap-none sm:px-6 ${
-            // The gutters fade, so the edge of the next column reads as more to scroll to.
-            panelOpen
-              ? "lg:mr-[32rem] lg:snap-x lg:snap-mandatory lg:scroll-px-6 lg:[mask-image:linear-gradient(to_right,transparent,black_1.5rem,black_calc(100%-1.5rem),transparent)]"
-              : ""
-          }`}
-        >
-          {board.columns.map((column, index) => {
-            const all = columnCards(board.cards, column.key)
-            const cards = shownDuringDrag(column.key).flatMap((key) => cardsByKey.get(key) ?? [])
-            const isComposing = composing === column.key
-            return (
-              <Column
-                key={column.key}
-                index={index}
-                column={column}
-                cards={cards}
-                shown={cards.length}
-                total={all.length + (cards.length - all.filter(visible).length)}
-                highlighted={activeKey !== null && overColumn === column.key}
-                collapsed={collapsed.has(column.key) && !isComposing}
-                onToggleCollapsed={() => onToggleCollapsed(column.key)}
-                width={fittedWidth}
-                header={
-                  canCreate &&
-                  column._tag !== "Done" && (
-                    <button
-                      type="button"
-                      onClick={() => onCompose(column.key)}
-                      aria-label={`New issue in ${column.title}`}
-                      title={`New issue in ${column.title}`}
-                      className={buttonClass.iconSmall}
-                    >
-                      <PlusIcon className="size-3.5" />
-                    </button>
-                  )
-                }
-              >
-                {isComposing && <li>{composer}</li>}
-                {cards.length === 0 && !isComposing && (
-                  <EmptyColumn filtered={filtered && all.length > 0} column={column} />
-                )}
-                {cards.map((card, position) => (
-                  <SortableCard
-                    key={card.key}
-                    tabbable={position === 0}
-                    card={card}
-                    columns={board.columns}
-                    viewerCanArrange={board.viewerCanArrange}
-                    viewer={viewer}
-                    showRepo={showRepo}
-                    selected={selectedKey === card.key}
-                    actions={actions}
-                    hrefBase={hrefBase}
-                    saving={saving.has(card.key)}
-                  />
-                ))}
-              </Column>
-            )
-          })}
+        <div className={`relative flex min-h-0 flex-1 ${panelOpen ? "lg:mr-[32rem]" : ""}`}>
+          <div
+            ref={scroller}
+            onScroll={() => {
+              trackColumn()
+              measureMore()
+            }}
+            // No transition: reduced motion gives every element a 1ms one, and the open card's
+            // scroll into view must measure the board already narrowed beside the panel.
+            className={`scroll-thin flex min-h-0 min-w-0 flex-1 snap-x snap-mandatory scroll-px-4 gap-2.5 overflow-x-auto px-4 pb-4 transition-none sm:snap-none sm:px-6 ${
+              // The gutters clip at the padding, where the fitted columns start and end.
+              panelOpen
+                ? "lg:snap-x lg:snap-mandatory lg:scroll-px-6 lg:[clip-path:inset(0_1.5rem)]"
+                : ""
+            }`}
+          >
+            {board.columns.map((column, index) => {
+              const all = columnCards(board.cards, column.key)
+              const cards = shownDuringDrag(column.key).flatMap((key) => cardsByKey.get(key) ?? [])
+              const isComposing = composing === column.key
+              return (
+                <Column
+                  key={column.key}
+                  index={index}
+                  column={column}
+                  cards={cards}
+                  shown={cards.length}
+                  total={all.length + (cards.length - all.filter(visible).length)}
+                  highlighted={activeKey !== null && overColumn === column.key}
+                  collapsed={collapsed.has(column.key) && !isComposing}
+                  onToggleCollapsed={() => onToggleCollapsed(column.key)}
+                  width={fittedWidth}
+                  header={
+                    canCreate &&
+                    column._tag !== "Done" && (
+                      <button
+                        type="button"
+                        onClick={() => onCompose(column.key)}
+                        aria-label={`New issue in ${column.title}`}
+                        title={`New issue in ${column.title}`}
+                        className={buttonClass.iconSmall}
+                      >
+                        <PlusIcon className="size-3.5" />
+                      </button>
+                    )
+                  }
+                >
+                  {isComposing && <li>{composer}</li>}
+                  {cards.length === 0 && !isComposing && (
+                    <EmptyColumn filtered={filtered && all.length > 0} column={column} />
+                  )}
+                  {cards.map((card, position) => (
+                    <SortableCard
+                      key={card.key}
+                      tabbable={position === 0}
+                      card={card}
+                      columns={board.columns}
+                      viewerCanArrange={board.viewerCanArrange}
+                      viewer={viewer}
+                      showRepo={showRepo}
+                      selected={selectedKey === card.key}
+                      actions={actions}
+                      hrefBase={hrefBase}
+                      saving={saving.has(card.key)}
+                    />
+                  ))}
+                </Column>
+              )
+            })}
+          </div>
+          {panelOpen &&
+            (
+              [
+                ["before", -1, "left-0", "Show earlier columns", ChevronLeftIcon],
+                ["after", 1, "right-0", "Show later columns", ChevronRightIcon],
+              ] as const
+            ).map(
+              ([side, direction, position, label, Icon]) =>
+                more[side] && (
+                  <button
+                    key={side}
+                    type="button"
+                    // Keyboard users reach the columns with Tab, and the board follows focus.
+                    tabIndex={-1}
+                    onClick={() => scrollColumns(direction)}
+                    aria-label={label}
+                    title={label}
+                    className={`absolute top-0 ${position} hidden h-10 w-6 place-items-center rounded-md text-zinc-500 transition hover:bg-zinc-200/70 hover:text-zinc-900 lg:grid dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100`}
+                  >
+                    <Icon className="size-4" />
+                  </button>
+                ),
+            )}
         </div>
       </div>
       <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" }}>

@@ -26,7 +26,7 @@ export const BOARD_SHORTCUTS: ReadonlyArray<ShortcutSection> = [
   {
     title: "Cards",
     rows: [
-      { keys: ["Tab"], label: "Go to the next column" },
+      { keys: ["Tab"], label: "Go to the next column's buttons, then its cards" },
       { keys: ["←", "↑", "↓", "→"], label: "Go to another card" },
       { keys: ["Home", "End"], label: "First or last card in the column" },
       { keys: ["↵"], label: "Open the card's details" },
