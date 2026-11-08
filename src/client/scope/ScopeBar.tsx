@@ -14,7 +14,12 @@ type ScopeBarProps = {
   readonly children?: ReactNode
 }
 
-/** The heading of an org-level view: the organization and the chosen repositories. */
+/**
+ * The header of an org-level view: the organization, the chosen repositories, and the view's own
+ * controls at the end. Its frame matches the board's header, so switching views moves nothing.
+ * The view's name is in the navigation, so here it is only the page's heading for assistive
+ * technology.
+ */
 export const ScopeBar = ({ org, view, repoSelection, children }: ScopeBarProps) => {
   const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
   const repos = useQuery({ queryKey: ["org-repos", org], queryFn: () => fetchOrgRepos(org) })
@@ -27,8 +32,8 @@ export const ScopeBar = ({ org, view, repoSelection, children }: ScopeBarProps) 
       <h1 className="sr-only">
         {orgView(view).label} for {displayName}
       </h1>
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex min-h-8 min-w-0 flex-1 items-center gap-2">
           <OrgSwitcher org={org} view={view} />
           <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-700">
             /
@@ -43,7 +48,9 @@ export const ScopeBar = ({ org, view, repoSelection, children }: ScopeBarProps) 
             />
           )}
         </div>
-        {children}
+        {children !== undefined && (
+          <div className="flex min-w-0 flex-wrap items-center gap-2">{children}</div>
+        )}
       </div>
       {repos.isError && (
         <p role="alert" className="text-sm text-red-700 dark:text-red-400">

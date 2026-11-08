@@ -1,33 +1,246 @@
 import { useQuery } from "@tanstack/react-query"
+import type { ReactNode } from "react"
 import { useSearchParams } from "wouter"
-import { fetchEpics } from "../api.ts"
+import { Avatar } from "../Avatar.tsx"
+import { fetchEpics, fetchInstance, fetchOrgRepos } from "../api.ts"
+import { Glyph } from "../palette/icons.tsx"
 import { ScopeBar } from "../scope/ScopeBar.tsx"
 import { useRepoSelection } from "../scope/use-repo-selection.ts"
+import { AlertIcon, CopyIcon, ExternalIcon, SearchIcon, SortIcon, XIcon } from "../ui/icons.tsx"
+import { PageTitle } from "../ui/PageTitle.tsx"
+import {
+  buttonClass,
+  cardClass,
+  inputClass,
+  MenuOption,
+  Popover,
+  Segmented,
+} from "../ui/primitives.tsx"
+import { useToast } from "../ui/toast.tsx"
 import { EpicCard } from "./EpicCard.tsx"
 import { epicSummary, incompleteNotice, readEpicFilters, visibleEpics } from "./epics-view.ts"
 
-const focus =
-  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
-const control = `min-w-0 max-w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 ${focus}`
+const CHILD_EXAMPLE = "- [ ] #12\n- [ ] repo#34\n- [ ] owner/repo#56"
+
+const STATES = [
+  { value: "", label: "All" },
+  { value: "open", label: "Open" },
+  { value: "closed", label: "Closed" },
+] as const
+
+const SORTS = [
+  { value: "updated", label: "Recently updated" },
+  { value: "progress", label: "Most progress" },
+  { value: "children", label: "Most children" },
+] as const
 
 const LoadingEpics = () => (
   <div role="status">
     <span className="sr-only">Loading epics</span>
-    <div aria-hidden="true" className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-      {[1, 2, 3].map((key) => (
-        <div
-          key={key}
-          className="motion-safe:animate-pulse rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900"
-        >
-          <div className="h-3 w-24 rounded bg-zinc-100 dark:bg-zinc-800" />
-          <div className="mt-5 h-5 w-3/4 rounded bg-zinc-100 dark:bg-zinc-800" />
-          <div className="mt-3 h-5 w-1/2 rounded bg-zinc-100 dark:bg-zinc-800" />
-          <div className="mt-10 h-8 rounded bg-zinc-100 dark:bg-zinc-800" />
-          <div className="mt-4 h-3 rounded bg-zinc-100 dark:bg-zinc-800" />
-          <div className="mt-10 h-4 w-1/3 rounded bg-zinc-100 dark:bg-zinc-800" />
-        </div>
-      ))}
+    <div aria-hidden="true">
+      <div className={`${cardClass} h-[5.5rem] animate-shimmer`} />
+      <div className="mt-6 h-8 w-full max-w-md animate-shimmer rounded-lg bg-zinc-200/60 dark:bg-zinc-800/60" />
+      <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        {[1, 2, 3].map((key) => (
+          <div key={key} className={`${cardClass} p-5 max-lg:[&:nth-child(n+2)]:hidden`}>
+            <div className="h-3 w-20 animate-shimmer rounded bg-zinc-100 dark:bg-zinc-800" />
+            <div className="mt-3 h-4 w-3/4 animate-shimmer rounded bg-zinc-100 dark:bg-zinc-800" />
+            <div className="mt-3 h-4 w-1/3 animate-shimmer rounded bg-zinc-100 dark:bg-zinc-800" />
+            <div className="mt-7 h-2 animate-shimmer rounded-full bg-zinc-100 dark:bg-zinc-800" />
+            <div className="mt-3 h-3 w-1/2 animate-shimmer rounded bg-zinc-100 dark:bg-zinc-800" />
+            <div className="mt-6 h-6 w-24 animate-shimmer rounded bg-zinc-100 dark:bg-zinc-800" />
+          </div>
+        ))}
+      </div>
     </div>
+  </div>
+)
+
+const Banner = ({
+  tone,
+  onRetry,
+  children,
+}: {
+  tone: "error" | "warning"
+  onRetry?: () => void
+  children: ReactNode
+}) => (
+  <div
+    role={tone === "error" ? "alert" : "status"}
+    className={`mb-4 flex items-start gap-2.5 rounded-lg border px-3.5 py-2.5 text-sm ${
+      tone === "error"
+        ? "border-red-200 bg-red-50 text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200"
+        : "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100"
+    }`}
+  >
+    <AlertIcon className="mt-0.5 size-4" />
+    <p className="min-w-0 flex-1">{children}</p>
+    {onRetry !== undefined && (
+      <button
+        type="button"
+        onClick={onRetry}
+        className="-my-0.5 shrink-0 rounded-md px-1.5 py-0.5 font-medium underline-offset-2 hover:underline"
+      >
+        Retry
+      </button>
+    )}
+  </div>
+)
+
+/** A menu of single choices behind a button, for the assignee and the sort order. */
+const ChoiceMenu = <T extends string>({
+  name,
+  label,
+  value,
+  options,
+  onChange,
+  align = "start",
+  triggerClass = buttonClass.secondary,
+}: {
+  name: string
+  label: ReactNode
+  value: T
+  options: ReadonlyArray<{ readonly value: T; readonly label: ReactNode }>
+  onChange: (value: T) => void
+  align?: "start" | "end"
+  triggerClass?: string
+}) => (
+  <Popover
+    label={label}
+    align={align}
+    focusFirstItem
+    triggerClass={`${triggerClass} min-w-0`}
+    containerClass="relative min-w-0"
+    panelClass="w-56 p-1.5"
+  >
+    {(close) => (
+      <div role="menu" aria-label={name} className="scroll-thin max-h-72 overflow-y-auto">
+        {options.map((option) => (
+          <MenuOption
+            key={option.value}
+            selected={option.value === value}
+            onSelect={() => {
+              onChange(option.value)
+              close()
+            }}
+          >
+            {option.label}
+          </MenuOption>
+        ))}
+      </div>
+    )}
+  </Popover>
+)
+
+const NoSelection = ({ org, onChoose }: { org: string; onChoose: (repos: string[]) => void }) => {
+  const repos = useQuery({ queryKey: ["org-repos", org], queryFn: () => fetchOrgRepos(org) })
+  const active = (repos.data ?? []).filter((repo) => !repo.archived).map((repo) => repo.name)
+  return (
+    <div className={`${cardClass} flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3.5`}>
+      <p className="min-w-0 flex-1 text-sm text-zinc-600 dark:text-zinc-400">
+        <span className="font-medium text-zinc-900 dark:text-zinc-100">
+          No repositories chosen.
+        </span>{" "}
+        Choose the repositories whose epics you want to follow.
+      </p>
+      {active.length > 0 && (
+        <button type="button" onClick={() => onChoose(active)} className={buttonClass.secondary}>
+          Show all {active.length} repositories
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** How to make an epic, with an example to copy and a way to start one in Forgejo. */
+const NoEpics = ({ org, selected }: { org: string; selected: ReadonlyArray<string> }) => {
+  const toast = useToast()
+  const repos = useQuery({ queryKey: ["org-repos", org], queryFn: () => fetchOrgRepos(org) })
+  // An archived repository takes no new issues.
+  const repo = repos.data?.find(
+    (candidate) => !candidate.archived && selected.includes(candidate.name),
+  )?.name
+  const instance = useQuery({
+    queryKey: ["instance"],
+    queryFn: fetchInstance,
+    staleTime: Number.POSITIVE_INFINITY,
+  })
+  const copy = () =>
+    navigator.clipboard.writeText(CHILD_EXAMPLE).then(
+      () => toast({ tone: "success", title: "Example copied" }),
+      () => toast({ tone: "error", title: "Could not copy the example" }),
+    )
+  const newIssue =
+    instance.data === undefined || repo === undefined
+      ? undefined
+      : `${instance.data.forgejoUrl}/${encodeURIComponent(org)}/${encodeURIComponent(repo)}/issues/new?${new URLSearchParams({ body: CHILD_EXAMPLE })}`
+  return (
+    <section aria-labelledby="no-epics" className={`${cardClass} max-w-2xl p-4 sm:p-5`}>
+      <div className="flex items-start gap-3.5">
+        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+          <Glyph name="epics" className="size-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 id="no-epics" className="text-sm font-semibold">
+            No epics in these repositories yet
+          </h2>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            An epic is a Forgejo issue with the{" "}
+            <code className="rounded bg-zinc-100 px-1 py-px font-mono text-xs text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
+              Type/Epic
+            </code>{" "}
+            label, or the label your <code className="font-mono text-xs">EPIC_LABEL</code> setting
+            names. List its children in the body as a task list:
+          </p>
+          <div className="mt-3 flex items-start justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 py-1.5 pr-1.5 pl-3 dark:border-zinc-800 dark:bg-zinc-950/50">
+            <pre className="overflow-x-auto py-1 font-mono text-xs leading-5 text-zinc-700 dark:text-zinc-300">
+              {CHILD_EXAMPLE}
+            </pre>
+            <button
+              type="button"
+              onClick={() => void copy()}
+              aria-label="Copy the example"
+              title="Copy"
+              className={buttonClass.iconSmall}
+            >
+              <CopyIcon className="size-4" />
+            </button>
+          </div>
+          <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+            Progress follows each child's state in Forgejo.
+          </p>
+          {newIssue !== undefined && (
+            <a
+              href={newIssue}
+              target="_blank"
+              rel="noreferrer"
+              className={`${buttonClass.primary} mt-4`}
+            >
+              New epic in {repo}
+              <ExternalIcon className="size-3.5" />
+            </a>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+const Stat = ({
+  label,
+  value,
+  detail,
+  tone = "",
+}: {
+  label: string
+  value: ReactNode
+  detail: string
+  tone?: string
+}) => (
+  <div className="min-w-0 px-3 py-3.5 sm:px-5 sm:py-4">
+    <dt className="text-xs text-zinc-500 dark:text-zinc-400">{label}</dt>
+    <dd className={`mt-1 text-2xl/7 font-semibold tracking-tight tabular-nums ${tone}`}>{value}</dd>
+    <dd className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{detail}</dd>
   </div>
 )
 
@@ -68,143 +281,38 @@ export const EpicsPage = ({ org }: { org: string }) => {
   const notice = epics.data === undefined ? "" : incompleteNotice(epics.data.incomplete)
   const noneLoaded = epics.data?.failedRepos.length === repoSelection.selected.length
   const partlyRead = (epics.data?.incomplete.listings.length ?? 0) > 0
-  const assignees = [
-    ...new Set([
-      filters.assignee,
-      ...all.flatMap((epic) => epic.assignees.map(({ login }) => login)),
-    ]),
-  ]
-    .filter(Boolean)
-    .sort()
+  const avatars = new Map(
+    all.flatMap((epic) => epic.assignees.map(({ login, avatarUrl }) => [login, avatarUrl])),
+  )
+  const assignees = [...new Set([filters.assignee, ...avatars.keys()])].filter(Boolean).sort()
+  const sharedLabels = new Set(
+    all.length < 2
+      ? []
+      : (all[0]?.labels ?? [])
+          .filter((label) => all.every((epic) => epic.labels.some(({ id }) => id === label.id)))
+          .map((label) => label.id),
+  )
+  const sortLabel = SORTS.find(({ value }) => value === filters.sort)?.label ?? SORTS[0].label
 
   return (
-    <main className="pb-4">
-      <ScopeBar org={org} view="epics" repoSelection={repoSelection}>
-        {all.length > 0 && hasSelection && (
-          <search
-            aria-label="Filter epics"
-            className="flex w-full min-w-0 flex-wrap items-center gap-2 lg:w-auto lg:flex-1"
-          >
-            <label className="min-w-48 flex-1 sm:max-w-72">
-              <span className="sr-only">Search epics</span>
-              <input
-                type="search"
-                placeholder="Search epics or #number"
-                value={filters.text}
-                onChange={(event) => set("q", event.target.value)}
-                className={`${control} w-full`}
-              />
-            </label>
-            <label className="min-w-0">
-              <span className="sr-only">Epic state</span>
-              <select
-                value={filters.state ?? ""}
-                onChange={(event) => set("state", event.target.value)}
-                className={control}
-              >
-                <option value="">All states</option>
-                <option value="open">Open</option>
-                <option value="closed">Closed</option>
-              </select>
-            </label>
-            <label className="min-w-0 max-w-full">
-              <span className="sr-only">Assignee</span>
-              <select
-                value={filters.assignee}
-                onChange={(event) => set("assignee", event.target.value)}
-                className={control}
-              >
-                <option value="">Any assignee</option>
-                {assignees.map((login) => (
-                  <option key={login} value={login}>
-                    {login}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {filtered && (
-              <button
-                type="button"
-                onClick={clearFilters}
-                className={`rounded-md px-2 py-2 text-xs font-medium text-indigo-700 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950 ${focus}`}
-              >
-                Clear filters
-              </button>
-            )}
-          </search>
-        )}
-      </ScopeBar>
-      <div className="mx-auto max-w-screen-2xl px-4 pb-8 sm:px-6">
-        <div className="mt-5 mb-5 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-2xl font-semibold tracking-tight">Epics</h2>
-            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-              Track progress across your repositories.
-            </p>
-          </div>
-          {all.length > 0 && hasSelection && (
-            <label className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-              Sort by
-              <select
-                value={filters.sort ?? "updated"}
-                onChange={(event) =>
-                  set("sort", event.target.value === "updated" ? "" : event.target.value)
-                }
-                className={control}
-              >
-                <option value="updated">Recently updated</option>
-                <option value="progress">Most progress</option>
-                <option value="children">Most children</option>
-              </select>
-            </label>
-          )}
-        </div>
+    <main className="pb-12">
+      <ScopeBar org={org} view="epics" repoSelection={repoSelection} />
+      <div className="mx-auto max-w-screen-2xl px-4 sm:px-6">
+        <PageTitle title="Epics" meta="Large pieces of work, tracked through their child issues." />
         {epics.isError && hasSelection && (
-          <div
-            role="alert"
-            className="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
-          >
-            Could not {epics.data === undefined ? "load" : "refresh"} epics: {epics.error.message}{" "}
-            <button
-              type="button"
-              onClick={() => void epics.refetch()}
-              className={`rounded-sm font-medium underline ${focus}`}
-            >
-              Retry
-            </button>
-          </div>
+          <Banner tone="error" onRetry={() => void epics.refetch()}>
+            Could not {epics.data === undefined ? "load" : "refresh"} epics: {epics.error.message}
+          </Banner>
         )}
         {hasSelection && (epics.data?.failedRepos.length ?? 0) > 0 && (
-          <div
-            role="status"
-            className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100"
-          >
+          <Banner tone="warning" onRetry={() => void epics.refetch()}>
             Some repositories could not be loaded:{" "}
-            {epics.data?.failedRepos.map(({ repo, message }) => `${repo} (${message})`).join(", ")}.{" "}
-            <button
-              type="button"
-              onClick={() => void epics.refetch()}
-              className={`rounded-sm font-medium underline ${focus}`}
-            >
-              Retry
-            </button>
-          </div>
+            {epics.data?.failedRepos.map(({ repo, message }) => `${repo} (${message})`).join(", ")}.
+          </Banner>
         )}
-        {hasSelection && notice !== "" && (
-          <div
-            role="status"
-            className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100"
-          >
-            {notice}
-          </div>
-        )}
+        {hasSelection && notice !== "" && <Banner tone="warning">{notice}</Banner>}
         {!hasSelection ? (
-          <section className="rounded-xl border border-dashed border-zinc-300 px-6 py-14 text-center dark:border-zinc-700">
-            <h3 className="font-semibold">Choose where to look</h3>
-            <p className="mx-auto mt-2 max-w-md text-sm text-zinc-500 dark:text-zinc-400">
-              Use Repositories above to choose the work you want to track.
-            </p>
-          </section>
+          <NoSelection org={org} onChoose={repoSelection.setSelected} />
         ) : epics.data === undefined ? (
           epics.isError ? null : (
             <LoadingEpics />
@@ -214,97 +322,156 @@ export const EpicsPage = ({ org }: { org: string }) => {
             {all.length > 0 && (
               <>
                 <dl
-                  aria-label="Epic summary for chosen repositories"
-                  className="mb-7 grid grid-cols-3 divide-x divide-zinc-200 rounded-xl border border-zinc-200 bg-white py-5 dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900"
+                  aria-label="Summary of the chosen repositories"
+                  className={`${cardClass} grid grid-cols-3 divide-x divide-zinc-100 dark:divide-zinc-800`}
                 >
-                  <div className="px-3 sm:px-5">
-                    <dt className="min-h-8 text-xs text-zinc-500 sm:min-h-0 dark:text-zinc-400">
-                      Epics
-                    </dt>
-                    <dd className="mt-1 text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">
-                      {all.length}
-                    </dd>
-                    <dd className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-                      Across your repositories
-                    </dd>
-                  </div>
-                  <div className="px-3 sm:px-5">
-                    <dt className="min-h-8 text-xs text-zinc-500 sm:min-h-0 dark:text-zinc-400">
-                      Overall completion
-                    </dt>
-                    <dd className="mt-1 text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">
-                      {summary.percent}
-                      <span className="text-lg text-zinc-400">%</span>
-                    </dd>
-                    <dd className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-                      {summary.done} of {summary.total} children done
-                    </dd>
-                  </div>
-                  <div className="px-3 sm:px-5">
-                    <dt className="min-h-8 text-xs text-zinc-500 sm:min-h-0 dark:text-zinc-400">
-                      At risk
-                    </dt>
-                    <dd
-                      className={`mt-1 text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl ${summary.atRisk > 0 ? "text-amber-700 dark:text-amber-400" : ""}`}
-                    >
-                      {summary.atRisk}
-                    </dd>
-                    <dd className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-                      Open, with no children done
-                    </dd>
-                  </div>
+                  <Stat
+                    label="Epics"
+                    value={all.length}
+                    detail={`${summary.total} ${summary.total === 1 ? "child" : "children"}`}
+                  />
+                  <Stat
+                    label="Completion"
+                    value={
+                      <>
+                        {summary.percent}
+                        <span className="ml-px text-base font-medium text-zinc-500 dark:text-zinc-400">
+                          %
+                        </span>
+                      </>
+                    }
+                    detail={`${summary.done} of ${summary.total} done`}
+                  />
+                  <Stat
+                    label="At risk"
+                    value={summary.atRisk}
+                    detail="Open, nothing done"
+                    tone={summary.atRisk > 0 ? "text-amber-700 dark:text-amber-400" : ""}
+                  />
                 </dl>
-                <p aria-live="polite" className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-                  {filtered
-                    ? `${shown.length} of ${all.length} epics`
-                    : `${all.length} ${all.length === 1 ? "epic" : "epics"}`}
-                  <span className="sr-only">{epics.isFetching ? ", refreshing" : ""}</span>
-                </p>
+                <search
+                  aria-label="Filter epics"
+                  className="mt-6 mb-4 flex flex-wrap items-center gap-2"
+                >
+                  <label className="relative w-full sm:w-64">
+                    <span className="sr-only">Search epics</span>
+                    <SearchIcon className="pointer-events-none absolute top-2 left-2.5 size-4 text-zinc-500 dark:text-zinc-400" />
+                    <input
+                      type="search"
+                      placeholder="Search epics or #number"
+                      value={filters.text}
+                      onChange={(event) => set("q", event.target.value)}
+                      className={`${inputClass} pl-8`}
+                    />
+                  </label>
+                  <Segmented
+                    label="Epic state"
+                    options={STATES}
+                    value={filters.state}
+                    onChange={(value) => set("state", value)}
+                  />
+                  {assignees.length > 0 && (
+                    <ChoiceMenu
+                      name="Assignee"
+                      value={filters.assignee}
+                      onChange={(value) => set("assignee", value)}
+                      label={
+                        filters.assignee === "" ? (
+                          <span className="text-zinc-600 dark:text-zinc-400">Assignee</span>
+                        ) : (
+                          <>
+                            <Avatar
+                              url={avatars.get(filters.assignee) ?? ""}
+                              name={filters.assignee}
+                              size="xs"
+                            />
+                            <span className="truncate">{filters.assignee}</span>
+                          </>
+                        )
+                      }
+                      options={[
+                        { value: "", label: "Anyone" },
+                        ...assignees.map((login) => ({
+                          value: login,
+                          label: (
+                            <>
+                              <Avatar url={avatars.get(login) ?? ""} name={login} size="xs" />
+                              <span className="truncate">{login}</span>
+                            </>
+                          ),
+                        })),
+                      ]}
+                    />
+                  )}
+                  {filtered && (
+                    <button type="button" onClick={clearFilters} className={buttonClass.ghost}>
+                      <XIcon className="size-3.5" />
+                      Clear
+                    </button>
+                  )}
+                  <div className="ml-auto flex items-center gap-1">
+                    <p
+                      aria-live="polite"
+                      className="text-xs text-zinc-500 tabular-nums max-sm:sr-only dark:text-zinc-400"
+                    >
+                      {filtered
+                        ? `${shown.length} of ${all.length}`
+                        : `${all.length} ${all.length === 1 ? "epic" : "epics"}`}
+                      <span className="sr-only">{epics.isFetching ? ", refreshing" : ""}</span>
+                    </p>
+                    <ChoiceMenu
+                      name="Sort by"
+                      align="end"
+                      value={filters.sort}
+                      onChange={(value) => set("sort", value === "updated" ? "" : value)}
+                      triggerClass={buttonClass.ghost}
+                      label={
+                        <>
+                          <SortIcon className="size-4 text-zinc-500 dark:text-zinc-400" />
+                          <span className="max-sm:sr-only">
+                            <span className="sr-only">Sort: </span>
+                            {sortLabel}
+                          </span>
+                        </>
+                      }
+                      options={SORTS}
+                    />
+                  </div>
+                </search>
               </>
             )}
             {shown.length > 0 ? (
               <div className="grid items-start gap-4 lg:grid-cols-2 xl:grid-cols-3">
                 {shown.map((epic) => (
-                  <EpicCard key={epic.key} epic={epic} columns={epics.data.columns} />
+                  <EpicCard
+                    key={epic.key}
+                    epic={epic}
+                    columns={epics.data.columns}
+                    sharedLabels={sharedLabels}
+                  />
                 ))}
               </div>
+            ) : filtered ? (
+              <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 py-10 text-sm text-zinc-600 dark:text-zinc-400">
+                No epics match these filters.
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="rounded-md font-medium text-zinc-900 underline-offset-2 hover:underline dark:text-zinc-100"
+                >
+                  Clear filters
+                </button>
+              </p>
+            ) : noneLoaded ? (
+              <p className="py-10 text-center text-sm text-zinc-600 dark:text-zinc-400">
+                No epics could be loaded.
+              </p>
+            ) : partlyRead ? (
+              <p className="py-10 text-center text-sm text-zinc-600 dark:text-zinc-400">
+                No epics in the part of the issues Tabulo read.
+              </p>
             ) : (
-              <section className="rounded-xl border border-dashed border-zinc-300 px-5 py-12 text-center dark:border-zinc-700">
-                <h3 className="font-semibold">
-                  {filtered
-                    ? "No epics match your filters"
-                    : noneLoaded
-                      ? "No epics could be loaded"
-                      : partlyRead
-                        ? "No epics in what Tabulo read"
-                        : "No epics yet"}
-                </h3>
-                {filtered ? (
-                  <button
-                    type="button"
-                    onClick={clearFilters}
-                    className={`mt-3 rounded-md px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950 ${focus}`}
-                  >
-                    Clear filters
-                  </button>
-                ) : (
-                  !noneLoaded &&
-                  !partlyRead && (
-                    <div className="mx-auto max-w-md text-sm text-zinc-500 dark:text-zinc-400">
-                      <p className="mt-2">
-                        Add the epic label to a Forgejo issue, then reference its children in the
-                        body:
-                      </p>
-                      <pre className="mx-auto mt-5 w-fit max-w-full overflow-x-auto rounded-lg border border-zinc-200 bg-white px-5 py-3 text-left text-xs leading-6 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
-                        {"- [ ] #12\n- [ ] repo#34\n- [ ] owner/repo#56"}
-                      </pre>
-                      <p className="mt-4 text-xs">
-                        Progress follows each child's real state in Forgejo.
-                      </p>
-                    </div>
-                  )
-                )}
-              </section>
+              <NoEpics org={org} selected={repoSelection.selected} />
             )}
           </>
         )}

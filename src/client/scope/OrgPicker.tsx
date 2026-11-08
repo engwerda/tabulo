@@ -2,8 +2,9 @@ import { useQuery } from "@tanstack/react-query"
 import { Link, Redirect } from "wouter"
 import { Avatar } from "../Avatar.tsx"
 import { fetchOrgs } from "../api.ts"
-import { AlertIcon, CheckIcon, ChevronRightIcon } from "../ui/icons.tsx"
-import { Popover } from "../ui/primitives.tsx"
+import { Glyph } from "../palette/icons.tsx"
+import { AlertIcon, CheckIcon, ChevronRightIcon, InfoIcon } from "../ui/icons.tsx"
+import { cardClass, Popover } from "../ui/primitives.tsx"
 import { type OrgViewId, orgView, orgViewHref } from "./views.ts"
 
 export const ORGS = ["orgs"] as const
@@ -13,46 +14,70 @@ export const OrgPicker = ({ view }: { view: OrgViewId }) => {
   if (orgs.data?.length === 1 && orgs.data[0] !== undefined) {
     return <Redirect to={orgViewHref(view, orgs.data[0].name)} replace />
   }
+  const { label, icon, pickerHint } = orgView(view)
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Choose an organization</h1>
-      <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">{orgView(view).pickerHint}</p>
+    <main className="mx-auto w-full max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
+      <p className="flex items-center gap-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+        <Glyph name={icon} className="size-3.5" />
+        {label}
+      </p>
+      <h1 className="mt-2 text-xl font-semibold tracking-tight sm:text-2xl">
+        Choose an organization
+      </h1>
+      <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">{pickerHint}</p>
       {orgs.isError ? (
         <p role="alert" className="mt-6 text-sm text-red-700 dark:text-red-400">
           Could not load your organizations: {orgs.error.message}
         </p>
       ) : orgs.data === undefined ? (
-        <ul className="mt-6 grid gap-3 sm:grid-cols-2" aria-hidden="true">
-          {[0, 1, 2, 3].map((index) => (
-            <li
-              key={index}
-              className="h-[4.5rem] animate-shimmer rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
-            />
+        <div
+          role="status"
+          className={`${cardClass} mt-6 divide-y divide-zinc-100 dark:divide-zinc-800`}
+        >
+          <span className="sr-only">Loading organizations</span>
+          {[0, 1, 2].map((index) => (
+            <div key={index} aria-hidden="true" className="flex items-center gap-3 px-4 py-3">
+              <span className="size-10 animate-shimmer rounded-lg bg-zinc-200/70 dark:bg-zinc-800" />
+              <span className="grid flex-1 gap-1.5">
+                <span className="h-3 w-40 animate-shimmer rounded bg-zinc-200/70 dark:bg-zinc-800" />
+                <span className="h-2.5 w-20 animate-shimmer rounded bg-zinc-200/50 dark:bg-zinc-800/70" />
+              </span>
+            </div>
           ))}
-        </ul>
+        </div>
       ) : orgs.data.length === 0 ? (
-        <p className="mt-6 rounded-xl border border-dashed border-zinc-300 p-6 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
-          You are not a member of any organization. This view shows the repositories of one
+        <p
+          className={`${cardClass} mt-6 flex items-start gap-3 px-4 py-3.5 text-sm text-zinc-600 dark:text-zinc-400`}
+        >
+          <InfoIcon className="mt-0.5 size-4 text-zinc-500 dark:text-zinc-400" />
+          You are not a member of any organization yet. {label} shows the repositories of one
           organization in Forgejo.
         </p>
       ) : (
-        <ul className="mt-6 grid gap-3 sm:grid-cols-2">
+        <ul
+          className={`${cardClass} mt-6 divide-y divide-zinc-100 overflow-hidden dark:divide-zinc-800`}
+        >
           {orgs.data.map((org) => (
             <li key={org.name}>
               <Link
                 href={orgViewHref(view, org.name)}
-                className="group flex items-center gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-3.5 shadow-card transition hover:-translate-y-px hover:border-indigo-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-indigo-500/60"
+                className="group flex items-center gap-3 px-4 py-3 transition hover:bg-zinc-50 focus-visible:-outline-offset-2 dark:hover:bg-zinc-800/50"
               >
-                <Avatar url={org.avatarUrl} name={org.fullName || org.name} size="lg" />
+                <Avatar
+                  url={org.avatarUrl}
+                  name={org.fullName || org.name}
+                  size="lg"
+                  className="rounded-lg"
+                />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold">
+                  <span className="block truncate text-sm font-medium">
                     {org.fullName || org.name}
                   </span>
                   <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">
                     {org.name}
                   </span>
                 </span>
-                <ChevronRightIcon className="size-4 text-zinc-300 transition group-hover:translate-x-0.5 group-hover:text-indigo-500 dark:text-zinc-600" />
+                <ChevronRightIcon className="size-4 text-zinc-400 transition group-hover:translate-x-0.5 group-hover:text-zinc-700 dark:text-zinc-500 dark:group-hover:text-zinc-200" />
               </Link>
             </li>
           ))}
@@ -63,7 +88,16 @@ export const OrgPicker = ({ view }: { view: OrgViewId }) => {
 }
 
 /** The view's organization, as a menu that switches to the same view of another organization. */
-export const OrgSwitcher = ({ org, view }: { org: string; view: OrgViewId }) => {
+export const OrgSwitcher = ({
+  org,
+  view,
+  compact = false,
+}: {
+  org: string
+  view: OrgViewId
+  /** On a phone, shows only the organization's avatar; its name stays the button's label. */
+  compact?: boolean
+}) => {
   const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
   const current = orgs.data?.find((candidate) => candidate.name.toLowerCase() === org.toLowerCase())
   const title = current?.fullName || current?.name || org
@@ -75,20 +109,24 @@ export const OrgSwitcher = ({ org, view }: { org: string; view: OrgViewId }) => 
       label={
         <>
           {current === undefined && orgs.data !== undefined ? (
-            <span className="grid size-6 place-items-center rounded-md bg-zinc-100 text-zinc-400 dark:bg-zinc-800">
+            <span className="grid size-6 place-items-center rounded-md bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
               <AlertIcon className="size-3.5" />
             </span>
           ) : (
             <Avatar url={current?.avatarUrl ?? ""} name={title} size="sm" className="rounded-md" />
           )}
-          <span className="truncate text-base font-semibold tracking-tight">{title}</span>
+          <span
+            className={`truncate text-base font-semibold tracking-tight ${compact ? "max-sm:sr-only" : ""}`}
+          >
+            {title}
+          </span>
         </>
       }
       panelClass="w-72 p-1.5"
     >
       {(close) => (
         <nav aria-label="Organizations">
-          <p className="px-2 pt-1 pb-1.5 text-[0.6875rem] font-semibold tracking-wide text-zinc-400 uppercase">
+          <p className="px-2 pt-1 pb-1.5 text-2xs font-medium text-zinc-500 dark:text-zinc-400">
             Organizations
           </p>
           <ul>
@@ -100,7 +138,7 @@ export const OrgSwitcher = ({ org, view }: { org: string; view: OrgViewId }) => 
                     href={orgViewHref(view, candidate.name)}
                     onClick={close}
                     aria-current={active ? "page" : undefined}
-                    className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm transition hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm transition hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none aria-[current=page]:font-medium dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
                   >
                     <Avatar
                       url={candidate.avatarUrl}
@@ -111,13 +149,17 @@ export const OrgSwitcher = ({ org, view }: { org: string; view: OrgViewId }) => 
                     <span className="min-w-0 flex-1 truncate">
                       {candidate.fullName || candidate.name}
                     </span>
-                    {active && <CheckIcon className="size-4 text-indigo-600" />}
+                    {active && (
+                      <CheckIcon className="size-4 text-indigo-600 dark:text-indigo-400" />
+                    )}
                   </Link>
                 </li>
               )
             })}
           </ul>
-          {orgs.isPending && <p className="px-2 py-1.5 text-sm text-zinc-500">Loading…</p>}
+          {orgs.isPending && (
+            <p className="px-2 py-1.5 text-sm text-zinc-500 dark:text-zinc-400">Loading…</p>
+          )}
         </nav>
       )}
     </Popover>

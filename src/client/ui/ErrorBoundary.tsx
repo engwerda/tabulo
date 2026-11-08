@@ -28,17 +28,17 @@ export class ErrorBoundary extends Component<
     if (this.state.error === null) return this.props.children
     return (
       <main className="grid flex-1 place-items-center px-6 py-24">
-        <div role="alert" className="max-w-md text-center">
-          <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-red-50 text-red-500 dark:bg-red-500/10">
+        <div role="alert" className="w-full max-w-md text-center">
+          <div className="mx-auto grid size-12 place-items-center rounded-xl bg-white text-red-600 shadow-card ring-1 ring-zinc-200/80 dark:bg-zinc-900 dark:text-red-400 dark:ring-zinc-800">
             <AlertIcon className="size-5" />
           </div>
-          <h1 className="mt-5 text-lg font-semibold tracking-tight">
+          <h1 className="mt-6 text-xl font-semibold tracking-tight">
             Something broke on this page
           </h1>
           <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-            Your changes in Forgejo are safe. Reload to carry on.
+            Your work in Forgejo is safe. Try again, or reload to carry on.
           </p>
-          <p className="mt-3 font-mono text-xs break-words text-zinc-500">
+          <p className="mt-4 rounded-lg border border-zinc-200 bg-zinc-100/60 px-3 py-2 text-left font-mono text-xs break-words text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
             {this.state.error.message}
           </p>
           <div className="mt-6 flex justify-center gap-2">

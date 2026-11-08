@@ -24,14 +24,14 @@ export type RunContext = {
   readonly signOut: () => void
 }
 
-export type Badge = {
-  readonly text: string
-  readonly tone: "open" | "closed" | "neutral" | "current"
-}
-
 export type PaletteItem = Searchable & {
   readonly icon: GlyphName
-  readonly badge?: Badge
+  /** An issue or pull request, which the row names in words so the two never look alike. */
+  readonly kind?: { readonly type: DashboardItem["kind"]; readonly state: DashboardItem["state"] }
+  /** Why the item is listed, such as "Review", in quiet text. */
+  readonly hint?: string
+  /** The setting in effect, marked with a check. */
+  readonly current?: boolean
   readonly shortcut?: ShortcutId
   readonly external?: boolean
   /** Items of the issue search are not remembered: they are not there when the query is empty. */
@@ -73,21 +73,22 @@ const openExternal = (url: string) => window.open(url, "_blank", "noopener,noref
 const issueItem = (
   item: DashboardItem,
   id: string,
-  extra: { readonly keywords?: string; readonly badge: Badge; readonly remember: boolean },
+  extra: { readonly keywords?: string; readonly hint?: string; readonly remember: boolean },
 ): PaletteItem => ({
   id,
   title: item.title,
   subtitle: `${item.repo}#${item.number}`,
   icon: item.kind,
+  kind: { type: item.kind, state: item.state },
   external: true,
   run: () => openExternal(item.url),
   ...extra,
 })
 
 const WORK_SECTIONS = [
-  { key: "reviewRequests", label: "Review" },
+  { key: "reviewRequests", label: "Review requested" },
   { key: "assigned", label: "Assigned" },
-  { key: "mentioned", label: "Mention" },
+  { key: "mentioned", label: "Mentioned" },
 ] as const
 
 /**
@@ -157,7 +158,11 @@ export const usePaletteGroups = (query: string, active: boolean) => {
         })
       }
     }
-    for (const entry of orgList ?? []) {
+    // The organization in use comes first, so its views lead the list when the query is empty.
+    const byRecency = [...(orgList ?? [])].sort(
+      (a, b) => Number(b.name === lastOrg) - Number(a.name === lastOrg),
+    )
+    for (const entry of byRecency) {
       const remembered = parseRepos(readRememberedRepos(entry.name))
       for (const view of ORG_VIEWS) {
         navigation.push({
@@ -221,7 +226,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
         work.push(
           issueItem(item, `work:${item.url}`, {
             keywords: label,
-            badge: { text: label, tone: "neutral" },
+            hint: label,
             remember: true,
           }),
         )
@@ -234,7 +239,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
       keywords: "appearance color mode switch",
       icon: THEME_LABELS[preference].icon,
       remember: true,
-      ...(preference === currentTheme ? { badge: { text: "Current", tone: "current" } } : {}),
+      current: preference === currentTheme,
       run: () => setThemePreference(preference),
     }))
     const actions: Array<PaletteItem> = [
@@ -272,13 +277,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
     ]
 
     const issues: ReadonlyArray<PaletteItem> = (searchItems ?? []).map((item) =>
-      issueItem(item, `issue:${item.url}`, {
-        badge:
-          item.state === "open"
-            ? { text: "Open", tone: "open" }
-            : { text: "Closed", tone: "closed" },
-        remember: false,
-      }),
+      issueItem(item, `issue:${item.url}`, { remember: false }),
     )
 
     return [
@@ -287,9 +286,10 @@ export const usePaletteGroups = (query: string, active: boolean) => {
         heading: "Navigation",
         items: navigation,
         limit: 8,
-        emptyLimit: 12,
+        emptyLimit: 1 + ORG_VIEWS.length,
         filter: true,
       },
+      { id: "work", heading: "Your work", items: work, limit: 5, emptyLimit: 4, filter: true },
       {
         id: "repositories",
         heading: org === undefined ? "Repositories" : `Repositories in ${org}`,
@@ -298,7 +298,6 @@ export const usePaletteGroups = (query: string, active: boolean) => {
         emptyLimit: 5,
         filter: true,
       },
-      { id: "work", heading: "Your work", items: work, limit: 5, emptyLimit: 4, filter: true },
       { id: "actions", heading: "Actions", items: actions, limit: 8, emptyLimit: 8, filter: true },
       {
         id: "issues",

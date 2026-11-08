@@ -1,5 +1,6 @@
 import { createContext, type ReactNode, useCallback, useContext, useRef, useState } from "react"
 import { AlertIcon, CheckIcon, InfoIcon, XIcon } from "./icons.tsx"
+import { buttonClass, panelClass } from "./primitives.tsx"
 
 type Tone = "success" | "info" | "warning" | "error"
 
@@ -26,13 +27,13 @@ const DURATION_MS: Record<Tone, number> = {
 
 const TONE_ICON: Record<Tone, ReactNode> = {
   success: (
-    <span className="grid size-5 place-items-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
-      <CheckIcon className="size-3.5" />
+    <span className="grid size-5 place-items-center rounded-full bg-emerald-600 text-white dark:bg-emerald-500 dark:text-emerald-950">
+      <CheckIcon className="size-3" />
     </span>
   ),
-  info: <InfoIcon className="size-5 text-indigo-500" />,
-  warning: <AlertIcon className="size-5 text-amber-500" />,
-  error: <AlertIcon className="size-5 text-red-500" />,
+  info: <InfoIcon className="size-5 text-zinc-500 dark:text-zinc-400" />,
+  warning: <AlertIcon className="size-5 text-amber-600 dark:text-amber-400" />,
+  error: <AlertIcon className="size-5 text-red-600 dark:text-red-400" />,
 }
 
 export const ToastProvider = ({ children }: { children: ReactNode }) => {
@@ -80,9 +81,9 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
             role={toast.tone === "error" || toast.tone === "warning" ? "alert" : "status"}
             onPointerEnter={() => clearTimeout(timers.current.get(toast.id))}
             onPointerLeave={() => schedule(toast.id, toast.tone)}
-            className="pointer-events-auto flex w-full max-w-sm animate-toast-in items-start gap-3 rounded-xl border border-zinc-200 bg-white/95 p-3 pr-2 text-sm shadow-pop backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95"
+            className={`${panelClass} pointer-events-auto flex w-full max-w-sm animate-toast-in items-start gap-3 py-2.5 pr-2 pl-3 text-sm`}
           >
-            <span className="mt-px">{TONE_ICON[toast.tone]}</span>
+            <span className="mt-px flex shrink-0">{TONE_ICON[toast.tone]}</span>
             <div className="min-w-0 flex-1">
               <p className="font-medium text-zinc-900 dark:text-zinc-100">{toast.title}</p>
               {toast.detail !== undefined && (
@@ -96,7 +97,7 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
                   toast.action?.run()
                   dismiss(toast.id)
                 }}
-                className="-my-0.5 shrink-0 rounded-md px-2 py-1 font-medium text-indigo-700 transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-500/10"
+                className="-my-1 inline-flex h-7 shrink-0 items-center rounded-lg px-2.5 font-medium text-zinc-900 ring-1 ring-zinc-200 transition hover:bg-zinc-100 dark:text-zinc-100 dark:ring-zinc-700 dark:hover:bg-zinc-800"
               >
                 {toast.action.label}
               </button>
@@ -105,7 +106,7 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
               type="button"
               onClick={() => dismiss(toast.id)}
               aria-label="Dismiss"
-              className="-my-0.5 grid size-6 shrink-0 place-items-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+              className={`${buttonClass.iconSmall} -my-1`}
             >
               <XIcon className="size-3.5" />
             </button>

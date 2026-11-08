@@ -1,25 +1,26 @@
 import { Fragment, type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { useLocation } from "wouter"
+import { CheckIcon } from "../ui/icons.tsx"
+import { Kbd, touchTarget } from "../ui/primitives.tsx"
 import { Glyph, SearchIcon } from "./icons.tsx"
-import { Kbd, ShortcutKeys } from "./keys.tsx"
+import { Key, ShortcutKeys } from "./keys.tsx"
 import { rankSections } from "./rank.ts"
 import { readRecent, rememberCommand } from "./recent.ts"
-import {
-  type Badge,
-  type PaletteItem,
-  type RunContext,
-  usePaletteGroups,
-} from "./use-palette-groups.ts"
+import { type PaletteItem, type RunContext, usePaletteGroups } from "./use-palette-groups.ts"
 
 const CONFIRM_MS = 800
 
-const BADGE_TONES: Record<Badge["tone"], string> = {
-  open: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-  closed: "bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-300",
-  neutral: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
-  current: "bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300",
-}
+const KIND_NAMES = { issue: "issue", pull: "PR" } as const
+const STATE_DOTS = { open: "bg-emerald-500", closed: "bg-violet-500" } as const
+
+/** "Open PR" or "Closed issue": an issue and a pull request of the same title never look alike. */
+const KindChip = ({ kind }: { kind: NonNullable<PaletteItem["kind"]> }) => (
+  <span className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-1.5 text-2xs font-medium whitespace-nowrap text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+    <span aria-hidden="true" className={`size-1.5 rounded-full ${STATE_DOTS[kind.state]}`} />
+    {kind.state === "open" ? "Open" : "Closed"} {KIND_NAMES[kind.type]}
+  </span>
+)
 
 const Highlight = ({ text, indices }: { text: string; indices: ReadonlyArray<number> }) => {
   if (indices.length === 0) return text
@@ -46,13 +47,6 @@ const Highlight = ({ text, indices }: { text: string; indices: ReadonlyArray<num
     ),
   )
 }
-
-const iconTone = (item: PaletteItem) =>
-  item.icon === "pull"
-    ? "text-emerald-600 dark:text-emerald-400"
-    : item.icon === "issue"
-      ? "text-sky-600 dark:text-sky-400"
-      : "text-zinc-500 group-data-active:text-indigo-600 dark:text-zinc-400 dark:group-data-active:text-indigo-300"
 
 /** An issue's number stays visible when its long repository name is cut short. */
 const Subtitle = ({ item, indices }: { item: PaletteItem; indices: ReadonlyArray<number> }) => {
@@ -109,17 +103,13 @@ const Option = ({
     onMouseMove={onHover}
     onMouseDown={(event) => event.preventDefault()}
     onClick={onChoose}
-    className="group relative flex cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2 data-active:bg-zinc-100 dark:data-active:bg-zinc-800/80"
+    className="group flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2 data-active:bg-zinc-100 dark:data-active:bg-zinc-800"
   >
-    <span
-      aria-hidden="true"
-      className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-indigo-500 opacity-0 group-data-active:opacity-100"
-    />
-    <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-zinc-200/80 bg-white shadow-[0_1px_0_rgb(0_0_0/0.03)] dark:border-zinc-700/70 dark:bg-zinc-900 dark:shadow-none">
-      <Glyph name={item.icon} className={`size-4 ${iconTone(item)}`} />
+    <span className="grid size-7 shrink-0 place-items-center rounded-md border border-zinc-200 bg-white text-zinc-500 group-data-active:text-zinc-900 dark:border-zinc-700/80 dark:bg-zinc-900 dark:text-zinc-400 dark:group-data-active:text-zinc-100">
+      <Glyph name={item.icon} className="size-4" />
     </span>
     <span className="min-w-0 flex-1">
-      <span className="block truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+      <span className="block truncate text-sm text-zinc-900 dark:text-zinc-100">
         <Highlight text={item.title} indices={titleIndices} />
       </span>
       {item.subtitle !== undefined && item.subtitle !== "" && (
@@ -127,22 +117,25 @@ const Option = ({
       )}
     </span>
     <span className="flex shrink-0 items-center gap-2">
-      {item.badge !== undefined && (
-        <span
-          className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-medium ${BADGE_TONES[item.badge.tone]} ${item.badge.tone === "open" ? "hidden sm:block" : ""}`}
-        >
-          {item.badge.text}
+      {item.hint !== undefined && (
+        <span className="text-xs text-zinc-500 max-sm:hidden dark:text-zinc-400">{item.hint}</span>
+      )}
+      {item.kind !== undefined && <KindChip kind={item.kind} />}
+      {item.current === true && (
+        <span className="flex items-center gap-1 text-xs font-medium text-indigo-700 dark:text-indigo-300">
+          <CheckIcon className="size-3.5" />
+          Current
         </span>
       )}
       {item.shortcut !== undefined && (
-        <span className="hidden sm:block">
+        <span className="max-sm:hidden">
           <ShortcutKeys id={item.shortcut} />
         </span>
       )}
       {item.external === true && (
         <Glyph
           name="external"
-          className="size-3.5 text-zinc-400 opacity-0 group-data-active:opacity-100 dark:text-zinc-500"
+          className="size-3.5 text-zinc-500 opacity-0 group-data-active:opacity-100 max-sm:hidden dark:text-zinc-400"
         />
       )}
     </span>
@@ -168,6 +161,7 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
   const [activeId, setActiveId] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ text: string; failed: boolean } | null>(null)
   const input = useRef<HTMLInputElement>(null)
+  const closeButton = useRef<HTMLButtonElement>(null)
   const listId = useId()
   const recent = useMemo(readRecent, [])
   const { groups, searchStatus, searchError, minSearchLength } = usePaletteGroups(query, true)
@@ -242,7 +236,7 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
     } else if (event.key === "ArrowUp" || (control && event.key === "p")) {
       event.preventDefault()
       move(-1)
-    } else if (event.key === "Enter") {
+    } else if (event.key === "Enter" && event.target === input.current) {
       event.preventDefault()
       if (active !== undefined) choose(active.item)
     } else if (event.key === "Escape") {
@@ -250,9 +244,9 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
       event.stopPropagation()
       onClose()
     } else if (event.key === "Tab") {
-      // The input is the only stop; keeping Tab here is the focus trap.
+      // The input and the close button are the only stops; Tab moves between them.
       event.preventDefault()
-      input.current?.focus()
+      ;(event.target === input.current ? closeButton : input).current?.focus()
     }
   }
 
@@ -287,8 +281,8 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
         onKeyDown={onKeyDown}
         className="flex max-h-[min(34rem,calc(100dvh-8rem))] w-full max-w-xl animate-palette-in flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white/95 shadow-[0_24px_64px_-12px_rgb(0_0_0/0.35)] ring-1 ring-black/5 backdrop-blur-xl dark:border-zinc-700/80 dark:bg-zinc-900/95 dark:shadow-[0_24px_64px_-12px_rgb(0_0_0/0.8)] dark:ring-white/5"
       >
-        <div className="flex items-center gap-3 border-b border-zinc-200 px-4 dark:border-zinc-800">
-          <SearchIcon className="size-[1.125rem] shrink-0 text-zinc-400 dark:text-zinc-500" />
+        <div className="flex items-center gap-3 border-b border-zinc-200 pr-3 pl-4 dark:border-zinc-800">
+          <SearchIcon className="size-[1.125rem] shrink-0 text-zinc-500 dark:text-zinc-400" />
           <input
             ref={input}
             type="text"
@@ -309,10 +303,21 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
               setQuery(event.target.value)
               setActiveId(null)
             }}
-            className="h-14 min-w-0 flex-1 bg-transparent text-base text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+            className="h-14 min-w-0 flex-1 bg-transparent text-base text-zinc-900 outline-none placeholder:text-zinc-500 dark:text-zinc-100 dark:placeholder:text-zinc-400"
           />
           {searchStatus === "loading" && <Spinner />}
-          <Kbd>Esc</Kbd>
+          <button
+            ref={closeButton}
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className={`inline-flex h-8 shrink-0 items-center rounded-lg px-1.5 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 pointer-coarse:px-2.5 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 ${touchTarget}`}
+          >
+            <span className="pointer-coarse:hidden">
+              <Kbd>Esc</Kbd>
+            </span>
+            <span className="pointer-fine:hidden">Close</span>
+          </button>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
@@ -330,7 +335,7 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
                   <div
                     id={headingId}
                     role="presentation"
-                    className="px-2.5 pt-2 pb-1 text-[0.6875rem] font-semibold tracking-wider text-zinc-400 uppercase dark:text-zinc-500"
+                    className="px-2.5 pt-2.5 pb-1 text-2xs font-medium text-zinc-500 dark:text-zinc-400"
                   >
                     {section.heading}
                   </div>
@@ -367,12 +372,12 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
             </p>
           ) : nothingFound ? (
             <div className="grid place-items-center gap-2 px-6 py-10 text-center">
-              <SearchIcon className="size-6 text-zinc-300 dark:text-zinc-600" />
+              <SearchIcon className="size-6 text-zinc-400 dark:text-zinc-500" />
               <p className="text-sm text-zinc-600 dark:text-zinc-300">
                 Nothing matches “{query.trim()}”
               </p>
               {query.trim().length < minSearchLength && (
-                <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
                   Type {minSearchLength} characters to search issues and pull requests.
                 </p>
               )}
@@ -391,12 +396,12 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
           {notice === null ? (
             <span className="hidden items-center gap-3 sm:flex">
               <span className="flex items-center gap-1.5">
-                <Kbd>↑</Kbd>
-                <Kbd>↓</Kbd>
+                <Key name="↑" />
+                <Key name="↓" />
                 Navigate
               </span>
               <span className="flex items-center gap-1.5">
-                <Kbd>↵</Kbd>
+                <Key name="↵" />
                 {active?.item.external === true ? "Open in a new tab" : "Select"}
               </span>
             </span>

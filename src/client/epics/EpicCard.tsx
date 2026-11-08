@@ -1,31 +1,28 @@
 import { useId, useState } from "react"
 import type { BoardColumn, Epic, EpicChild } from "../../shared/api.ts"
-import { Avatar } from "../Avatar.tsx"
+import { AvatarStack } from "../Avatar.tsx"
 import { absoluteTime, relativeTime } from "../format.ts"
-import { LabelList } from "../ui/LabelChip.tsx"
+import {
+  ChevronDownIcon,
+  IssueClosedIcon,
+  IssueOpenIcon,
+  MilestoneIcon,
+  PullIcon,
+} from "../ui/icons.tsx"
+import { LabelChip } from "../ui/LabelChip.tsx"
+import { cardClass } from "../ui/primitives.tsx"
 import { completion } from "./epics-view.ts"
 
-const focus =
-  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
+const chipClass =
+  "inline-flex max-w-full items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-1.5 py-px text-2xs font-medium text-zinc-700 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-300"
 
-const columnColor = (column: BoardColumn, columns: ReadonlyArray<BoardColumn>) =>
+/** The board's own colors: a status column takes its Forgejo label's color, as its dot does. */
+const columnColor = (column: BoardColumn) =>
   column._tag === "Todo"
     ? "var(--chart-axis)"
     : column._tag === "Done"
       ? "var(--chart-positive)"
-      : `var(--chart-${(columns.filter((item) => item._tag === "Status").findIndex((item) => item.key === column.key) % 6) + 1})`
-
-const Assignees = ({ people }: { people: Epic["assignees"] }) =>
-  people.length === 0 ? null : (
-    <ul className="flex flex-wrap gap-1" aria-label="Assignees">
-      {people.map(({ login, avatarUrl }) => (
-        <li key={login} title={login}>
-          <span className="sr-only">{login}</span>
-          <Avatar key={avatarUrl} url={avatarUrl} name={login} size="sm" />
-        </li>
-      ))}
-    </ul>
-  )
+      : column.label.color
 
 const ColumnChip = ({
   column,
@@ -36,13 +33,12 @@ const ColumnChip = ({
 }) => {
   const details = columns.find(({ key }) => key === column)
   return (
-    <span className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-zinc-200 px-2 py-0.5 text-xs text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
+    <span className={chipClass}>
       <span
         aria-hidden="true"
-        className="size-1.5 shrink-0 rounded-full"
+        className="size-2 shrink-0 rounded-full"
         style={{
-          backgroundColor:
-            details === undefined ? "var(--chart-axis)" : columnColor(details, columns),
+          backgroundColor: details === undefined ? "var(--chart-axis)" : columnColor(details),
         }}
       />
       <span className="truncate">{details?.title ?? column}</span>
@@ -50,60 +46,73 @@ const ColumnChip = ({
   )
 }
 
+const StateChip = ({ state }: { state: Epic["state"] }) => (
+  <span className={`${chipClass} shrink-0`}>
+    <span
+      aria-hidden="true"
+      className={`size-1.5 rounded-full ${state === "open" ? "bg-emerald-500" : "bg-violet-500"}`}
+    />
+    {state === "open" ? "Open" : "Closed"}
+  </span>
+)
+
+/** Closed children are done, in the same green as the Done column. */
+const ChildIcon = ({ child }: { child: Extract<EpicChild, { _tag: "Issue" }> }) => {
+  const tone = child.state === "closed" ? "text-chart-positive" : "text-zinc-500 dark:text-zinc-400"
+  const className = `mt-0.5 size-4 ${tone}`
+  if (child.kind === "pull") return <PullIcon className={className} />
+  return child.state === "closed" ? (
+    <IssueClosedIcon className={className} />
+  ) : (
+    <IssueOpenIcon className={className} />
+  )
+}
+
 const ChildRow = ({ child, columns }: { child: EpicChild; columns: ReadonlyArray<BoardColumn> }) =>
   child._tag === "Unavailable" ? (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3 text-xs text-zinc-500 dark:text-zinc-400">
-      <span className="break-all font-mono">{child.ref}</span>
-      <span>Unavailable</span>
+    <li className="flex items-start gap-3 px-4 py-2.5 sm:px-5">
+      <span
+        aria-hidden="true"
+        className="mt-0.5 size-4 shrink-0 rounded-full border-[1.5px] border-dashed border-zinc-300 dark:border-zinc-600"
+      />
+      <span className="min-w-0 text-sm text-zinc-500 dark:text-zinc-400">
+        <span className="font-mono text-xs break-all">{child.ref}</span>
+        <span className="block text-xs">Not available to you, or not found in Forgejo</span>
+      </span>
     </li>
   ) : (
-    <li className="flex items-start gap-3 px-5 py-3">
-      <svg
-        aria-hidden="true"
-        viewBox="0 0 16 16"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        className="mt-0.5 size-4 shrink-0 text-zinc-500 dark:text-zinc-400"
-      >
-        {child.kind === "issue" ? (
-          <>
-            <circle cx="8" cy="8" r="5.5" />
-            <path d={child.state === "closed" ? "m5 8 2 2 4-4" : "M8 6v4"} />
-          </>
-        ) : (
-          <>
-            <circle cx="4" cy="3" r="1.5" />
-            <circle cx="4" cy="13" r="1.5" />
-            <circle cx="12" cy="13" r="1.5" />
-            <path d="M4 4.5v7M12 11.5V7a4 4 0 0 0-4-4M8 1l-2 2 2 2" />
-          </>
-        )}
-      </svg>
+    <li className="flex items-start gap-3 px-4 py-2.5 sm:px-5">
+      <ChildIcon child={child} />
       <div className="min-w-0 flex-1">
-        <a href={child.url} className={`block rounded-sm ${focus}`}>
-          <span className="block break-all font-mono text-[11px] text-zinc-500 dark:text-zinc-400">
-            <span className="sr-only">{child.kind === "pull" ? "Pull request" : "Issue"} </span>
+        <a
+          href={child.url}
+          className="block rounded-sm text-sm font-medium wrap-anywhere text-zinc-900 hover:text-indigo-700 dark:text-zinc-100 dark:hover:text-indigo-300"
+        >
+          <span className="sr-only">
+            {child.kind === "pull" ? "Pull request" : "Issue"}, {child.state},{" "}
+          </span>
+          {child.title}
+        </a>
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="font-mono text-xs break-all text-zinc-500 dark:text-zinc-400">
             {child.repo}#{child.number}
           </span>
-          <span className="mt-0.5 block wrap-anywhere text-sm font-medium hover:text-indigo-700 dark:hover:text-indigo-300">
-            {child.title}
-          </span>
-        </a>
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <ColumnChip column={child.column} columns={columns} />
-          <Assignees people={child.assignees} />
         </div>
       </div>
+      {child.assignees.length > 0 && <AvatarStack people={child.assignees} size="xs" />}
     </li>
   )
 
 export const EpicCard = ({
   epic,
   columns,
+  sharedLabels,
 }: {
   epic: Epic
   columns: ReadonlyArray<BoardColumn>
+  /** Labels every epic on the page carries, such as the epic label itself: not worth repeating. */
+  sharedLabels: ReadonlySet<number>
 }) => {
   const [expanded, setExpanded] = useState(false)
   const childrenId = useId()
@@ -113,7 +122,7 @@ export const EpicCard = ({
     key: column.key,
     title: column.title,
     count: epic.progress.byColumn[column.key] ?? 0,
-    color: columnColor(column, columns),
+    color: columnColor(column),
   }))
   if (unavailable > 0)
     segments.push({
@@ -122,146 +131,134 @@ export const EpicCard = ({
       count: unavailable,
       color: "var(--chart-grid)",
     })
+  const filled = segments.filter(({ count }) => count > 0)
   const percent = completion(epic.progress)
+  const count = epic.children.length
   return (
-    <article
-      aria-labelledby={headingId}
-      className="min-w-0 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-    >
-      <div className="p-5">
+    <article aria-labelledby={headingId} className={`${cardClass} min-w-0 overflow-hidden`}>
+      <div className="p-4 sm:p-5">
         <div className="flex items-center justify-between gap-3">
           <span className="min-w-0 truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
             {epic.repo}#{epic.number}
           </span>
-          <span
-            className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${epic.state === "open" ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"}`}
-          >
-            {epic.state === "open" ? "Open" : "Closed"}
-          </span>
+          <StateChip state={epic.state} />
         </div>
-        <h3 id={headingId} className="mt-3 text-lg/6 font-semibold tracking-tight">
+        <h3 id={headingId} className="mt-2 text-base/6 font-semibold tracking-tight">
           <a
             href={epic.url}
-            className={`rounded-sm wrap-anywhere hover:text-indigo-700 dark:hover:text-indigo-300 ${focus}`}
+            className="rounded-sm wrap-anywhere hover:text-indigo-700 dark:hover:text-indigo-300"
           >
             {epic.title}
           </a>
         </h3>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <ColumnChip column={epic.column} columns={columns} />
-          {epic.milestone !== null && (
-            <span className="min-w-0 truncate text-xs text-zinc-500 dark:text-zinc-400">
-              Milestone · {epic.milestone}
-            </span>
-          )}
-        </div>
-        <LabelList labels={epic.labels} className="mt-1.5" />
-        <div className="mt-6 flex items-end justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium tabular-nums">
-              {epic.progress.done}{" "}
-              <span className="font-normal text-zinc-500 dark:text-zinc-400">of</span>{" "}
-              {epic.progress.total}{" "}
-              <span className="font-normal text-zinc-500 dark:text-zinc-400">done</span>
-            </p>
-            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-              {epic.progress.total === 0
-                ? "Add a task list to start tracking"
-                : "From the current Forgejo state"}
-            </p>
-          </div>
-          <span className="shrink-0 text-3xl font-semibold tracking-tight tabular-nums">
-            {percent}
-            <span className="ml-0.5 text-base font-normal text-zinc-400">%</span>
-            <span className="sr-only"> complete</span>
-          </span>
-        </div>
-        <div
-          role="img"
-          aria-label={
-            segments
-              .filter(({ count }) => count > 0)
-              .map(({ title, count }) => `${title}: ${count}`)
-              .join(", ") || "No children"
-          }
-          className="mt-3 flex h-2.5 gap-0.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800"
-        >
-          {segments
-            .filter(({ count }) => count > 0)
-            .map(({ key, count, color }) => (
-              <span
-                key={key}
-                className="min-w-0"
-                style={{ width: `${(count / epic.progress.total) * 100}%`, backgroundColor: color }}
-              />
-            ))}
-        </div>
-        <ul
-          aria-label="Progress by column"
-          className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-zinc-500 dark:text-zinc-400"
-        >
-          {segments
-            .filter(({ count }) => count > 0)
-            .map(({ key, title, count, color }) => (
-              <li key={key} className="flex items-center gap-1.5">
-                <span
-                  aria-hidden="true"
-                  className="size-2 rounded-sm"
-                  style={{ backgroundColor: color }}
-                />
-                {title}
-                <span className="font-medium tabular-nums text-zinc-700 dark:text-zinc-300">
-                  {count}
-                </span>
+        <ul aria-label="Column and labels" className="mt-2.5 flex flex-wrap items-center gap-1">
+          <li className="min-w-0 max-w-full">
+            <ColumnChip column={epic.column} columns={columns} />
+          </li>
+          {epic.labels
+            .filter((label) => !sharedLabels.has(label.id))
+            .map((label) => (
+              <li key={label.id} className="min-w-0 max-w-full">
+                <LabelChip name={label.name} color={label.color} compact />
               </li>
             ))}
         </ul>
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
-          <Assignees people={epic.assignees} />
-          <time
-            dateTime={epic.updatedAt}
-            title={absoluteTime(epic.updatedAt)}
-            className="text-[11px] text-zinc-500 dark:text-zinc-400"
-          >
+
+        {epic.progress.total === 0 ? (
+          <p className="mt-5 text-sm text-zinc-500 dark:text-zinc-400">
+            No children yet. List them in the epic's body, like{" "}
+            <code className="font-mono text-xs text-zinc-700 dark:text-zinc-300">- [ ] #12</code>.
+          </p>
+        ) : (
+          <>
+            <div className="mt-5 flex items-baseline justify-between gap-3">
+              <p className="text-sm text-zinc-600 tabular-nums dark:text-zinc-400">
+                <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+                  {epic.progress.done}
+                </span>{" "}
+                of {epic.progress.total} done
+              </p>
+              <p className="text-2xl/none font-semibold tracking-tight tabular-nums">
+                {percent}
+                <span className="ml-px text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                  %
+                </span>
+                <span className="sr-only"> complete</span>
+              </p>
+            </div>
+            <div
+              role="img"
+              aria-label={filled.map(({ title, count }) => `${title}: ${count}`).join(", ")}
+              className="mt-2.5 flex h-2 gap-0.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800"
+            >
+              {filled.map(({ key, count, color }) => (
+                <span
+                  key={key}
+                  className="min-w-0 first:rounded-l-full last:rounded-r-full"
+                  style={{
+                    width: `${(count / epic.progress.total) * 100}%`,
+                    backgroundColor: color,
+                  }}
+                />
+              ))}
+            </div>
+            <ul
+              aria-hidden="true"
+              className="mt-2.5 flex flex-wrap gap-x-3.5 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400"
+            >
+              {filled.map(({ key, title, count, color }) => (
+                <li key={key} className="flex items-center gap-1.5">
+                  <span
+                    aria-hidden="true"
+                    className="size-2 rounded-full"
+                    style={{ backgroundColor: color }}
+                  />
+                  {title}
+                  <span className="font-medium text-zinc-800 tabular-nums dark:text-zinc-200">
+                    {count}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        <div className="mt-4 flex min-h-6 flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+          {epic.assignees.length > 0 && <AvatarStack people={epic.assignees} size="sm" />}
+          {epic.milestone !== null && (
+            <span className="flex min-w-0 items-center gap-1">
+              <MilestoneIcon className="size-3.5" />
+              <span className="sr-only">Milestone</span>
+              <span className="truncate">{epic.milestone}</span>
+            </span>
+          )}
+          <time dateTime={epic.updatedAt} title={absoluteTime(epic.updatedAt)} className="ml-auto">
             Updated {relativeTime(epic.updatedAt)}
           </time>
         </div>
       </div>
-      <button
-        type="button"
-        aria-expanded={expanded}
-        aria-controls={childrenId}
-        onClick={() => setExpanded((value) => !value)}
-        className={`flex w-full items-center justify-between gap-2 border-t border-zinc-100 bg-zinc-50/70 px-5 py-3 text-left text-xs font-medium text-zinc-600 hover:bg-zinc-100 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-indigo-500 dark:border-zinc-800 dark:bg-zinc-950/30 dark:text-zinc-300 dark:hover:bg-zinc-800`}
-      >
-        <span>
-          {expanded ? "Hide" : "Show"} {epic.progress.total} children
-          <span className="sr-only"> of {epic.title}</span>
-        </span>
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          className={`size-4 ${expanded ? "rotate-180" : ""}`}
-        >
-          <path d="m4 6 4 4 4-4" />
-        </svg>
-      </button>
-      <div
-        id={childrenId}
-        hidden={!expanded}
-        className="border-t border-zinc-100 dark:border-zinc-800"
-      >
-        {epic.children.length === 0 ? (
-          <p className="px-5 py-4 text-xs text-zinc-500 dark:text-zinc-400">
-            Reference issues in the epic body, for example <code>- [ ] #12</code>.
-          </p>
-        ) : (
+      {count > 0 && (
+        <>
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={childrenId}
+            onClick={() => setExpanded((value) => !value)}
+            className="flex h-10 w-full items-center justify-between gap-2 border-t border-zinc-100 px-4 text-left text-xs font-medium text-zinc-600 transition hover:bg-zinc-50 hover:text-zinc-900 focus-visible:-outline-offset-2 sm:px-5 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-100"
+          >
+            <span>
+              {expanded ? "Hide" : "Show"} {count} {count === 1 ? "child" : "children"}
+              <span className="sr-only"> of {epic.title}</span>
+            </span>
+            <ChevronDownIcon
+              className={`size-4 text-zinc-500 transition-transform dark:text-zinc-400 ${expanded ? "rotate-180" : ""}`}
+            />
+          </button>
           <ul
+            id={childrenId}
+            hidden={!expanded}
             aria-label={`Children of ${epic.title}`}
-            className="divide-y divide-zinc-100 dark:divide-zinc-800"
+            className="divide-y divide-zinc-100 border-t border-zinc-100 bg-zinc-50/50 dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-950/20"
           >
             {epic.children.map((child) => (
               <ChildRow
@@ -271,8 +268,8 @@ export const EpicCard = ({
               />
             ))}
           </ul>
-        )}
-      </div>
+        </>
+      )}
     </article>
   )
 }

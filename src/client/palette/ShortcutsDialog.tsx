@@ -1,8 +1,27 @@
-import { useLayoutEffect, useRef } from "react"
-import { Kbd, ShortcutKeys } from "./keys.tsx"
-import { MENU_KEYS, SHORTCUTS } from "./shortcuts.ts"
+import { type ReactNode, useLayoutEffect, useRef } from "react"
+import { XIcon } from "../ui/icons.tsx"
+import { buttonClass } from "../ui/primitives.tsx"
+import { Key, ShortcutKeys } from "./keys.tsx"
+import { MENU_KEYS, SHORTCUTS, type Shortcut } from "./shortcuts.ts"
 
-const GROUPS = ["General", "Go to"] as const
+const Group = ({ title, children }: { title: string; children: ReactNode }) => (
+  <section aria-label={title}>
+    <h3 className="px-2 pb-1 text-2xs font-medium text-zinc-500 dark:text-zinc-400">{title}</h3>
+    <dl>{children}</dl>
+  </section>
+)
+
+const Row = ({ label, keys }: { label: string; keys: ReactNode }) => (
+  <div className="flex h-9 items-center justify-between gap-4 px-2">
+    <dt className="truncate text-sm text-zinc-700 dark:text-zinc-300">{label}</dt>
+    <dd className="flex shrink-0 items-center gap-1">{keys}</dd>
+  </div>
+)
+
+const shortcutRows = (group: Shortcut["group"]) =>
+  SHORTCUTS.filter((shortcut) => shortcut.group === group).map((shortcut) => (
+    <Row key={shortcut.id} label={shortcut.label} keys={<ShortcutKeys id={shortcut.id} />} />
+  ))
 
 export const ShortcutsDialog = ({ open, onClose }: { open: boolean; onClose: () => void }) => {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -11,7 +30,11 @@ export const ShortcutsDialog = ({ open, onClose }: { open: boolean; onClose: () 
   useLayoutEffect(() => {
     const element = dialog.current
     if (element === null) return
-    if (open && !element.open) element.showModal()
+    if (open && !element.open) {
+      element.showModal()
+      // The dialog itself takes focus, so the close button does not open with a focus ring.
+      element.focus()
+    }
     if (!open && element.open) element.close()
   }, [open])
 
@@ -19,71 +42,47 @@ export const ShortcutsDialog = ({ open, onClose }: { open: boolean; onClose: () 
     // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a modal dialog natively; the click is on the backdrop
     <dialog
       ref={dialog}
+      tabIndex={-1}
       onClose={onClose}
       onClick={(event) => {
         if (event.target === dialog.current) onClose()
       }}
       aria-labelledby="shortcuts-title"
-      className="m-auto max-h-[calc(100dvh-2rem)] w-[min(30rem,calc(100vw-1.5rem))] animate-palette-in overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-[0_24px_64px_-12px_rgb(0_0_0/0.35)] backdrop:bg-zinc-950/40 backdrop:backdrop-blur-[3px] dark:border-zinc-700/80 dark:bg-zinc-900 dark:text-zinc-100 dark:backdrop:bg-black/60"
+      className="m-auto max-h-[calc(100dvh-2rem)] w-[min(40rem,calc(100vw-1.5rem))] animate-palette-in overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-pop outline-none backdrop:bg-zinc-950/40 backdrop:backdrop-blur-[3px] dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:backdrop:bg-black/60"
     >
-      <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3.5 dark:border-zinc-800">
-        <h2 id="shortcuts-title" className="text-base font-semibold tracking-tight">
+      <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-2">
+        <h2 id="shortcuts-title" className="text-[0.9375rem] font-semibold tracking-tight">
           Keyboard shortcuts
         </h2>
         <button
           type="button"
           onClick={onClose}
-          className="rounded-md px-1.5 py-0.5 text-xs text-zinc-500 hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          aria-label="Close"
+          title="Close (Esc)"
+          className={`${buttonClass.iconSmall} -mr-1.5`}
         >
-          Close <Kbd>Esc</Kbd>
+          <XIcon className="size-4" />
         </button>
       </div>
-      <div className="grid gap-6 px-5 py-5">
-        {GROUPS.map((group) => (
-          <section key={group} aria-labelledby={`shortcuts-${group}`}>
-            <h3
-              id={`shortcuts-${group}`}
-              className="text-[0.6875rem] font-semibold tracking-wider text-zinc-400 uppercase dark:text-zinc-500"
-            >
-              {group}
-            </h3>
-            <dl className="mt-1 divide-y divide-zinc-100 dark:divide-zinc-800">
-              {SHORTCUTS.filter((shortcut) => shortcut.group === group).map((shortcut) => (
-                <div key={shortcut.id} className="flex items-center justify-between gap-4 py-2.5">
-                  <dt className="text-sm text-zinc-700 dark:text-zinc-300">{shortcut.label}</dt>
-                  <dd>
-                    <ShortcutKeys id={shortcut.id} />
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-        ))}
-        <section aria-labelledby="shortcuts-menu">
-          <h3
-            id="shortcuts-menu"
-            className="text-[0.6875rem] font-semibold tracking-wider text-zinc-400 uppercase dark:text-zinc-500"
-          >
-            In the command menu
-          </h3>
-          <dl className="mt-1 divide-y divide-zinc-100 dark:divide-zinc-800">
+      <div className="grid gap-x-6 gap-y-4 px-3 pb-4 sm:grid-cols-2">
+        <div className="grid content-start gap-4">
+          <Group title="General">{shortcutRows("General")}</Group>
+          <Group title="In the command menu">
             {MENU_KEYS.map(({ keys, label }) => (
-              <div key={label} className="flex items-center justify-between gap-4 py-2.5">
-                <dt className="text-sm text-zinc-700 dark:text-zinc-300">{label}</dt>
-                <dd className="flex gap-1">
-                  {keys.map((key) => (
-                    <Kbd key={key}>{key}</Kbd>
-                  ))}
-                </dd>
-              </div>
+              <Row
+                key={label}
+                label={label}
+                keys={keys.map((key) => <Key key={key} name={key} />)}
+              />
             ))}
-          </dl>
-        </section>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          Shortcuts without a modifier are ignored while you type in a field. Press G, then the
-          letter within a second.
-        </p>
+          </Group>
+        </div>
+        <Group title="Go to">{shortcutRows("Go to")}</Group>
       </div>
+      <p className="border-t border-zinc-100 bg-zinc-50/70 px-5 py-3 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950/30 dark:text-zinc-400">
+        Press <Key name="G" />, then the letter, within a second. Single keys do nothing while you
+        type in a field.
+      </p>
     </dialog>
   )
 }
