@@ -26,7 +26,7 @@ import {
   RequestFailed,
   setAssignee,
 } from "../api.ts"
-import { relativeTime } from "../format.ts"
+import { absoluteTime, relativeTime } from "../format.ts"
 import { ShortcutsDialog, usePageShortcuts } from "../palette/ShortcutsDialog.tsx"
 import { usePageCommands } from "../palette/use-palette-groups.ts"
 import { ORGS, OrgSwitcher } from "../scope/OrgPicker.tsx"
@@ -279,17 +279,20 @@ const BoardMenu = ({
   refreshing,
   onRefresh,
   onShortcuts,
+  className = "",
 }: {
   /** When the board was last read, in words; null before it first loads. */
   updated: string | null
   refreshing: boolean
   onRefresh: () => void
   onShortcuts: () => void
+  className?: string
 }) => (
   <Popover
     align="end"
     chevron={false}
     focusFirstItem
+    containerClass={`relative ${className}`}
     accessibleLabel={`Board options${updated === null ? "" : `. ${updated}`}`}
     triggerClass={buttonClass.icon}
     panelClass="w-60 p-1"
@@ -869,12 +872,19 @@ export const BoardPage = ({ org }: { org: string }) => {
     composerRepo !== null && creatableRepos.includes(composerRepo)
       ? composerRepo
       : creatableRepos[0]
+  const loadedAt = new Date(board.dataUpdatedAt).toISOString()
+  // After a failed refresh the cards are older than the last attempt, so say when they were read.
+  const refreshFailed = data !== undefined && board.isError && !allFailed
   const updated =
     data === undefined
       ? null
       : board.isFetching
         ? "Refreshing…"
-        : `Updated ${relativeTime(new Date(board.dataUpdatedAt).toISOString(), now)}`
+        : refreshFailed
+          ? `Refresh failed, last loaded ${relativeTime(loadedAt, now)}`
+          : `Updated ${relativeTime(loadedAt, now)}`
+  // On a phone the board's options sit beside Filters, which leaves the organization's name room.
+  const filtersShown = data !== undefined && !allFailed
 
   usePageCommands(
     data === undefined || allFailed
@@ -904,12 +914,19 @@ export const BoardPage = ({ org }: { org: string }) => {
         <h1 className="sr-only">Board for {orgTitle}</h1>
         {/*
           One row on a wide screen: scope, search and filters, then the board's actions. Narrower,
-          the filters take a row of their own under the scope and actions.
+          the filters take a row of their own under the scope and actions; on a phone the board's
+          options move down beside them.
         */}
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2.5 px-4 pt-3 pb-3 sm:px-6 min-[84rem]:grid-cols-[auto_minmax(0,1fr)_auto]">
-          <div className="flex min-w-0 items-center gap-1.5">
+        <div
+          className={`grid items-center gap-x-2 gap-y-2.5 px-4 pt-3 pb-3 sm:px-6 ${
+            filtersShown
+              ? "grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_auto_auto] min-[84rem]:grid-cols-[auto_minmax(0,1fr)_auto_auto]"
+              : "grid-cols-[minmax(0,1fr)_auto]"
+          }`}
+        >
+          <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-1.5">
             <OrgSwitcher org={org} view="board" />
-            {!orgMissing && (
+            {repos.data !== undefined && (
               <span aria-hidden="true" className="text-zinc-300 max-sm:hidden dark:text-zinc-700">
                 /
               </span>
@@ -924,25 +941,38 @@ export const BoardPage = ({ org }: { org: string }) => {
               />
             )}
           </div>
-          {data !== undefined && !allFailed && (
-            <BoardFiltersBar
-              cards={data.cards}
-              filters={filters}
-              setParams={setParams}
-              searchInput={searchInput}
-              shown={shownCount}
-              total={data.cards.length}
-              className="col-span-2 row-start-2 min-[84rem]:col-span-1 min-[84rem]:col-start-2 min-[84rem]:row-start-1 min-[84rem]:ml-2"
-            />
+          {filtersShown && (
+            <>
+              <BoardFiltersBar
+                cards={data.cards}
+                filters={filters}
+                setParams={setParams}
+                searchInput={searchInput}
+                shown={shownCount}
+                total={data.cards.length}
+                className="col-start-1 row-start-2 sm:col-span-3 min-[84rem]:col-span-1 min-[84rem]:col-start-2 min-[84rem]:row-start-1 min-[84rem]:ml-2"
+              />
+              <BoardMenu
+                updated={updated}
+                refreshing={board.isFetching}
+                onRefresh={() => void board.refetch()}
+                onShortcuts={openShortcuts}
+                className="col-start-2 row-start-2 self-start sm:row-start-1 sm:self-center min-[84rem]:col-start-3"
+              />
+            </>
           )}
-          <div className="col-start-2 row-start-1 flex shrink-0 items-center justify-end gap-1 min-[84rem]:col-start-3">
+          <div
+            className={`col-start-2 row-start-1 flex shrink-0 items-center justify-end gap-1 ${
+              filtersShown ? "sm:col-start-3 min-[84rem]:col-start-4" : ""
+            }`}
+          >
             {!online && (
               <span className="mr-1 inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-500/15 dark:text-amber-200">
                 <span aria-hidden="true" className="size-1.5 rounded-full bg-amber-500" />
                 Offline
               </span>
             )}
-            {hasSelection && (
+            {hasSelection && !filtersShown && (
               <BoardMenu
                 updated={updated}
                 refreshing={board.isFetching}
@@ -969,12 +999,30 @@ export const BoardPage = ({ org }: { org: string }) => {
 
         {repos.isError && !orgMissing && (
           <ErrorNotice
+            tone={filtersShown ? "warning" : "error"}
             title={`Could not load the repositories of ${orgTitle}`}
             onRetry={() => void repos.refetch()}
             retrying={repos.isFetching}
             className="mx-4 mb-3 sm:mx-6"
           >
             {repos.error.message}
+            {filtersShown &&
+              ". The board still shows its cards; choosing repositories waits until they load."}
+          </ErrorNotice>
+        )}
+        {refreshFailed && (
+          <ErrorNotice
+            tone="warning"
+            title="Could not refresh the board"
+            onRetry={() => void board.refetch()}
+            retrying={board.isFetching}
+            className="mx-4 mb-3 sm:mx-6"
+          >
+            {board.error?.message}. The cards shown were loaded{" "}
+            <time dateTime={loadedAt} title={absoluteTime(loadedAt)}>
+              {relativeTime(loadedAt, now)}
+            </time>
+            .
           </ErrorNotice>
         )}
         {failures.length > 0 &&
@@ -1127,7 +1175,11 @@ export const BoardPage = ({ org }: { org: string }) => {
               columns={data.columns}
               viewer={viewer.login}
               movable={data.viewerCanArrange && selectedCard.readOnlyReason === null}
-              position={{ index: selectedIndex, count: selectedColumn.length }}
+              position={{
+                index: selectedIndex,
+                count: selectedColumn.length,
+                hiddenByFilters: !visible(selectedCard),
+              }}
               onStep={step}
               onMoveTo={(column) => moveToTop(selectedCard, column)}
               onToggleAssigned={() => toggleAssigned(selectedCard)}

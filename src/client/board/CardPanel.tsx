@@ -8,7 +8,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react"
-import type { BoardCard, BoardColumn, CardDetail } from "../../shared/api.ts"
+import type { BoardCard, BoardColumn, CardDetail, IssueOptions } from "../../shared/api.ts"
 import { Avatar } from "../Avatar.tsx"
 import {
   addComment,
@@ -19,6 +19,7 @@ import {
   setMilestone,
 } from "../api.ts"
 import { absoluteTime, relativeTime } from "../format.ts"
+import { ErrorNotice } from "../ui/ErrorNotice.tsx"
 import {
   ChevronDownIcon,
   ExternalIcon,
@@ -45,6 +46,10 @@ const sanitize = (html: string) => {
   for (const link of template.content.querySelectorAll("a[href]")) {
     link.setAttribute("target", "_blank")
     link.setAttribute("rel", "noreferrer")
+    const hint = document.createElement("span")
+    hint.className = "sr-only"
+    hint.textContent = " (opens in a new tab)"
+    link.append(hint)
   }
   // The panel's own headings are h2 and h3, so a text's highest heading becomes h4.
   const headings = [...template.content.querySelectorAll("h1, h2, h3, h4, h5, h6")]
@@ -139,11 +144,13 @@ const FOCUSABLE =
 
 /**
  * Tab and Shift+Tab wrap around inside a modal panel. The rest of the page is inert, so without
- * this Tab past the last control leaves for the browser's own controls. Keys from a picker's
- * panel bubble here through the portal; the picker handles its own Tab.
+ * this Tab past the last control leaves for the browser's own controls. Beside the board only Tab
+ * wraps: the panel comes last on the page, and its header's controls sit above the heading that
+ * takes focus, so Tab past the last control goes back to them while Shift+Tab still reaches the
+ * board. Keys from a picker's panel bubble here through the portal; the picker handles its own Tab.
  */
-const loopFocus = (event: KeyboardEvent<HTMLElement>) => {
-  if (event.key !== "Tab" || event.defaultPrevented) return
+const loopFocus = (event: KeyboardEvent<HTMLElement>, modal: boolean) => {
+  if (event.key !== "Tab" || event.defaultPrevented || (event.shiftKey && !modal)) return
   const dialog = event.currentTarget
   if (!(event.target instanceof Node) || !dialog.contains(event.target)) return
   const stops = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
@@ -174,6 +181,17 @@ type Choice = {
   readonly display?: ReactNode
 }
 
+/** The choices come from one request per repository, which can still be on its way or fail. */
+type Choices =
+  | { readonly status: "pending" }
+  | {
+      readonly status: "failed"
+      readonly reason: string
+      readonly retry: () => void
+      readonly retrying: boolean
+    }
+  | { readonly status: "ready"; readonly list: ReadonlyArray<Choice> }
+
 /** A searchable menu of choices: several stay picked for labels and assignees, one for others. */
 const Picker = ({
   name,
@@ -193,14 +211,14 @@ const Picker = ({
   searchName: string
   /** The value's items, such as label chips, each with a key; they wrap as one row. */
   trigger: ReadonlyArray<ReactNode>
-  choices: ReadonlyArray<Choice> | undefined
+  choices: Choices
   picked: ReadonlySet<string>
   multiple: boolean
   onPick: (value: string) => void
   disabled: boolean
 }) => {
   const [search, setSearch] = useState("")
-  const shown = (choices ?? []).filter((choice) =>
+  const shown = (choices.status === "ready" ? choices.list : []).filter((choice) =>
     choice.label.toLowerCase().includes(search.toLowerCase()),
   )
   return (
@@ -224,55 +242,84 @@ const Picker = ({
         if (!open) setSearch("")
       }}
     >
-      {(close) => (
-        <>
-          <SearchField
-            label={`Search ${searchName}`}
-            value={search}
-            onChange={setSearch}
-            inMenu
-            className="mb-1"
-          />
-          <div role="menu" aria-label={name} className="scroll-thin max-h-72 overflow-y-auto">
-            {choices === undefined && (
-              <p className="px-2 py-1.5 text-sm text-zinc-500 dark:text-zinc-400">Loading…</p>
-            )}
-            {shown.map((choice) => (
-              <MenuOption
-                key={choice.value}
-                selected={picked.has(choice.value)}
-                multiple={multiple}
-                disabled={disabled}
-                onSelect={() => {
-                  // Disabling the item would drop its focus to the page while a change saves.
-                  if (disabled) return
-                  onPick(choice.value)
-                  if (!multiple) close()
-                }}
-              >
-                {choice.icon}
-                <span className="min-w-0 flex-1 truncate">{choice.display ?? choice.label}</span>
-              </MenuOption>
-            ))}
-            {choices !== undefined && shown.length === 0 && (
-              <p className="px-2 py-1.5 text-sm text-zinc-500 dark:text-zinc-400">
-                Nothing matches.
-              </p>
-            )}
-          </div>
-        </>
-      )}
+      {(close) =>
+        choices.status === "failed" ? (
+          <ErrorNotice
+            bare
+            title={`Could not load the ${searchName}`}
+            onRetry={choices.retry}
+            retrying={choices.retrying}
+            // The panel is too narrow for Retry beside the reason; below it, it lines up with it.
+            className="p-1.5 [&>button]:ml-11"
+          >
+            {choices.reason}
+          </ErrorNotice>
+        ) : (
+          <>
+            <SearchField
+              label={`Search ${searchName}`}
+              value={search}
+              onChange={setSearch}
+              inMenu
+              className="mb-1"
+            />
+            <div role="menu" aria-label={name} className="scroll-thin max-h-72 overflow-y-auto">
+              {choices.status === "pending" && (
+                <div role="status" className="space-y-1 p-1">
+                  <span className="sr-only">Loading {searchName}</span>
+                  {["w-3/5", "w-4/5", "w-2/5"].map((width) => (
+                    <div
+                      key={width}
+                      className="flex h-8 items-center gap-2 px-1 pointer-coarse:h-11"
+                    >
+                      <span className="size-4 shrink-0 animate-shimmer rounded-full bg-zinc-200 dark:bg-zinc-800" />
+                      <span
+                        className={`h-3 animate-shimmer rounded bg-zinc-200 dark:bg-zinc-800 ${width}`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+              {shown.map((choice) => (
+                <MenuOption
+                  key={choice.value}
+                  selected={picked.has(choice.value)}
+                  multiple={multiple}
+                  disabled={disabled}
+                  onSelect={() => {
+                    // Disabling the item would drop its focus to the page while a change saves.
+                    if (disabled) return
+                    onPick(choice.value)
+                    if (!multiple) close()
+                  }}
+                >
+                  {choice.icon}
+                  <span className="min-w-0 flex-1 truncate">{choice.display ?? choice.label}</span>
+                </MenuOption>
+              ))}
+              {choices.status === "ready" && shown.length === 0 && (
+                <p className="px-2 py-1.5 text-sm text-zinc-500 dark:text-zinc-400">
+                  Nothing matches.
+                </p>
+              )}
+            </div>
+          </>
+        )
+      }
     </Popover>
   )
 }
 
 const CommentBox = ({
   draftKey,
+  ready,
   onSubmit,
   onEscape,
 }: {
   /** Where the unsent text is kept, so closing the panel or stepping to another card keeps it. */
   draftKey: string
+  /** False until the comments have loaded, so a new one cannot land before the ones it follows. */
+  ready: boolean
   onSubmit: (body: string) => Promise<unknown>
   /** Escape leaves the box and keeps the text; the panel decides where focus goes. */
   onEscape: () => void
@@ -286,7 +333,7 @@ const CommentBox = ({
   const input = useRef<HTMLTextAreaElement>(null)
   const submit = () => {
     const trimmed = body.trim()
-    if (trimmed === "" || pending) return
+    if (trimmed === "" || pending || !ready) return
     setPending(true)
     onSubmit(trimmed)
       .then(() => setBody(""))
@@ -344,7 +391,7 @@ const CommentBox = ({
         )}
         <button
           type="submit"
-          disabled={pending || body.trim() === ""}
+          disabled={pending || !ready || body.trim() === ""}
           className={`${buttonClass.primary} h-7 px-2.5 text-xs pointer-coarse:h-11 pointer-coarse:px-4 pointer-coarse:text-sm`}
         >
           {pending ? "Commenting…" : "Comment"}
@@ -360,8 +407,15 @@ type CardPanelProps = {
   readonly columns: ReadonlyArray<BoardColumn>
   readonly viewer: string
   readonly movable: boolean
-  /** Position among the shown cards of its column, for the previous and next buttons. */
-  readonly position: { readonly index: number; readonly count: number }
+  /**
+   * Position among the shown cards of its column, for the previous and next buttons. A card the
+   * filters hide still counts, so stepping starts from it.
+   */
+  readonly position: {
+    readonly index: number
+    readonly count: number
+    readonly hiddenByFilters: boolean
+  }
   readonly onStep: (step: -1 | 1) => void
   readonly onMoveTo: (column: string) => void
   readonly onToggleAssigned: () => void
@@ -457,37 +511,46 @@ export const CardPanel = ({
     heading.current?.focus({ preventScroll: true })
   }, [card.key])
 
+  const choicesFrom = (build: (data: IssueOptions) => ReadonlyArray<Choice>): Choices =>
+    options.data !== undefined
+      ? { status: "ready", list: build(options.data) }
+      : options.isError
+        ? {
+            status: "failed",
+            reason: options.error.message,
+            retry: () => void options.refetch(),
+            retrying: options.isFetching,
+          }
+        : { status: "pending" }
   // The card's own assignees stay choosable even when Forgejo no longer offers them.
-  const assigneeChoices =
-    options.data === undefined
-      ? undefined
-      : [
-          ...new Map(
-            [...card.assignees, ...options.data.assignees].map((person) => [person.login, person]),
-          ).values(),
-        ].map((person) => ({
-          value: person.login,
-          label: person.login === viewer ? `${person.login} (you)` : person.login,
-          icon: <Avatar url={person.avatarUrl} name={person.login} size="xs" />,
-        }))
-  const labelChoices = options.data?.labels.map((label) => ({
-    value: String(label.id),
-    label: label.name,
-    display: <LabelName name={label.name} />,
-    icon: (
-      <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: label.color }} />
-    ),
-  }))
-  const milestoneChoices =
-    options.data === undefined
-      ? undefined
-      : [
-          { value: "", label: "No milestone" },
-          ...options.data.milestones.map((milestone) => ({
-            value: String(milestone.id),
-            label: milestone.title,
-          })),
-        ]
+  const assigneeChoices = choicesFrom((data) =>
+    [
+      ...new Map(
+        [...card.assignees, ...data.assignees].map((person) => [person.login, person]),
+      ).values(),
+    ].map((person) => ({
+      value: person.login,
+      label: person.login === viewer ? `${person.login} (you)` : person.login,
+      icon: <Avatar url={person.avatarUrl} name={person.login} size="xs" />,
+    })),
+  )
+  const labelChoices = choicesFrom((data) =>
+    data.labels.map((label) => ({
+      value: String(label.id),
+      label: label.name,
+      display: <LabelName name={label.name} />,
+      icon: (
+        <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: label.color }} />
+      ),
+    })),
+  )
+  const milestoneChoices = choicesFrom((data) => [
+    { value: "", label: "No milestone" },
+    ...data.milestones.map((milestone) => ({
+      value: String(milestone.id),
+      label: milestone.title,
+    })),
+  ])
   // A closed milestone is not among the choices, so nothing is ticked rather than "No milestone".
   const currentMilestone = options.data?.milestones.find(
     (milestone) => milestone.title === card.milestone,
@@ -514,7 +577,7 @@ export const CardPanel = ({
           "aria-modal": modal || undefined,
           "aria-label": `${name} details`,
         }}
-        onKeyDown={modal ? loopFocus : undefined}
+        onKeyDown={(event) => loopFocus(event, modal)}
         className="fixed inset-y-0 right-0 z-40 flex w-full animate-slide-in flex-col border-l border-zinc-200 bg-white shadow-pop sm:w-[32rem] lg:absolute lg:rounded-tl-xl lg:border-t dark:border-zinc-800 dark:bg-zinc-950"
       >
         <div className="flex h-14 shrink-0 items-center gap-1 border-b border-zinc-200/70 pr-2 pl-4 dark:border-zinc-800">
@@ -531,9 +594,11 @@ export const CardPanel = ({
           </span>
           <span className="ml-auto flex items-center gap-0.5">
             <span className="mr-1.5 hidden text-xs text-zinc-500 tabular-nums sm:inline dark:text-zinc-400">
-              {position.count > 0 &&
-                position.index >= 0 &&
-                `${position.index + 1} of ${position.count}`}
+              {position.hiddenByFilters
+                ? "Hidden by filters"
+                : position.count > 0 &&
+                  position.index >= 0 &&
+                  `${position.index + 1} of ${position.count}`}
             </span>
             <button
               type="button"
@@ -842,119 +907,126 @@ export const CardPanel = ({
               </Property>
             </dl>
 
-            <section aria-labelledby="card-description" className="mt-8">
-              <h3 id="card-description" className={sectionTitle}>
-                Description
-              </h3>
-              <div className="mt-3">
-                {detail.data !== undefined ? (
-                  detail.data.bodyHtml.trim() === "" ? (
-                    <p className="text-sm text-zinc-500 italic dark:text-zinc-400">
-                      No description provided.
-                    </p>
-                  ) : (
-                    <Rendered html={detail.data.bodyHtml} />
-                  )
-                ) : detail.isError ? (
-                  <div role="alert" className="text-sm text-red-700 dark:text-red-400">
-                    Could not load the description: {detail.error.message}{" "}
-                    <button
-                      type="button"
-                      onClick={() => void detail.refetch()}
-                      className="font-medium underline"
-                    >
-                      Retry
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-2" aria-hidden="true">
-                    {["w-11/12", "w-full", "w-3/4", "w-5/6"].map((width) => (
-                      <div
-                        key={width}
-                        className={`h-3.5 animate-shimmer rounded bg-zinc-200 dark:bg-zinc-800 ${width}`}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <section aria-labelledby="card-comments" className="mt-8">
-              <h3
-                id="card-comments"
-                ref={commentsHeading}
-                tabIndex={-1}
-                className={`${sectionTitle} flex w-fit scroll-mt-4 items-center gap-2 rounded-sm`}
+            {detail.data === undefined && detail.isError ? (
+              <ErrorNotice
+                bare
+                title="Could not load the description and comments"
+                onRetry={() => void detail.refetch()}
+                retrying={detail.isFetching}
+                className="mt-8"
               >
-                Comments
-                {detail.data !== undefined && (
-                  <span className="font-medium text-zinc-500 tabular-nums dark:text-zinc-400">
-                    {detail.data.commentCount}
-                  </span>
-                )}
-              </h3>
-              {detail.data !== undefined &&
-                detail.data.commentCount > detail.data.comments.length && (
-                  <a
-                    href={card.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-3 flex items-center gap-1.5 text-xs font-medium text-indigo-700 hover:underline dark:text-indigo-300"
-                  >
-                    {detail.data.commentCount - detail.data.comments.length} earlier comments in
-                    Forgejo
-                    <ExternalIcon className="size-3.5" />
-                  </a>
-                )}
-              <ol className="mt-3 space-y-4">
-                {(detail.data?.comments ?? []).map((item) => (
-                  <li key={item.id} className="flex gap-3">
-                    <Avatar url={item.author.avatarUrl} name={item.author.login} size="sm" />
-                    <div className="min-w-0 flex-1">
-                      <p className="flex items-baseline gap-2 text-xs">
-                        <span className="font-semibold text-zinc-800 dark:text-zinc-200">
-                          {item.author.login}
-                        </span>
-                        <time
-                          dateTime={item.createdAt}
-                          title={absoluteTime(item.createdAt)}
-                          className="text-zinc-500 dark:text-zinc-400"
-                        >
-                          {relativeTime(item.createdAt)}
-                        </time>
-                      </p>
-                      <div className="mt-1 rounded-xl rounded-tl-sm bg-zinc-50 px-3 py-2 dark:bg-zinc-900">
-                        {item.bodyHtml.trim() === "" ? (
-                          <p className="text-sm text-zinc-500 italic dark:text-zinc-400">
-                            No text.
-                          </p>
-                        ) : (
-                          <Rendered html={item.bodyHtml} />
-                        )}
+                {detail.error.message}
+              </ErrorNotice>
+            ) : (
+              <>
+                <section aria-labelledby="card-description" className="mt-8">
+                  <h3 id="card-description" className={sectionTitle}>
+                    Description
+                  </h3>
+                  <div className="mt-3">
+                    {detail.data !== undefined ? (
+                      detail.data.bodyHtml.trim() === "" ? (
+                        <p className="text-sm text-zinc-500 italic dark:text-zinc-400">
+                          No description provided.
+                        </p>
+                      ) : (
+                        <Rendered html={detail.data.bodyHtml} />
+                      )
+                    ) : (
+                      <div role="status" className="space-y-2">
+                        <span className="sr-only">Loading the description and comments</span>
+                        {["w-11/12", "w-full", "w-3/4", "w-5/6"].map((width) => (
+                          <div
+                            key={width}
+                            className={`h-3.5 animate-shimmer rounded bg-zinc-200 dark:bg-zinc-800 ${width}`}
+                          />
+                        ))}
                       </div>
+                    )}
+                  </div>
+                </section>
+
+                <section aria-labelledby="card-comments" className="mt-8">
+                  <h3
+                    id="card-comments"
+                    ref={commentsHeading}
+                    tabIndex={-1}
+                    className={`${sectionTitle} flex w-fit scroll-mt-4 items-center gap-2 rounded-sm`}
+                  >
+                    Comments
+                    {detail.data !== undefined && (
+                      <span className="font-medium text-zinc-500 tabular-nums dark:text-zinc-400">
+                        {detail.data.commentCount}
+                      </span>
+                    )}
+                  </h3>
+                  {detail.data !== undefined &&
+                    detail.data.commentCount > detail.data.comments.length && (
+                      <a
+                        href={card.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-3 flex items-center gap-1.5 text-xs font-medium text-indigo-700 hover:underline dark:text-indigo-300"
+                      >
+                        {detail.data.commentCount - detail.data.comments.length} earlier comments in
+                        Forgejo
+                        <ExternalIcon className="size-3.5" />
+                      </a>
+                    )}
+                  <ol className="mt-3 space-y-4">
+                    {(detail.data?.comments ?? []).map((item) => (
+                      <li key={item.id} className="flex gap-3">
+                        <Avatar url={item.author.avatarUrl} name={item.author.login} size="sm" />
+                        <div className="min-w-0 flex-1">
+                          <p className="flex items-baseline gap-2 text-xs">
+                            <span className="font-semibold text-zinc-800 dark:text-zinc-200">
+                              {item.author.login}
+                            </span>
+                            <time
+                              dateTime={item.createdAt}
+                              title={absoluteTime(item.createdAt)}
+                              className="text-zinc-500 dark:text-zinc-400"
+                            >
+                              {relativeTime(item.createdAt)}
+                            </time>
+                          </p>
+                          <div className="mt-1 rounded-xl rounded-tl-sm bg-zinc-50 px-3 py-2 dark:bg-zinc-900">
+                            {item.bodyHtml.trim() === "" ? (
+                              <p className="text-sm text-zinc-500 italic dark:text-zinc-400">
+                                No text.
+                              </p>
+                            ) : (
+                              <Rendered html={item.bodyHtml} />
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                  {detail.data !== undefined && detail.data.comments.length === 0 && (
+                    <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">
+                      No comments yet.
+                    </p>
+                  )}
+                  {editable && (
+                    <div className="mt-4">
+                      <CommentBox
+                        key={card.key}
+                        draftKey={commentDraftKey(card.key)}
+                        ready={detail.data !== undefined}
+                        onSubmit={(body) => comment.mutateAsync(body)}
+                        // The comments heading holds focus between edits, scrolled into view so the
+                        // focus stays visible; a second Escape closes the panel.
+                        onEscape={() => {
+                          commentsHeading.current?.focus({ preventScroll: true })
+                          commentsHeading.current?.scrollIntoView({ block: "nearest" })
+                        }}
+                      />
                     </div>
-                  </li>
-                ))}
-              </ol>
-              {detail.data !== undefined && detail.data.comments.length === 0 && (
-                <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">No comments yet.</p>
-              )}
-              {editable && (
-                <div className="mt-4">
-                  <CommentBox
-                    key={card.key}
-                    draftKey={commentDraftKey(card.key)}
-                    onSubmit={(body) => comment.mutateAsync(body)}
-                    // The comments heading holds focus between edits, scrolled into view so the
-                    // focus stays visible; a second Escape closes the panel.
-                    onEscape={() => {
-                      commentsHeading.current?.focus({ preventScroll: true })
-                      commentsHeading.current?.scrollIntoView({ block: "nearest" })
-                    }}
-                  />
-                </div>
-              )}
-            </section>
+                  )}
+                </section>
+              </>
+            )}
           </div>
         </div>
       </div>
