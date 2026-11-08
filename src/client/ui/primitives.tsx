@@ -29,7 +29,9 @@ export const buttonClass = {
     "inline-flex h-8 pointer-coarse:h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-800 shadow-card transition hover:border-zinc-300 hover:bg-zinc-50 disabled:pointer-events-none disabled:opacity-60 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/70",
   ghost:
     "inline-flex h-8 pointer-coarse:h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-60 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
-  icon: `inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 ${touchTarget}`,
+  // A real 44px square on touch rather than an invisible hit area: icon buttons often sit in a
+  // row, where enlarged areas would overlap and a tap could land on the neighbour.
+  icon: "inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition pointer-coarse:size-11 hover:bg-zinc-100 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
   iconSmall: `inline-flex size-7 shrink-0 items-center justify-center rounded-md text-zinc-500 transition hover:bg-zinc-200/70 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 ${touchTarget}`,
 } as const
 

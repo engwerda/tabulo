@@ -20,8 +20,12 @@ type Toast = ToastInput & { readonly id: number }
 
 /** Shows a toast and returns a function that dismisses it early. */
 const ToastContext = createContext<(toast: ToastInput) => () => void>(() => () => {})
+const ClearContext = createContext<() => void>(() => {})
 
 export const useToast = () => useContext(ToastContext)
+
+/** Removes every toast, as when signing out leaves the session they were about. */
+export const useClearToasts = () => useContext(ClearContext)
 
 const DURATION_MS: Record<Tone, number> = {
   success: 6000,
@@ -76,51 +80,61 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
     [schedule, dismiss],
   )
 
+  const clear = useCallback(() => {
+    for (const timer of timers.current.values()) clearTimeout(timer)
+    timers.current.clear()
+    setToasts([])
+  }, [])
+
   return (
-    <ToastContext.Provider value={show}>
-      {children}
-      <section
-        aria-label="Notifications"
-        className="pointer-events-none fixed inset-x-0 top-0 z-50 flex flex-col items-center gap-2 p-3 sm:top-auto sm:bottom-0 sm:p-6"
-      >
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            role={toast.tone === "error" || toast.tone === "warning" ? "alert" : "status"}
-            onPointerEnter={() => clearTimeout(timers.current.get(toast.id))}
-            onPointerLeave={() => schedule(toast.id, toast.tone)}
-            className={`${panelClass} pointer-events-auto flex w-full max-w-sm animate-toast-in items-start gap-3 py-2.5 pr-2 pl-3 text-sm`}
-          >
-            <span className="mt-px flex shrink-0">{TONE_ICON[toast.tone]}</span>
-            <div className="min-w-0 flex-1">
-              <p className="font-medium text-zinc-900 dark:text-zinc-100">{toast.title}</p>
-              {toast.detail !== undefined && (
-                <p className="mt-0.5 text-zinc-600 dark:text-zinc-400">{toast.detail}</p>
+    <ClearContext.Provider value={clear}>
+      <ToastContext.Provider value={show}>
+        {children}
+        <section
+          aria-label="Notifications"
+          // At the bottom everywhere, above a phone's tab bar: at the top a toast would cover the
+          // phone card panel's toolbar.
+          className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-2 p-3 pb-[calc(var(--tab-bar-height)+0.75rem)] sm:p-6"
+        >
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              role={toast.tone === "error" || toast.tone === "warning" ? "alert" : "status"}
+              onPointerEnter={() => clearTimeout(timers.current.get(toast.id))}
+              onPointerLeave={() => schedule(toast.id, toast.tone)}
+              className={`${panelClass} pointer-events-auto flex w-full max-w-sm animate-toast-in items-start gap-3 py-2.5 pr-2 pl-3 text-sm`}
+            >
+              <span className="mt-px flex shrink-0">{TONE_ICON[toast.tone]}</span>
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-zinc-900 dark:text-zinc-100">{toast.title}</p>
+                {toast.detail !== undefined && (
+                  <p className="mt-0.5 text-zinc-600 dark:text-zinc-400">{toast.detail}</p>
+                )}
+              </div>
+              {toast.action !== undefined && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    toast.action?.run()
+                    dismiss(toast.id)
+                  }}
+                  className="-my-1 inline-flex h-7 shrink-0 items-center rounded-lg px-2.5 font-medium pointer-coarse:my-0 pointer-coarse:h-11 pointer-coarse:px-3.5 text-zinc-900 ring-1 ring-zinc-200 transition hover:bg-zinc-100 dark:text-zinc-100 dark:ring-zinc-700 dark:hover:bg-zinc-800"
+                >
+                  {toast.action.label}
+                </button>
               )}
-            </div>
-            {toast.action !== undefined && (
               <button
                 type="button"
-                onClick={() => {
-                  toast.action?.run()
-                  dismiss(toast.id)
-                }}
-                className="-my-1 inline-flex h-7 shrink-0 items-center rounded-lg px-2.5 font-medium text-zinc-900 ring-1 ring-zinc-200 transition hover:bg-zinc-100 dark:text-zinc-100 dark:ring-zinc-700 dark:hover:bg-zinc-800"
+                onClick={() => dismiss(toast.id)}
+                aria-label="Dismiss"
+                className={`${buttonClass.iconSmall} -my-1`}
               >
-                {toast.action.label}
+                <XIcon className="size-3.5" />
               </button>
-            )}
-            <button
-              type="button"
-              onClick={() => dismiss(toast.id)}
-              aria-label="Dismiss"
-              className={`${buttonClass.iconSmall} -my-1`}
-            >
-              <XIcon className="size-3.5" />
-            </button>
-          </div>
-        ))}
-      </section>
-    </ToastContext.Provider>
+            </div>
+          ))}
+        </section>
+      </ToastContext.Provider>
+    </ClearContext.Provider>
   )
 }

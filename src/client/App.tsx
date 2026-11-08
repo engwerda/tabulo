@@ -16,6 +16,7 @@ import { ThemeControl } from "./ThemeControl.tsx"
 import { ErrorBoundary } from "./ui/ErrorBoundary.tsx"
 import { ArrowRightIcon, LogoMark, SignOutIcon } from "./ui/icons.tsx"
 import { buttonClass, Popover, touchTarget } from "./ui/primitives.tsx"
+import { useClearToasts } from "./ui/toast.tsx"
 
 /** A still life of a board, drawn with the app's own surfaces, for the sign-in page. */
 const BoardSketch = () => {
@@ -183,12 +184,14 @@ const useNav = (): ReadonlyArray<NavItem> => {
 
 const useSignOut = () => {
   const queryClient = useQueryClient()
+  const clearToasts = useClearToasts()
   return useMutation({
     mutationFn: signOut,
     onSuccess: () => {
       // The session goes null first, so the app shows sign-in before the signed-in views lose
       // their data; clearing everything first left them rendering without a viewer.
       queryClient.setQueryData(SESSION_USER, null)
+      clearToasts()
       void queryClient.cancelQueries()
       queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== SESSION_USER[0] })
     },
@@ -240,7 +243,7 @@ const UserMenu = ({ user, logout }: { user: User; logout: ReturnType<typeof useS
             type="button"
             onClick={() => logout.mutate()}
             disabled={logout.isPending}
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-700 transition hover:bg-zinc-100 disabled:opacity-60 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-700 transition pointer-coarse:min-h-11 hover:bg-zinc-100 disabled:opacity-60 dark:text-zinc-300 dark:hover:bg-zinc-800"
           >
             <SignOutIcon className="size-4 text-zinc-500 dark:text-zinc-400" />
             {logout.isPending ? "Signing out…" : "Sign out"}
