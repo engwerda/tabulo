@@ -1,16 +1,16 @@
-import { useState } from "react"
+import { type ReactNode, useState } from "react"
 import type { Insights, Language } from "../../shared/api.ts"
 import { Avatar } from "../Avatar.tsx"
 import { AreaChart } from "../charts/AreaChart.tsx"
 import { BarList } from "../charts/BarList.tsx"
 import { ChartCard } from "../charts/ChartCard.tsx"
-import { MirrorColumns, StackedColumns } from "../charts/columns.tsx"
+import { GroupedColumns, StackedColumns } from "../charts/columns.tsx"
 import { DataTable } from "../charts/DataTable.tsx"
 import { Legend } from "../charts/Legend.tsx"
 import { Meter } from "../charts/Meter.tsx"
 import { Punchcard } from "../charts/Punchcard.tsx"
 import { SegmentedBar } from "../charts/SegmentedBar.tsx"
-import { StatTile } from "../charts/StatTile.tsx"
+import { StatFigure, StatTile } from "../charts/StatTile.tsx"
 import {
   formatCount,
   formatDay,
@@ -18,8 +18,11 @@ import {
   formatMinutes,
   formatPercent,
 } from "../charts/scale.ts"
-import { AttentionList } from "./AttentionList.tsx"
+import { cardClass, Segmented } from "../ui/primitives.tsx"
+import { AllClear, AttentionList } from "./AttentionList.tsx"
+import { type Cell, packRows, type Row } from "./layout.ts"
 import { RepoHealthTable } from "./RepoHealthTable.tsx"
+import { ScrollFade } from "./ScrollFade.tsx"
 import { RANGE_LABELS } from "./summary.ts"
 
 const SERIES = {
@@ -62,97 +65,173 @@ const weekCategories = (weeks: ReadonlyArray<{ readonly weekStart: string }>) =>
 
 const sum = (values: ReadonlyArray<number>) => values.reduce((total, value) => total + value, 0)
 
-const Segmented = <T extends string>({
-  label,
-  options,
-  value,
-  onChange,
+const Headline = ({ insights }: { readonly insights: Insights }) => {
+  const { tiles, weekly } = insights
+  const since = `since ${formatDay(insights.window.start)}`
+  const prior = `vs prior ${RANGE_LABELS[insights.days].long}`
+  const secondary = [
+    <StatFigure
+      key="opened"
+      label="Issues opened"
+      value={tiles.issuesOpened.value}
+      previous={tiles.issuesOpened.previous}
+      goodWhen="neutral"
+      comparison={prior}
+    />,
+    tiles.medianIssueCloseHours.value !== null && (
+      <StatFigure
+        key="close"
+        label="Median time to close"
+        value={tiles.medianIssueCloseHours.value}
+        previous={tiles.medianIssueCloseHours.previous}
+        format={formatHours}
+        goodWhen="down"
+        comparison={prior}
+      />
+    ),
+    tiles.medianPullMergeHours.value !== null && (
+      <StatFigure
+        key="merge"
+        label="Median time to merge"
+        value={tiles.medianPullMergeHours.value}
+        previous={tiles.medianPullMergeHours.previous}
+        format={formatHours}
+        goodWhen="down"
+        comparison={prior}
+      />
+    ),
+    tiles.ciSuccessRate.value !== null && (
+      <StatFigure
+        key="ci"
+        label="CI pass rate"
+        value={tiles.ciSuccessRate.value}
+        previous={tiles.ciSuccessRate.previous}
+        format={formatPercent}
+        goodWhen="up"
+        deltaMode="points"
+        comparison={prior}
+      />
+    ),
+  ].filter((figure) => figure !== false)
+  return (
+    <section aria-label="Headline numbers" className={`${cardClass} overflow-hidden`}>
+      <dl className="grid grid-cols-2 gap-px bg-zinc-200/80 lg:grid-cols-4 dark:bg-zinc-800">
+        <StatTile
+          label="Open issues"
+          value={tiles.openIssues.value}
+          previous={tiles.openIssues.previous}
+          goodWhen="down"
+          deltaMode="absolute"
+          comparison={since}
+          trend={weekly.map((week) => week.openIssues)}
+        />
+        <StatTile
+          label="Open pull requests"
+          value={tiles.openPulls.value}
+          previous={tiles.openPulls.previous}
+          goodWhen="down"
+          deltaMode="absolute"
+          comparison={since}
+        />
+        <StatTile
+          label="Issues closed"
+          value={tiles.issuesClosed.value}
+          previous={tiles.issuesClosed.previous}
+          goodWhen="up"
+          comparison={prior}
+          trend={weekly.map((week) => week.issuesClosed)}
+        />
+        <StatTile
+          label="Pull requests merged"
+          value={tiles.pullsMerged.value}
+          previous={tiles.pullsMerged.previous}
+          goodWhen="up"
+          comparison={prior}
+          trend={weekly.map((week) => week.pullsMerged)}
+        />
+      </dl>
+      <div className="flex flex-col gap-3 border-t border-zinc-200/80 px-4 py-3 sm:flex-row sm:items-end sm:justify-between sm:px-5 dark:border-zinc-800">
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:flex sm:flex-wrap sm:gap-x-10">
+          {secondary}
+        </dl>
+        <p className="text-2xs text-zinc-500 dark:text-zinc-400">Changes {prior}</p>
+      </div>
+    </section>
+  )
+}
+
+const Throughput = ({
+  insights,
+  className,
 }: {
-  readonly label: string
-  readonly options: ReadonlyArray<{ readonly value: T; readonly label: string }>
-  readonly value: T
-  readonly onChange: (value: T) => void
-}) => (
-  <fieldset className="flex rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800">
-    <legend className="sr-only">{label}</legend>
-    {options.map((option) => (
-      <button
-        key={option.value}
-        type="button"
-        aria-pressed={value === option.value}
-        onClick={() => onChange(option.value)}
-        className="rounded-md px-2.5 py-1 text-xs font-medium text-zinc-600 hover:text-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-indigo-500 aria-pressed:bg-white aria-pressed:text-zinc-900 aria-pressed:shadow-xs dark:text-zinc-400 dark:hover:text-zinc-100 dark:aria-pressed:bg-zinc-950 dark:aria-pressed:text-zinc-50"
-      >
-        {option.label}
-      </button>
-    ))}
-  </fieldset>
-)
-
-const Empty = ({ children }: { readonly children: string }) => (
-  <p className="grid flex-1 place-items-center py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
-    {children}
-  </p>
-)
-
-const Throughput = ({ insights }: { readonly insights: Insights }) => {
+  readonly insights: Insights
+  readonly className: string
+}) => {
   const [kind, setKind] = useState<"issues" | "pulls">("issues")
-  const categories = weekCategories(insights.weekly)
-  const up = {
-    label: "Opened",
+  const opened = {
+    label: "opened",
     color: SERIES.opened,
     values: insights.weekly.map((week) =>
       kind === "issues" ? week.issuesOpened : week.pullsOpened,
     ),
   }
-  const down = {
-    label: kind === "issues" ? "Closed" : "Merged",
+  const done = {
+    label: kind === "issues" ? "closed" : "merged",
     color: SERIES.closed,
     values: insights.weekly.map((week) =>
       kind === "issues" ? week.issuesClosed : week.pullsMerged,
     ),
   }
   const noun = kind === "issues" ? "issues" : "pull requests"
+  const [openedTotal, doneTotal] = [sum(opened.values), sum(done.values)]
   return (
     <ChartCard
       title="Throughput"
-      description={`${formatCount(sum(up.values))} ${noun} opened, ${formatCount(sum(down.values))} ${down.label.toLowerCase()}, per week`}
-      className="md:col-span-2"
+      description={`${formatCount(openedTotal)} ${noun} opened, ${formatCount(doneTotal)} ${done.label}`}
+      className={className}
       actions={
         <Segmented
           label="Show"
+          size="sm"
           value={kind}
           onChange={setKind}
           options={[
             { value: "issues", label: "Issues" },
-            { value: "pulls", label: "Pull requests" },
+            {
+              value: "pulls",
+              label: (
+                <>
+                  <span className="max-sm:hidden">Pull requests</span>
+                  <span className="sm:hidden">PRs</span>
+                </>
+              ),
+            },
           ]}
         />
       }
       table={
         <DataTable
-          caption={`${noun} opened and ${down.label.toLowerCase()} per week`}
-          columns={["Week", "Opened", down.label]}
+          caption={`${noun} opened and ${done.label} per week`}
+          columns={["Week", "Opened", kind === "issues" ? "Closed" : "Merged"]}
           rows={insights.weekly.map((week, index) => ({
             key: week.weekStart,
-            cells: [weekTitle(insights.weekly, index), up.values[index], down.values[index]],
+            cells: [weekTitle(insights.weekly, index), opened.values[index], done.values[index]],
           }))}
         />
       }
     >
-      <MirrorColumns
-        categories={categories}
-        up={up}
-        down={down}
-        height={240}
-        ariaLabel={`Weekly ${noun}: ${sum(up.values)} opened and ${sum(down.values)} ${down.label.toLowerCase()} over ${insights.weekly.length} weeks.`}
+      <GroupedColumns
+        categories={weekCategories(insights.weekly)}
+        series={[opened, done]}
+        height={220}
+        ariaLabel={`Weekly ${noun}: ${openedTotal} opened and ${doneTotal} ${done.label} over ${insights.weekly.length} weeks.`}
         tooltipTitle={(index) => weekTitle(insights.weekly, index)}
       />
       <div className="mt-3">
         <Legend
           items={[
-            { label: `Opened (above)`, color: up.color },
-            { label: `${down.label} (below)`, color: down.color },
+            { label: "Opened", color: opened.color },
+            { label: kind === "issues" ? "Closed" : "Merged", color: done.color },
           ]}
         />
       </div>
@@ -160,14 +239,42 @@ const Throughput = ({ insights }: { readonly insights: Insights }) => {
   )
 }
 
-const Backlog = ({ insights }: { readonly insights: Insights }) => {
+const Attention = ({
+  insights,
+  className,
+}: {
+  readonly insights: Insights
+  readonly className: string
+}) => (
+  <ChartCard
+    title="Needs attention"
+    description={`${insights.attention.length} ${insights.attention.length === 1 ? "item" : "items"}: failing CI, overdue milestones, idle work`}
+    className={className}
+  >
+    <AttentionList items={insights.attention} />
+  </ChartCard>
+)
+
+const Backlog = ({
+  insights,
+  className,
+}: {
+  readonly insights: Insights
+  readonly className: string
+}) => {
   const values = insights.weekly.map((week) => week.openIssues)
   const first = values[0] ?? 0
   const last = values.at(-1) ?? 0
+  const change = last - first
   return (
     <ChartCard
       title="Open issues"
-      description={`${formatCount(last)} open now, ${last >= first ? "up" : "down"} ${formatCount(Math.abs(last - first))} since the week of ${formatDay(insights.weekly[0]?.weekStart ?? "")}`}
+      description={`${formatCount(last)} open now, ${
+        change === 0
+          ? "no change"
+          : `${change > 0 ? "up" : "down"} ${formatCount(Math.abs(change))}`
+      } since ${formatDay(insights.weekly[0]?.weekStart ?? "")}`}
+      className={className}
       table={
         <DataTable
           caption="Open issues at the end of each week"
@@ -191,13 +298,20 @@ const Backlog = ({ insights }: { readonly insights: Insights }) => {
   )
 }
 
-const MergeTime = ({ insights }: { readonly insights: Insights }) => {
+const MergeTime = ({
+  insights,
+  className,
+}: {
+  readonly insights: Insights
+  readonly className: string
+}) => {
   const { pullMergeTime } = insights
   const merged = sum(pullMergeTime.buckets.map((bucket) => bucket.count))
   return (
     <ChartCard
       title="Time to merge"
-      description={`${formatCount(merged)} pull requests merged, from opening to merge`}
+      description={`${formatCount(merged)} pull ${merged === 1 ? "request" : "requests"} merged, from opening to merge`}
+      className={className}
       table={
         <DataTable
           caption="Pull requests by time to merge"
@@ -209,47 +323,41 @@ const MergeTime = ({ insights }: { readonly insights: Insights }) => {
         />
       }
     >
-      {merged === 0 ? (
-        <Empty>No pull request was merged in this period.</Empty>
-      ) : (
-        <>
-          <dl className="mb-3 grid grid-cols-3 gap-2">
-            {(
-              [
-                ["Median", pullMergeTime.p50],
-                ["75th pct", pullMergeTime.p75],
-                ["90th pct", pullMergeTime.p90],
-              ] as const
-            ).map(([label, value]) => (
-              <div key={label} className="rounded-lg bg-zinc-50 px-2.5 py-1.5 dark:bg-zinc-800/60">
-                <dt className="text-[10px] font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
-                  {label}
-                </dt>
-                <dd className="text-sm font-semibold">
-                  {value === null ? "–" : formatHours(value)}
-                </dd>
-              </div>
-            ))}
-          </dl>
-          <StackedColumns
-            categories={pullMergeTime.buckets.map((bucket) => ({
-              key: bucket.label,
-              label: bucket.label,
-            }))}
-            series={[
-              {
-                label: "pull requests",
-                color: SERIES.opened,
-                values: pullMergeTime.buckets.map((bucket) => bucket.count),
-              },
-            ]}
-            height={168}
-            capLabels
-            ariaLabel={`Merge time distribution: ${pullMergeTime.buckets.map((bucket) => `${bucket.label} ${bucket.count}`).join(", ")}.`}
-            tooltipTitle={(index) => `Merged in ${pullMergeTime.buckets[index]?.label ?? ""}`}
-          />
-        </>
-      )}
+      <dl className="mb-4 flex gap-6">
+        {(
+          [
+            ["Median", pullMergeTime.p50],
+            ["75th percentile", pullMergeTime.p75],
+            ["90th percentile", pullMergeTime.p90],
+          ] as const
+        ).map(([label, value]) =>
+          value === null ? null : (
+            <div key={label}>
+              <dt className="text-xs text-zinc-500 dark:text-zinc-400">{label}</dt>
+              <dd className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                {formatHours(value)}
+              </dd>
+            </div>
+          ),
+        )}
+      </dl>
+      <StackedColumns
+        categories={pullMergeTime.buckets.map((bucket) => ({
+          key: bucket.label,
+          label: bucket.label,
+        }))}
+        series={[
+          {
+            label: "pull requests",
+            color: SERIES.opened,
+            values: pullMergeTime.buckets.map((bucket) => bucket.count),
+          },
+        ]}
+        height={150}
+        capLabels
+        ariaLabel={`Merge time distribution: ${pullMergeTime.buckets.map((bucket) => `${bucket.label} ${bucket.count}`).join(", ")}.`}
+        tooltipTitle={(index) => `Merged in ${pullMergeTime.buckets[index]?.label ?? ""}`}
+      />
     </ChartCard>
   )
 }
@@ -257,13 +365,16 @@ const MergeTime = ({ insights }: { readonly insights: Insights }) => {
 const CiHealth = ({
   ci,
   days,
+  className,
 }: {
   readonly ci: NonNullable<Insights["ci"]>
   readonly days: Insights["days"]
+  readonly className: string
 }) => (
   <ChartCard
     title="CI health"
     description={`${formatCount(ci.runs)} workflow runs in the last ${RANGE_LABELS[days].long}`}
+    className={className}
     table={
       <DataTable
         caption="Workflow runs per week by outcome"
@@ -275,22 +386,24 @@ const CiHealth = ({
       />
     }
   >
-    <div className="mb-3 flex items-baseline gap-4">
-      <p className="text-3xl font-semibold tracking-tight">
-        {ci.successRate === null ? "–" : formatPercent(ci.successRate)}
-        <span className="ml-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-          pass rate
-        </span>
-      </p>
-      {ci.medianDurationMinutes !== null && (
-        <p className="text-sm font-semibold">
-          {formatMinutes(ci.medianDurationMinutes)}
-          <span className="ml-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-            median run
-          </span>
-        </p>
+    <dl className="mb-4 flex gap-6">
+      {ci.successRate !== null && (
+        <div>
+          <dt className="text-xs text-zinc-500 dark:text-zinc-400">Pass rate</dt>
+          <dd className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+            {formatPercent(ci.successRate)}
+          </dd>
+        </div>
       )}
-    </div>
+      {ci.medianDurationMinutes !== null && (
+        <div>
+          <dt className="text-xs text-zinc-500 dark:text-zinc-400">Median run</dt>
+          <dd className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+            {formatMinutes(ci.medianDurationMinutes)}
+          </dd>
+        </div>
+      )}
+    </dl>
     <StackedColumns
       categories={weekCategories(ci.weekly)}
       series={[
@@ -298,7 +411,7 @@ const CiHealth = ({
         { label: "failed", color: SERIES.failure, values: ci.weekly.map((week) => week.failure) },
         { label: "other", color: SERIES.other, values: ci.weekly.map((week) => week.other) },
       ]}
-      height={150}
+      height={160}
       ariaLabel={`Weekly CI runs: ${sum(ci.weekly.map((week) => week.success))} passed, ${sum(ci.weekly.map((week) => week.failure))} failed.`}
       tooltipTitle={(index) => weekTitle(ci.weekly, index)}
     />
@@ -313,8 +426,8 @@ const CiHealth = ({
     </div>
     {ci.slowestWorkflows.length > 0 && (
       <div className="mt-4 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-        <h3 className="mb-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-          Slowest workflows (median)
+        <h3 className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
+          Slowest workflows, median run
         </h3>
         <ul className="flex flex-col gap-1.5 text-xs">
           {ci.slowestWorkflows.map((workflow) => (
@@ -323,15 +436,18 @@ const CiHealth = ({
               className="flex items-center justify-between gap-3"
             >
               <span className="min-w-0 truncate">
-                <span className="font-medium">{workflow.name}</span>{" "}
+                <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                  {workflow.name}
+                </span>{" "}
                 <span className="text-zinc-500 dark:text-zinc-400">{workflow.repo}</span>
               </span>
               <span className="shrink-0 tabular-nums">
-                <span className="font-semibold">
+                <span className="font-medium text-zinc-800 dark:text-zinc-200">
                   {formatMinutes(workflow.medianDurationMinutes)}
-                </span>{" "}
+                </span>
                 <span className="text-zinc-500 dark:text-zinc-400">
-                  · {formatCount(workflow.runs)} runs
+                  {" · "}
+                  {formatCount(workflow.runs)} runs
                 </span>
               </span>
             </li>
@@ -342,9 +458,8 @@ const CiHealth = ({
   </ChartCard>
 )
 
-const Activity = ({ insights }: { readonly insights: Insights }) => {
-  const total = sum(insights.punchcard.flat())
-  const busiest = insights.punchcard.reduce<{ day: number; hour: number; count: number }>(
+const busiestSlot = (punchcard: Insights["punchcard"]) =>
+  punchcard.reduce<{ day: number; hour: number; count: number }>(
     (best, hours, day) =>
       hours.reduce(
         (inner, count, hour) => (count > inner.count ? { day, hour, count } : inner),
@@ -352,15 +467,21 @@ const Activity = ({ insights }: { readonly insights: Insights }) => {
       ),
     { day: 0, hour: 0, count: 0 },
   )
+
+const Activity = ({
+  insights,
+  className,
+}: {
+  readonly insights: Insights
+  readonly className: string
+}) => {
+  const total = sum(insights.punchcard.flat())
+  const busiest = busiestSlot(insights.punchcard)
   return (
     <ChartCard
       title="When work happens"
-      description={
-        total === 0
-          ? `Issues and pull requests opened, closed, and merged (${insights.tz})`
-          : `Busiest on ${DAY_NAMES[busiest.day]} around ${String(busiest.hour).padStart(2, "0")}:00, ${insights.tz}`
-      }
-      className="md:col-span-2"
+      description={`Busiest on ${DAY_NAMES[busiest.day]} around ${String(busiest.hour).padStart(2, "0")}:00, ${insights.tz}`}
+      className={className}
       table={
         <DataTable
           caption="Events per weekday and hour"
@@ -381,119 +502,137 @@ const Activity = ({ insights }: { readonly insights: Insights }) => {
   )
 }
 
-const IssueAge = ({ insights }: { readonly insights: Insights }) => {
-  const open = sum(insights.issueAge.map((bucket) => bucket.count))
-  return (
-    <ChartCard
-      title="Age of open issues"
-      description={`${formatCount(open)} open issues by time since they were opened`}
-      table={
-        <DataTable
-          caption="Open issues by age"
-          columns={["Age", "Open issues"]}
-          rows={insights.issueAge.map((bucket) => ({
-            key: bucket.label,
-            cells: [bucket.label, bucket.count],
-          }))}
-        />
-      }
-    >
-      {open === 0 ? (
-        <Empty>No open issues.</Empty>
-      ) : (
-        <StackedColumns
-          categories={insights.issueAge.map((bucket) => ({
-            key: bucket.label,
-            label: bucket.label,
-          }))}
-          series={[
-            {
-              label: "open issues",
-              color: SERIES.opened,
-              values: insights.issueAge.map((bucket) => bucket.count),
-            },
-          ]}
-          capLabels
-          height={200}
-          ariaLabel={`Open issues by age: ${insights.issueAge.map((bucket) => `${bucket.label} ${bucket.count}`).join(", ")}.`}
-          tooltipTitle={(index) => `Open for ${insights.issueAge[index]?.label ?? ""}`}
-        />
-      )}
-    </ChartCard>
-  )
-}
-
-const Labels = ({ insights }: { readonly insights: Insights }) => (
-  <ChartCard title="Top labels" description="On open issues">
-    {insights.labels.length === 0 ? (
-      <Empty>No open issue has a label.</Empty>
-    ) : (
-      <BarList
-        ariaLabel="Labels on open issues"
-        rows={insights.labels.map((label) => ({
-          key: label.name,
-          name: label.name,
-          lead: (
-            <span
-              aria-hidden="true"
-              className="size-2.5 shrink-0 rounded-full"
-              style={{ background: label.color }}
-            />
-          ),
-          segments: [{ label: "open issues", value: label.count, color: label.color }],
-          display: formatCount(label.count),
+const IssueAge = ({
+  insights,
+  className,
+}: {
+  readonly insights: Insights
+  readonly className: string
+}) => (
+  <ChartCard
+    title="Age of open issues"
+    description="Time since each open issue was opened"
+    className={className}
+    table={
+      <DataTable
+        caption="Open issues by age"
+        columns={["Age", "Open issues"]}
+        rows={insights.issueAge.map((bucket) => ({
+          key: bucket.label,
+          cells: [bucket.label, bucket.count],
         }))}
       />
-    )}
+    }
+  >
+    <StackedColumns
+      categories={insights.issueAge.map((bucket) => ({ key: bucket.label, label: bucket.label }))}
+      series={[
+        {
+          label: "open issues",
+          color: SERIES.opened,
+          values: insights.issueAge.map((bucket) => bucket.count),
+        },
+      ]}
+      capLabels
+      height={170}
+      ariaLabel={`Open issues by age: ${insights.issueAge.map((bucket) => `${bucket.label} ${bucket.count}`).join(", ")}.`}
+      tooltipTitle={(index) => `Open for ${insights.issueAge[index]?.label ?? ""}`}
+    />
   </ChartCard>
 )
 
-const Contributors = ({ insights }: { readonly insights: Insights }) => (
+const LIST_LIMIT = 7
+
+const Labels = ({
+  insights,
+  className,
+}: {
+  readonly insights: Insights
+  readonly className: string
+}) => (
+  <ChartCard title="Top labels" description="Labels on open issues" className={className}>
+    <BarList
+      ariaLabel="Labels on open issues"
+      limit={LIST_LIMIT}
+      rows={insights.labels.map((label) => ({
+        key: label.name,
+        name: label.name,
+        lead: (
+          <span
+            aria-hidden="true"
+            className="size-2 shrink-0 rounded-full"
+            style={{ background: label.color }}
+          />
+        ),
+        segments: [{ label: "open issues", value: label.count, color: SERIES.opened }],
+        display: formatCount(label.count),
+      }))}
+    />
+  </ChartCard>
+)
+
+const Contributors = ({
+  insights,
+  className,
+}: {
+  readonly insights: Insights
+  readonly className: string
+}) => (
   <ChartCard
     title="Contributors"
     description="Pull requests merged by author, issues closed by assignee"
-    actions={undefined}
+    className={className}
   >
-    {insights.contributors.length === 0 ? (
-      <Empty>Nothing was merged or closed in this period.</Empty>
-    ) : (
-      <>
-        <BarList
-          ariaLabel="Contributors"
-          rows={insights.contributors.map((person) => ({
-            key: person.login,
-            name: person.login,
-            lead: <Avatar url={person.avatarUrl} name={person.login} size="sm" />,
-            segments: [
-              { label: "pull requests merged", value: person.pullsMerged, color: SERIES.opened },
-              { label: "issues closed", value: person.issuesClosed, color: SERIES.closed },
-            ],
-            display: formatCount(person.pullsMerged + person.issuesClosed),
-          }))}
-        />
-        <div className="mt-4">
-          <Legend
-            items={[
-              { label: "Pull requests merged", color: SERIES.opened },
-              { label: "Issues closed", color: SERIES.closed },
-            ]}
-          />
-        </div>
-      </>
-    )}
+    <BarList
+      ariaLabel="Contributors"
+      limit={LIST_LIMIT}
+      rows={insights.contributors.map((person) => ({
+        key: person.login,
+        name: person.login,
+        lead: <Avatar url={person.avatarUrl} name={person.login} size="xs" />,
+        segments: [
+          { label: "pull requests merged", value: person.pullsMerged, color: SERIES.opened },
+          { label: "issues closed", value: person.issuesClosed, color: SERIES.closed },
+        ],
+        display: (
+          <>
+            <span className="text-zinc-900 dark:text-zinc-100">{person.pullsMerged}</span>
+            <span className="text-zinc-500 dark:text-zinc-400"> merged · </span>
+            <span className="text-zinc-900 dark:text-zinc-100">{person.issuesClosed}</span>
+            <span className="text-zinc-500 dark:text-zinc-400"> closed</span>
+          </>
+        ),
+      }))}
+    />
+    <div className="mt-4">
+      <Legend
+        items={[
+          { label: "Pull requests merged", color: SERIES.opened },
+          { label: "Issues closed", color: SERIES.closed },
+        ]}
+      />
+    </div>
   </ChartCard>
 )
 
 const dueFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" })
 
-const Milestones = ({ insights }: { readonly insights: Insights }) => {
+const Milestones = ({
+  insights,
+  className,
+}: {
+  readonly insights: Insights
+  readonly className: string
+}) => {
   const now = Date.parse(insights.generatedAt)
   return (
-    <ChartCard title="Milestones" description="Open milestones, nearest due date first">
-      {insights.milestones.length === 0 ? (
-        <Empty>No open milestones.</Empty>
-      ) : (
-        <ul className="-mr-1 flex max-h-80 flex-col gap-3.5 overflow-y-auto pr-1">
+    <ChartCard
+      title="Milestones"
+      description={`${insights.milestones.length} open, nearest due date first`}
+      className={className}
+    >
+      <ScrollFade className="-mr-2 pr-2 md:max-h-72">
+        <ul className="flex flex-col gap-3.5">
           {insights.milestones.map((milestone) => {
             const total = milestone.openIssues + milestone.closedIssues
             const overdue =
@@ -502,30 +641,36 @@ const Milestones = ({ insights }: { readonly insights: Insights }) => {
               milestone.openIssues > 0
             return (
               <li key={milestone.url}>
-                <div className="mb-1.5 flex items-baseline justify-between gap-3 text-xs">
+                <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
                   <a
                     href={milestone.url}
                     target="_blank"
                     rel="noreferrer"
                     className="min-w-0 truncate hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
                   >
-                    <span className="font-medium">{milestone.title}</span>{" "}
-                    <span className="text-zinc-500 dark:text-zinc-400">{milestone.repo}</span>
-                  </a>
-                  <span className="shrink-0 tabular-nums">
-                    <span className="font-semibold">
-                      {total === 0 ? 0 : Math.round((milestone.closedIssues / total) * 100)}%
+                    <span className="text-zinc-800 dark:text-zinc-200">{milestone.title}</span>{" "}
+                    <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                      {milestone.repo}
                     </span>
-                  </span>
+                  </a>
+                  {total > 0 && (
+                    <span className="shrink-0 text-xs font-medium text-zinc-700 tabular-nums dark:text-zinc-300">
+                      {Math.round((milestone.closedIssues / total) * 100)}%
+                    </span>
+                  )}
                 </div>
                 <Meter
                   value={milestone.closedIssues}
                   max={total}
                   tone={overdue ? "danger" : "accent"}
-                  ariaLabel={`${milestone.title}: ${milestone.closedIssues} of ${total} issues closed`}
+                  ariaLabel={
+                    total === 0
+                      ? `${milestone.title}: no issues yet`
+                      : `${milestone.title}: ${milestone.closedIssues} of ${total} issues closed`
+                  }
                 />
-                <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-                  {milestone.closedIssues} of {total} closed
+                <p className="mt-1 text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
+                  {total === 0 ? "No issues yet" : `${milestone.closedIssues} of ${total} closed`}
                   {milestone.dueOn !== null && (
                     <>
                       {" · "}
@@ -540,7 +685,7 @@ const Milestones = ({ insights }: { readonly insights: Insights }) => {
             )
           })}
         </ul>
-      )}
+      </ScrollFade>
     </ChartCard>
   )
 }
@@ -556,13 +701,11 @@ const Repositories = ({ insights }: { readonly insights: Insights }) => {
   return (
     <ChartCard
       title="Repositories"
-      description="Health from CI, merge time, idle pull requests, backlog growth, activity, and milestones. Expand a row for the reasons."
-      className="md:col-span-2 xl:col-span-3"
+      description="Riskiest first. Expand a row to see what took points off its health score."
     >
       {insights.languages.length > 0 && (
         <div className="mb-5">
           <SegmentedBar
-            variant="tall"
             ariaLabel="Languages across the repositories"
             segments={insights.languages.map((language) => ({
               label: language.name,
@@ -579,7 +722,7 @@ const Repositories = ({ insights }: { readonly insights: Insights }) => {
                   style={{ background: languageColor(language) }}
                 />
                 {language.name}
-                <span className="text-zinc-400 tabular-nums dark:text-zinc-500">
+                <span className="text-zinc-500 tabular-nums dark:text-zinc-400">
                   {Math.round((language.bytes / Math.max(totalBytes, 1)) * 100)}%
                 </span>
               </li>
@@ -592,101 +735,173 @@ const Repositories = ({ insights }: { readonly insights: Insights }) => {
   )
 }
 
+type Card = {
+  readonly key: string
+  /** The card's name and why it is left out, when it has nothing to show in this period. */
+  readonly empty: string | null
+  readonly render: (className: string) => ReactNode
+}
+
+const ROW_CLASS = {
+  wide: "grid gap-4 lg:grid-cols-3",
+  three: "grid gap-4 md:grid-cols-2 lg:grid-cols-3",
+  two: "grid gap-4 md:grid-cols-2",
+  one: "grid gap-4",
+} as const
+
+/** Rows of cards whose spans add up to the row's columns, so the grid never shows a hole. */
+const CardRows = ({ rows }: { readonly rows: ReadonlyArray<Row<Card>> }) =>
+  rows.map((row) => {
+    const shape =
+      row.kind === "wide"
+        ? row.cells.length === 2
+          ? "wide"
+          : "one"
+        : row.cells.length === 3
+          ? "three"
+          : row.cells.length === 2
+            ? "two"
+            : "one"
+    return (
+      <div key={row.cells.map((cell) => cell.item.key).join("+")} className={ROW_CLASS[shape]}>
+        {row.cells.map((cell, index) =>
+          cell.item.render(
+            shape === "wide" && cell.span === 2
+              ? "lg:col-span-2"
+              : shape === "three" && index === 2
+                ? "md:col-span-2 lg:col-span-1"
+                : "",
+          ),
+        )}
+      </div>
+    )
+  })
+
 /** Every card of the insights page, for one loaded payload. */
 export const InsightsDashboard = ({ insights }: { readonly insights: Insights }) => {
-  const { tiles, weekly } = insights
-  const since = `since ${formatDay(insights.window.start)}`
-  const previous = "vs period before"
+  const merged = sum(insights.pullMergeTime.buckets.map((bucket) => bucket.count))
+  const cards: ReadonlyArray<Cell<Card>> = [
+    {
+      span: 2,
+      item: {
+        key: "throughput",
+        empty: null,
+        render: (className) => (
+          <Throughput key="throughput" insights={insights} className={className} />
+        ),
+      },
+    },
+    // An empty attention list is the "All clear" line above the grid instead.
+    ...(insights.attention.length === 0
+      ? []
+      : [
+          {
+            span: 1 as const,
+            item: {
+              key: "attention",
+              empty: null,
+              render: (className: string) => (
+                <Attention key="attention" insights={insights} className={className} />
+              ),
+            },
+          },
+        ]),
+    {
+      span: 1,
+      item: {
+        key: "backlog",
+        empty: null,
+        render: (className) => <Backlog key="backlog" insights={insights} className={className} />,
+      },
+    },
+    {
+      span: 1,
+      item: {
+        key: "merge",
+        empty: merged === 0 ? "Time to merge (nothing merged)" : null,
+        render: (className) => <MergeTime key="merge" insights={insights} className={className} />,
+      },
+    },
+    ...(insights.ci === null
+      ? []
+      : [
+          {
+            span: 1 as const,
+            item: {
+              key: "ci",
+              empty: insights.ci.runs === 0 ? "CI health (no runs)" : null,
+              render: (className: string) =>
+                insights.ci === null ? null : (
+                  <CiHealth key="ci" ci={insights.ci} days={insights.days} className={className} />
+                ),
+            },
+          },
+        ]),
+    {
+      span: 2,
+      item: {
+        key: "activity",
+        empty: sum(insights.punchcard.flat()) === 0 ? "When work happens (no activity)" : null,
+        render: (className) => (
+          <Activity key="activity" insights={insights} className={className} />
+        ),
+      },
+    },
+    {
+      span: 1,
+      item: {
+        key: "age",
+        empty:
+          sum(insights.issueAge.map((bucket) => bucket.count)) === 0
+            ? "Age of open issues (none open)"
+            : null,
+        render: (className) => <IssueAge key="age" insights={insights} className={className} />,
+      },
+    },
+    {
+      span: 1,
+      item: {
+        key: "labels",
+        empty: insights.labels.length === 0 ? "Top labels (no labeled open issues)" : null,
+        render: (className) => <Labels key="labels" insights={insights} className={className} />,
+      },
+    },
+    {
+      span: 1,
+      item: {
+        key: "contributors",
+        empty:
+          insights.contributors.length === 0 ? "Contributors (nothing merged or closed)" : null,
+        render: (className) => (
+          <Contributors key="contributors" insights={insights} className={className} />
+        ),
+      },
+    },
+    {
+      span: 1,
+      item: {
+        key: "milestones",
+        empty: insights.milestones.length === 0 ? "Milestones (none open)" : null,
+        render: (className) => (
+          <Milestones key="milestones" insights={insights} className={className} />
+        ),
+      },
+    },
+  ]
+  const shown = cards.filter((cell) => cell.item.empty === null)
+  const notes = cards.flatMap((cell) => (cell.item.empty === null ? [] : [cell.item.empty]))
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <StatTile
-          label="Open issues"
-          value={tiles.openIssues.value}
-          previous={tiles.openIssues.previous}
-          goodWhen="down"
-          deltaMode="absolute"
-          comparison={since}
-          trend={weekly.map((week) => week.openIssues)}
-        />
-        <StatTile
-          label="Open pull requests"
-          value={tiles.openPulls.value}
-          previous={tiles.openPulls.previous}
-          goodWhen="down"
-          deltaMode="absolute"
-          comparison={since}
-        />
-        <StatTile
-          label="Issues closed"
-          value={tiles.issuesClosed.value}
-          previous={tiles.issuesClosed.previous}
-          goodWhen="up"
-          comparison={previous}
-          trend={weekly.map((week) => week.issuesClosed)}
-        />
-        <StatTile
-          label="Pull requests merged"
-          value={tiles.pullsMerged.value}
-          previous={tiles.pullsMerged.previous}
-          goodWhen="up"
-          comparison={previous}
-          trend={weekly.map((week) => week.pullsMerged)}
-        />
-        <StatTile
-          label="Issues opened"
-          value={tiles.issuesOpened.value}
-          previous={tiles.issuesOpened.previous}
-          goodWhen="neutral"
-          comparison={previous}
-          trend={weekly.map((week) => week.issuesOpened)}
-        />
-        <StatTile
-          label="Median time to close"
-          value={tiles.medianIssueCloseHours.value}
-          previous={tiles.medianIssueCloseHours.previous}
-          format={formatHours}
-          goodWhen="down"
-          comparison={previous}
-        />
-        <StatTile
-          label="Median time to merge"
-          value={tiles.medianPullMergeHours.value}
-          previous={tiles.medianPullMergeHours.previous}
-          format={formatHours}
-          goodWhen="down"
-          comparison={previous}
-        />
-        <StatTile
-          label="CI pass rate"
-          value={tiles.ciSuccessRate.value}
-          previous={tiles.ciSuccessRate.previous}
-          format={formatPercent}
-          goodWhen="up"
-          deltaMode="points"
-          comparison={
-            tiles.ciSuccessRate.value === null && insights.ci === null ? "no CI data" : previous
-          }
-        />
-      </div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-flow-row-dense xl:grid-cols-3">
-        <Throughput insights={insights} />
-        <ChartCard
-          title="Needs attention"
-          description="Failing CI, overdue milestones, and idle work"
-        >
-          <AttentionList items={insights.attention} />
-        </ChartCard>
-        <Backlog insights={insights} />
-        <MergeTime insights={insights} />
-        {insights.ci !== null && <CiHealth ci={insights.ci} days={insights.days} />}
-        <Activity insights={insights} />
-        <IssueAge insights={insights} />
-        <Labels insights={insights} />
-        <Contributors insights={insights} />
-        <Milestones insights={insights} />
-        <Repositories insights={insights} />
-      </div>
+      <Headline insights={insights} />
+      {insights.attention.length === 0 && <AllClear />}
+      <CardRows rows={packRows(shown)} />
+      {notes.length > 0 && (
+        <p className="px-1 text-xs text-zinc-500 dark:text-zinc-400">
+          Nothing to show in this period for{" "}
+          {notes.length === 1 ? notes[0] : `${notes.slice(0, -1).join(", ")} or ${notes.at(-1)}`}.
+        </p>
+      )}
+      <Repositories insights={insights} />
     </div>
   )
 }

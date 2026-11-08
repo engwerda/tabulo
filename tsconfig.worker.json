@@ -13,6 +13,7 @@
     "src/client/board/board-view.ts",
     "src/client/charts/scale.ts",
     "src/client/insights/summary.ts",
+    "src/client/insights/layout.ts",
     "src/client/epics/epics-view.ts",
     "src/client/palette/fuzzy.ts",
     "src/client/palette/rank.ts",

@@ -1,15 +1,20 @@
 import { Readout, Tooltip } from "./Tooltip.tsx"
 import { useActiveIndex } from "./use-active-index.ts"
-import { useWidth } from "./use-width.ts"
+import { useEntrance } from "./use-entrance.ts"
+import { useSize } from "./use-width.ts"
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 const LEFT = 32
 const BOTTOM = 18
-const ROW = 26
+const MIN_ROW = 26
+const MAX_ROW = 36
 
 const hourLabel = (hour: number) => `${String(hour).padStart(2, "0")}:00`
 
-/** Events by weekday and hour: each dot's area grows with its count. */
+/**
+ * Events by weekday and hour: each dot's area grows with its count. The rows grow, up to a
+ * limit, to fill a taller card.
+ */
 export const Punchcard = ({
   grid,
   ariaLabel,
@@ -20,20 +25,24 @@ export const Punchcard = ({
   readonly ariaLabel: string
   readonly unit?: string
 }) => {
-  const [ref, width] = useWidth<HTMLDivElement>()
+  const [ref, size] = useSize<HTMLDivElement>()
+  const { width } = size
+  const row = Math.min(MAX_ROW, Math.max(MIN_ROW, (size.height - BOTTOM) / 7))
+  const height = 7 * row + BOTTOM
   const column = Math.max(0, (width - LEFT) / 24)
-  const height = 7 * ROW + BOTTOM
   const max = Math.max(1, ...grid.flat())
-  const radiusMax = Math.min(column, ROW) / 2 - 1.5
+  const radiusMax = Math.min(column, MIN_ROW) / 2 - 1.5
   const radius = (count: number) =>
     count === 0 ? 1.25 : Math.max(2, Math.sqrt(count / max) * radiusMax)
   const cx = (hour: number) => LEFT + hour * column + column / 2
-  const cy = (day: number) => day * ROW + ROW / 2
+  const top = Math.max(0, (size.height - height) / 2)
+  const cy = (day: number) => top + day * row + row / 2
+  const play = useEntrance(`punchcard:${grid.map((hours) => hours.join(",")).join(";")}`)
   const { active, handlers } = useActiveIndex(
     7 * 24,
     (x, y) => {
       const hour = Math.floor((x - LEFT) / column)
-      const day = Math.floor(y / ROW)
+      const day = Math.floor((y - top) / row)
       return hour >= 0 && hour < 24 && day >= 0 && day < 7 ? day * 24 + hour : null
     },
     { rowStep: 24 },
@@ -49,17 +58,17 @@ export const Punchcard = ({
         }
 
   return (
-    <div ref={ref} className="relative" style={{ height }}>
+    <div ref={ref} className="relative flex-1" style={{ minHeight: 7 * MIN_ROW + BOTTOM }}>
       {width > 0 && (
         <svg
           width={width}
-          height={height}
+          height={Math.max(height, size.height)}
           aria-label={ariaLabel}
-          className="block touch-pan-y overflow-visible focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-500"
+          className="absolute inset-0 block touch-pan-y overflow-visible focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-500"
           {...handlers}
         >
           {DAYS.map((day, index) => (
-            <text key={day} x={0} y={cy(index)} dy="0.32em" className="fill-chart-axis text-[10px]">
+            <text key={day} x={0} y={cy(index)} dy="0.32em" className="fill-chart-axis text-2xs">
               {day}
             </text>
           ))}
@@ -67,14 +76,14 @@ export const Punchcard = ({
             <text
               key={hour}
               x={cx(hour)}
-              y={height - 4}
+              y={top + height - 4}
               textAnchor="middle"
-              className="fill-chart-axis text-[10px] tabular-nums"
+              className="fill-chart-axis text-2xs tabular-nums"
             >
               {hourLabel(hour)}
             </text>
           ))}
-          <g className="chart-fade">
+          <g className={play ? "chart-fade" : undefined}>
             {grid.map((hours, day) =>
               hours.map((count, hour) => (
                 <circle

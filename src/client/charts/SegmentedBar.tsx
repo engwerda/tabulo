@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useEntrance } from "./use-entrance.ts"
 
 export type Segment = { readonly label: string; readonly value: number; readonly color: string }
 
@@ -22,11 +23,14 @@ export const SegmentedBar = ({
   const total = segments.reduce((sum, segment) => sum + segment.value, 0)
   const shown = segments.filter((segment) => segment.value > 0)
   const activeSegment = shown.find((segment) => segment.label === active)
+  const play = useEntrance(
+    `segments:${shown.map((segment) => `${segment.label}=${segment.value}`).join(",")}`,
+  )
   return (
     <div className="relative">
       <ul
         aria-label={ariaLabel}
-        className={`chart-grow-x flex gap-0.5 ${variant === "tall" ? "h-7" : "h-2"}`}
+        className={`${play ? "chart-grow-x" : ""} flex gap-0.5 ${variant === "tall" ? "h-7" : "h-2"}`}
       >
         {shown.map((segment) => {
           const share = segment.value / Math.max(total, 1)
@@ -37,7 +41,7 @@ export const SegmentedBar = ({
               onPointerLeave={() => setActive(null)}
               className={`flex min-w-0 items-center overflow-hidden ${
                 variant === "tall"
-                  ? "rounded px-2 text-[11px] font-semibold text-white"
+                  ? "rounded px-2 text-2xs font-semibold text-white"
                   : "rounded-full"
               } ${active !== null && active !== segment.label ? "opacity-60" : ""}`}
               style={{ flexGrow: segment.value, flexBasis: 0, background: segment.color }}
