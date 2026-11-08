@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 
-export const Label = Schema.Struct({ name: Schema.String, color: Schema.String })
+export const Label = Schema.Struct({ id: Schema.Number, name: Schema.String, color: Schema.String })
 
 export const DashboardItem = Schema.Struct({
   kind: Schema.Literals(["issue", "pull"]),
@@ -105,6 +105,10 @@ export const BoardCard = Schema.Struct({
   labels: Schema.Array(BoardLabel),
   assignees: Schema.Array(Schema.Struct({ login: Schema.String, avatarUrl: Schema.String })),
   milestone: Schema.NullOr(Schema.String),
+  /** The issue's poster. */
+  author: Schema.Struct({ login: Schema.String, avatarUrl: Schema.String }),
+  comments: Schema.Number,
+  createdAt: Schema.String,
   updatedAt: Schema.String,
   closedAt: Schema.NullOr(Schema.String),
   /** The key of the column the card is in. */
@@ -151,6 +155,97 @@ export const MoveCardResult = Schema.Struct({
 })
 export type MoveCardResult = typeof MoveCardResult.Type
 
+/** A new issue created from a board column, in that column. */
+export const CreateCardRequest = Schema.Struct({
+  org: Schema.String,
+  repo: Schema.String,
+  title: Schema.String.check(Schema.isTrimmed(), Schema.isNonEmpty(), Schema.isMaxLength(255)),
+  /** A Todo or Status column key; Done is refused. */
+  column: Schema.String,
+})
+export type CreateCardRequest = typeof CreateCardRequest.Type
+
+export const CreateCardResult = Schema.Struct({
+  /** The new card, ranked at the top of its column. */
+  card: BoardCard,
+  /** False when Forgejo created the issue but Tabulo could not store the card's rank. */
+  orderSaved: Schema.Boolean,
+})
+export type CreateCardResult = typeof CreateCardResult.Type
+
+/** A comment on an issue, rendered by Forgejo. */
+export const CardComment = Schema.Struct({
+  id: Schema.Number,
+  author: Schema.Struct({ login: Schema.String, avatarUrl: Schema.String }),
+  createdAt: Schema.String,
+  bodyHtml: Schema.String,
+})
+export type CardComment = typeof CardComment.Type
+
+/** What a card's detail panel shows beyond the card itself. */
+export const CardDetail = Schema.Struct({
+  key: Schema.String,
+  /** The description as Forgejo renders it; empty when the issue has none. */
+  bodyHtml: Schema.String,
+  /** The latest comments, oldest first; at most 20. */
+  comments: Schema.Array(CardComment),
+  /** How many comments the issue has, which can exceed `comments.length`. */
+  commentCount: Schema.Number,
+})
+export type CardDetail = typeof CardDetail.Type
+
+/** What a card's labels, milestone, and assignees can be set to in one repository. */
+export const IssueOptions = Schema.Struct({
+  /** Organization and repository labels, without status column labels or archived labels. */
+  labels: Schema.Array(BoardLabel),
+  /** The repository's open milestones. */
+  milestones: Schema.Array(Schema.Struct({ id: Schema.Number, title: Schema.String })),
+  /** Users Forgejo lets be assigned to the repository's issues. */
+  assignees: Schema.Array(Schema.Struct({ login: Schema.String, avatarUrl: Schema.String })),
+})
+export type IssueOptions = typeof IssueOptions.Type
+
+const IssueRef = {
+  org: Schema.String,
+  repo: Schema.String,
+  number: Schema.Int.check(Schema.isGreaterThan(0)),
+}
+
+/** Adds or removes one assignee, keeping the others. */
+export const SetAssigneeRequest = Schema.Struct({
+  ...IssueRef,
+  login: Schema.String,
+  assigned: Schema.Boolean,
+})
+export type SetAssigneeRequest = typeof SetAssigneeRequest.Type
+
+/** Adds or removes one label that is not a status column label, keeping the others. */
+export const SetLabelRequest = Schema.Struct({
+  ...IssueRef,
+  labelId: Schema.Int.check(Schema.isGreaterThan(0)),
+  present: Schema.Boolean,
+})
+export type SetLabelRequest = typeof SetLabelRequest.Type
+
+/** Sets the milestone, or clears it with null. */
+export const SetMilestoneRequest = Schema.Struct({
+  ...IssueRef,
+  milestoneId: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
+})
+export type SetMilestoneRequest = typeof SetMilestoneRequest.Type
+
+/** The card after a label, milestone, or assignee change, as the board shows it. */
+export const CardUpdateResult = Schema.Struct({ card: BoardCard })
+export type CardUpdateResult = typeof CardUpdateResult.Type
+
+export const AddCommentRequest = Schema.Struct({
+  ...IssueRef,
+  body: Schema.String.check(Schema.isTrimmed(), Schema.isNonEmpty(), Schema.isMaxLength(65_535)),
+})
+export type AddCommentRequest = typeof AddCommentRequest.Type
+
+export const AddCommentResult = Schema.Struct({ comment: CardComment })
+export type AddCommentResult = typeof AddCommentResult.Type
 // Insights and activity.
 
 export const INSIGHT_DAYS = [30, 90, 180, 365] as const

@@ -1,6 +1,14 @@
 // Forgejo API payloads in the shape Forgejo 17 returns, including fields Tabulo ignores.
 
-import type { FakeIssue, FakeLabel, FakeOrg, FakeRepo } from "./fake-forgejo.ts"
+import type {
+  FakeComment,
+  FakeIssue,
+  FakeLabel,
+  FakeMilestone,
+  FakeOrg,
+  FakeRepo,
+  FakeUser,
+} from "./fake-forgejo.ts"
 
 const repository = (owner: string, name: string) => ({
   id: 3,
@@ -126,6 +134,48 @@ export const outsider = {
   full_name: "Linus Outsider",
   avatar_url: "https://forgejo.example/avatars/linus",
 }
+
+export const ada = {
+  id: 7,
+  login: "ada",
+  full_name: "Ada Lovelace",
+  avatar_url: "https://forgejo.example/avatars/ada",
+}
+
+export const milestone = (
+  id: number,
+  title: string,
+  state: FakeMilestone["state"] = "open",
+): FakeMilestone => ({
+  id,
+  title,
+  description: "",
+  state,
+  open_issues: 0,
+  closed_issues: 0,
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-01T00:00:00Z",
+  closed_at: null,
+  due_on: null,
+})
+
+/** A comment on `acme/<repo>#<number>`. */
+export const issueComment = (
+  repo: string,
+  number: number,
+  id: number,
+  user: FakeUser,
+  body: string,
+  createdAt: string,
+): FakeComment => ({
+  id,
+  html_url: `https://forgejo.example/acme/${repo}/issues/${number}#issuecomment-${id}`,
+  issue_url: `https://forgejo.example/acme/${repo}/issues/${number}`,
+  user,
+  body,
+  created_at: createdAt,
+  updated_at: createdAt,
+})
 
 export const boardIssue = (
   repo: string,

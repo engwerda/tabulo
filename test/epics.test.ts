@@ -191,7 +191,9 @@ describe("GET /api/epics", () => {
       { _tag: "Unavailable", ref: "acme/forbidden#8" },
     ])
     expect(data.epics.find(({ number }) => number === 12)?.progress.total).toBe(0)
-    expect(data.failedRepos).toEqual([{ repo: "broken", message: "Forgejo returned HTTP 500" }])
+    expect(data.failedRepos).toEqual([
+      { repo: "broken", message: "Forgejo had a problem (HTTP 500); try again in a moment" },
+    ])
     expect(data.incomplete).toEqual({ listings: [], children: 0 })
     expect(forgejo.requests.filter(({ path }) => path.endsWith("/issues/2"))).toHaveLength(0)
     expect(forgejo.requests.filter(({ path }) => path.endsWith("/issues/3"))).toHaveLength(1)

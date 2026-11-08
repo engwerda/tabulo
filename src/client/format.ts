@@ -20,25 +20,54 @@ export const relativeTime = (iso: string, now: number = Date.now()) => {
 export const absoluteTime = (iso: string) =>
   new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
 
-/**
- * White when it reaches WCAG AA contrast (4.5:1) on `hex`, otherwise black. Near the crossover
- * both pass and black wins by a hair, but white reads better on saturated reds and greens.
- */
-export const textColorOn = (hex: string) => {
-  const digits = /^#?([0-9a-f]{6})$/i.exec(hex)?.[1]
-  if (digits === undefined) return "#000000"
-  const channel = (offset: number) => {
-    const value = Number.parseInt(digits.slice(offset, offset + 2), 16) / 255
-    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+/** "Ada Lovelace" gives "AL"; a single word such as a login gives its first two letters. */
+export const initials = (name: string) => {
+  const parts = name.split(/\s+/).filter(Boolean)
+  if (parts.length === 1) {
+    const word = parts[0] ?? ""
+    return `${word.slice(0, 1).toUpperCase()}${word.slice(1, 2).toLowerCase()}`
   }
-  const luminance = 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4)
-  return 1.05 / (luminance + 0.05) >= 4.5 ? "#ffffff" : "#000000"
-}
-
-export const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .filter(Boolean)
+  return parts
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join("")
+}
+
+const SHORT_UNITS: ReadonlyArray<[string, number]> = [
+  ["y", 365 * 24 * 3600],
+  ["mo", 30 * 24 * 3600],
+  ["w", 7 * 24 * 3600],
+  ["d", 24 * 3600],
+  ["h", 3600],
+  ["m", 60],
+]
+
+/** "3d", "5h": a compact age for dense places such as card footers. */
+export const shortAge = (iso: string, now: number = Date.now()) => {
+  const seconds = Math.max(0, (now - new Date(iso).getTime()) / 1000)
+  for (const [unit, size] of SHORT_UNITS) {
+    if (seconds >= size) return `${Math.floor(seconds / size)}${unit}`
+  }
+  return "now"
+}
+
+/** Distinct hues, ordered so that neighbours in the list never look alike. */
+export const REPO_COLORS = [
+  "#6366f1",
+  "#f59e0b",
+  "#10b981",
+  "#ec4899",
+  "#0ea5e9",
+  "#f97316",
+  "#8b5cf6",
+  "#84cc16",
+  "#ef4444",
+  "#14b8a6",
+]
+
+/** A stable color per name, for avatars and repositories outside a board's palette. */
+export const repoColor = (name: string) => {
+  let hash = 0
+  for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+  return REPO_COLORS[hash % REPO_COLORS.length] ?? "#6366f1"
+}

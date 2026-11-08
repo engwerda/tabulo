@@ -15,7 +15,9 @@ export const ForgejoIssue = Schema.Struct({
   title: Schema.String,
   html_url: Schema.String,
   state: Schema.Literals(["open", "closed"]),
-  labels: Schema.Array(Schema.Struct({ name: Schema.String, color: Schema.String })),
+  labels: Schema.Array(
+    Schema.Struct({ id: Schema.Number, name: Schema.String, color: Schema.String }),
+  ),
   user: Schema.Struct({ login: Schema.String }),
   updated_at: Schema.String,
   comments: Schema.Number,
@@ -56,6 +58,23 @@ export const ForgejoLabel = Schema.Struct({
 })
 export type ForgejoLabel = typeof ForgejoLabel.Type
 
+/** A user where Forgejo names one beside other data: a poster, an assignee, an author. */
+export const ForgejoPerson = Schema.Struct({ login: Schema.String, avatar_url: Schema.String })
+export type ForgejoPerson = typeof ForgejoPerson.Type
+
+/** A milestone as an issue names it. */
+export const ForgejoMilestoneRef = Schema.Struct({ id: Schema.Number, title: Schema.String })
+export type ForgejoMilestoneRef = typeof ForgejoMilestoneRef.Type
+
+/** A milestone as the repository's milestone listing returns it. */
+export const ForgejoMilestone = Schema.Struct({
+  ...ForgejoMilestoneRef.fields,
+  open_issues: Schema.Number,
+  closed_issues: Schema.Number,
+  due_on: Schema.optionalKey(Schema.NullOr(Schema.String)),
+})
+export type ForgejoMilestone = typeof ForgejoMilestone.Type
+
 /** An issue as the repository issue endpoints return it. */
 export const ForgejoRepoIssue = Schema.Struct({
   number: Schema.Number,
@@ -63,10 +82,11 @@ export const ForgejoRepoIssue = Schema.Struct({
   html_url: Schema.String,
   state: Schema.Literals(["open", "closed"]),
   labels: Schema.Array(ForgejoLabel),
-  assignees: Schema.NullOr(
-    Schema.Array(Schema.Struct({ login: Schema.String, avatar_url: Schema.String })),
-  ),
-  milestone: Schema.NullOr(Schema.Struct({ title: Schema.String })),
+  assignees: Schema.NullOr(Schema.Array(ForgejoPerson)),
+  milestone: Schema.NullOr(ForgejoMilestoneRef),
+  user: ForgejoPerson,
+  comments: Schema.Number,
+  created_at: Schema.String,
   updated_at: Schema.String,
   closed_at: Schema.NullOr(Schema.String),
   pull_request: Schema.optionalKey(Schema.NullOr(Schema.Struct({}))),
@@ -79,6 +99,16 @@ export const ForgejoEpicIssue = Schema.Struct({
   body: Schema.NullOr(Schema.String),
 })
 export type ForgejoEpicIssue = typeof ForgejoEpicIssue.Type
+/** The description of an issue, which only a card's detail reads. */
+export const ForgejoIssueBody = Schema.Struct({ body: Schema.String })
+
+export const ForgejoComment = Schema.Struct({
+  id: Schema.Number,
+  user: ForgejoPerson,
+  body: Schema.String,
+  created_at: Schema.String,
+})
+export type ForgejoComment = typeof ForgejoComment.Type
 
 export const ForgejoOrg = Schema.Struct({
   name: Schema.String,
@@ -156,15 +186,6 @@ export const ForgejoActionRunPage = Schema.Struct({
 /** Bytes of code per language. */
 export const ForgejoLanguages = Schema.Record(Schema.String, Schema.Number)
 export type ForgejoLanguages = typeof ForgejoLanguages.Type
-
-export const ForgejoMilestone = Schema.Struct({
-  id: Schema.Number,
-  title: Schema.String,
-  open_issues: Schema.Number,
-  closed_issues: Schema.Number,
-  due_on: Schema.optionalKey(Schema.NullOr(Schema.String)),
-})
-export type ForgejoMilestone = typeof ForgejoMilestone.Type
 
 /** Contributions in one 15-minute slot starting at `timestamp`, in Unix seconds. */
 export const ForgejoHeatmapEntry = Schema.Struct({

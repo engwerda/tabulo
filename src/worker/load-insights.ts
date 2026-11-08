@@ -90,7 +90,7 @@ export const loadInsights = (token: AccessToken, query: InsightsQuery, pool: Pag
           {
             repo: forgejo.insightRepo(token, ref),
             languages: forgejo.repoLanguages(token, ref),
-            milestones: forgejo.openMilestones(token, ref, budget),
+            milestones: forgejo.openMilestonesListing(token, ref, budget),
             open: forgejo.repoIssuesAndPulls(token, ref, { state: "open" }, budget),
             closed: forgejo.repoIssuesAndPulls(
               token,

@@ -52,10 +52,11 @@ export class BoardRequestInvalid extends Schema.TaggedError<BoardRequestInvalid>
   { message: Schema.String },
 ) {}
 
-/** Tabulo refuses the move before writing anything: the viewer may not arrange this card. */
-export class MoveForbidden extends Schema.TaggedError<MoveForbidden>()("MoveForbidden", {
-  message: Schema.String,
-}) {}
+/** Tabulo refuses a board write before sending it: the viewer may not change this card. */
+export class BoardWriteForbidden extends Schema.TaggedError<BoardWriteForbidden>()(
+  "BoardWriteForbidden",
+  { message: Schema.String },
+) {}
 
 /** The neighbours of a move do not match the stored order: the mover's board is out of date. */
 export class BoardChanged extends Schema.TaggedError<BoardChanged>()("BoardChanged", {}) {}
@@ -98,16 +99,16 @@ export const FORGEJO_READ_ERRORS = [
 export const describeForgejoError = (error: ForgejoError) => {
   switch (error._tag) {
     case "ForgejoUnauthorized":
-      return "Forgejo returned HTTP 401"
+      return "Forgejo did not accept your sign-in"
     case "ForgejoForbidden":
-      return "Forgejo returned HTTP 403"
+      return "Forgejo did not allow this"
     case "ForgejoNotFound":
-      return "Forgejo returned HTTP 404"
+      return "Not found in Forgejo, or you cannot see it"
     case "ForgejoRequestFailed":
-      return `Forgejo returned HTTP ${error.status}`
+      return `Forgejo had a problem (HTTP ${error.status}); try again in a moment`
     case "ForgejoUnreachable":
-      return "Forgejo is unreachable"
+      return "Forgejo did not respond; try again in a moment"
     case "ForgejoDecodeFailed":
-      return "Forgejo sent an unexpected response"
+      return "Forgejo sent an answer Tabulo does not understand"
   }
 }

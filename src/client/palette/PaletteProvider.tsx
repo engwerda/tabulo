@@ -55,7 +55,11 @@ export const PaletteProvider = ({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || event.repeat) return
       const current = latest.current
-      const typing = isTyping(event.target) || current.surface !== "none"
+      // A page's own modal, such as the board's shortcut list, owns plain keys while it is open.
+      const typing =
+        isTyping(event.target) ||
+        current.surface !== "none" ||
+        document.querySelector("dialog[open]") !== null
       const result = resolveKey(event, pending.current, event.timeStamp, typing)
       pending.current = result.pending
       if (result.shortcut === null) return

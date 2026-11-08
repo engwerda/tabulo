@@ -19,7 +19,7 @@ export const toDashboardItem = (issue: ForgejoIssue): DashboardItem => ({
   title: issue.title,
   url: issue.html_url,
   state: issue.state,
-  labels: issue.labels.map(({ name, color }) => ({ name, color: labelHexColor(color) })),
+  labels: issue.labels.map(({ id, name, color }) => ({ id, name, color: labelHexColor(color) })),
   author: issue.user.login,
   updatedAt: issue.updated_at,
   comments: issue.comments,

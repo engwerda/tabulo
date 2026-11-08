@@ -61,8 +61,8 @@ describe("GET /api/dashboard", () => {
             url: "https://forgejo.example/acme/api/pulls/42",
             state: "open",
             labels: [
-              { name: "Status/In Review", color: "#fbca04" },
-              { name: "Kind/Feature", color: "#0e8a16" },
+              { id: 1, name: "Status/In Review", color: "#fbca04" },
+              { id: 2, name: "Kind/Feature", color: "#0e8a16" },
             ],
             author: "grace",
             updatedAt: "2026-11-06T16:30:00Z",
@@ -88,7 +88,10 @@ describe("GET /api/dashboard", () => {
           },
         ],
       },
-      mentioned: { _tag: "Failed", message: "Forgejo returned HTTP 500" },
+      mentioned: {
+        _tag: "Failed",
+        message: "Forgejo had a problem (HTTP 500); try again in a moment",
+      },
       created: {
         _tag: "Loaded",
         total: 1,

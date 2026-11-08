@@ -39,15 +39,18 @@ major version.
 - `SessionStore` owns token encryption. Nothing else reads or writes token columns.
 - `boardLayout` in `src/worker/board.ts` is the one place that decides an issue's board column.
   `CardRanks` in `src/worker/card-ranks.ts` owns the `card_ranks` table.
-- Board writes go through `moveCard`, which checks organization membership before any
-  Forgejo write and stores ranks only after the writes succeed.
+- Board writes live in `src/worker/board.ts`. `moveCard` and `createCard` check organization
+  membership before any Forgejo write; the card edits (`setAssignee`, `setLabel`,
+  `setMilestone`, `addComment`) refuse archived repositories and let Forgejo decide the rest.
+  Ranks are stored only after the writes succeed.
 - `src/shared/card-order.ts` holds the card order rules (sorting and the rank of a drop) that
   the server and the client's optimistic update share.
 - `src/client/board/board-view.ts` holds the client's pure board logic (column order, filters,
   drop neighbours). The worker tsconfig includes it so tests can import it.
 - `src/client/scope/` owns the organization scope of the org-level views: `ORG_VIEWS` in
   `views.ts` lists them, `useRepoSelection` owns `?repos=` and the remembered selection, and
-  `ScopeBar` is each view's heading. A view added to `ORG_VIEWS` appears in the header,
+  `ScopeBar` is the heading of insights and epics, and the board's header composes the same
+  `OrgSwitcher` and `RepoPicker`. A view added to `ORG_VIEWS` appears in the header,
   and `ORG_VIEW_PAGES` in `src/client/App.tsx` then requires its page.
 - `src/client/theme.ts` owns the light, dark, and system theme. `public/theme-init.js` applies
   it before first paint with the same storage key. Chart colors are the `--chart-*` properties

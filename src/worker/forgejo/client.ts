@@ -12,16 +12,19 @@ import {
 import {
   type ForgejoActionRun,
   ForgejoActionRunPage,
+  ForgejoComment,
   ForgejoEpicIssue,
   ForgejoHeatmapEntry,
   ForgejoInsightIssue,
   ForgejoInsightRepo,
   ForgejoIssue,
+  ForgejoIssueBody,
   ForgejoLabel,
   ForgejoLanguages,
   ForgejoMilestone,
   ForgejoNotification,
   ForgejoOrg,
+  ForgejoPerson,
   ForgejoRepo,
   ForgejoRepoIssue,
   ForgejoUser,
@@ -165,6 +168,73 @@ export class ForgejoClient extends Context.Service<
       repo: RepoRef,
       number: number,
     ) => Effect.Effect<ForgejoRepoIssue, ForgejoError>
+    /** The issue's description as Markdown, empty when it has none. */
+    readonly issueBody: (
+      token: AccessToken,
+      repo: RepoRef,
+      number: number,
+    ) => Effect.Effect<string, ForgejoError>
+    /** Every comment of the issue, oldest first. Forgejo does not page this list. */
+    readonly issueComments: (
+      token: AccessToken,
+      repo: RepoRef,
+      number: number,
+    ) => Effect.Effect<ReadonlyArray<ForgejoComment>, ForgejoError>
+    readonly createComment: (
+      token: AccessToken,
+      repo: RepoRef,
+      number: number,
+      body: string,
+    ) => Effect.Effect<ForgejoComment, ForgejoError>
+    /** The repository's own labels, without the organization's. */
+    readonly repoLabels: (
+      token: AccessToken,
+      repo: RepoRef,
+    ) => Effect.Effect<ReadonlyArray<ForgejoLabel>, ForgejoError>
+    readonly openMilestones: (
+      token: AccessToken,
+      repo: RepoRef,
+    ) => Effect.Effect<ReadonlyArray<ForgejoMilestone>, ForgejoError>
+    /** The users Forgejo lets be assigned to the repository's issues. Not paged. */
+    readonly repoAssignees: (
+      token: AccessToken,
+      repo: RepoRef,
+    ) => Effect.Effect<ReadonlyArray<ForgejoPerson>, ForgejoError>
+    /**
+     * Creates an issue as the token's user. Forgejo drops `labelIds` without an error when
+     * that user cannot write the repository's issues.
+     */
+    readonly createIssue: (
+      token: AccessToken,
+      repo: RepoRef,
+      issue: { readonly title: string; readonly labelIds: ReadonlyArray<number> },
+    ) => Effect.Effect<ForgejoRepoIssue, ForgejoError>
+    /**
+     * Replaces the issue's assignees with `logins`. Forgejo ignores the change without an
+     * error when the token's user cannot write the repository's issues.
+     */
+    readonly setIssueAssignees: (
+      token: AccessToken,
+      repo: RepoRef,
+      number: number,
+      logins: ReadonlyArray<string>,
+    ) => Effect.Effect<ForgejoRepoIssue, ForgejoError>
+    /**
+     * Sets the issue's milestone, or clears it with null. Forgejo 17 refuses this with 403 when
+     * the token's user cannot write the repository's issues.
+     */
+    readonly setIssueMilestone: (
+      token: AccessToken,
+      repo: RepoRef,
+      number: number,
+      milestoneId: number | null,
+    ) => Effect.Effect<ForgejoRepoIssue, ForgejoError>
+    /** Renders an issue's Markdown as HTML, with relative links resolved in the repository. */
+    readonly renderMarkdown: (
+      token: AccessToken,
+      repo: RepoRef,
+      text: string,
+    ) => Effect.Effect<string, ForgejoError>
     readonly setIssueState: (
       token: AccessToken,
       repo: RepoRef,
@@ -181,11 +251,16 @@ export class ForgejoClient extends Context.Service<
       number: number,
       labelIds: ReadonlyArray<number>,
     ) => Effect.Effect<ReadonlyArray<ForgejoLabel>, ForgejoError>
+    /**
+     * Removes one label, named by `identifier`. Forgejo 15 and later look the identifier up as
+     * a name among the repository's labels, then among the organization's, and only then as
+     * the id of a repository label, so an organization label must go by name.
+     */
     readonly removeIssueLabel: (
       token: AccessToken,
       repo: RepoRef,
       number: number,
-      labelId: number,
+      identifier: string,
     ) => Effect.Effect<void, ForgejoError>
 
     // Insights and activity reads.
@@ -214,7 +289,7 @@ export class ForgejoClient extends Context.Service<
       token: AccessToken,
       repo: RepoRef,
     ) => Effect.Effect<ForgejoLanguages, ForgejoError>
-    readonly openMilestones: (
+    readonly openMilestonesListing: (
       token: AccessToken,
       repo: RepoRef,
       budget: PageBudget,
@@ -231,6 +306,12 @@ const send = (fetch: HttpFetch, request: Request) =>
   Effect.tryPromise({
     try: () => fetch(request),
     catch: (cause) => new ForgejoUnreachable({ message: String(cause) }),
+  })
+
+const readText = (response: Response) =>
+  Effect.tryPromise({
+    try: () => response.text(),
+    catch: () => new ForgejoDecodeFailed({ message: "response body is not text" }),
   })
 
 const readJson = <A>(response: Response, schema: Schema.Decoder<A>) =>
@@ -523,6 +604,64 @@ export const makeForgejoClient = (
       api(token, `${repoPath(repo)}/issues/${number}`, {}, ForgejoRepoIssue).pipe(
         Effect.map(({ body }) => body),
       ),
+    issueBody: (token, repo, number) =>
+      api(token, `${repoPath(repo)}/issues/${number}`, {}, ForgejoIssueBody).pipe(
+        Effect.map(({ body }) => body.body),
+      ),
+    issueComments: (token, repo, number) =>
+      api(
+        token,
+        `${repoPath(repo)}/issues/${number}/comments`,
+        {},
+        Schema.Array(ForgejoComment),
+      ).pipe(Effect.map(({ body }) => body)),
+    createComment: (token, repo, number, body) =>
+      api(token, `${repoPath(repo)}/issues/${number}/comments`, {}, ForgejoComment, {
+        method: "POST",
+        body: { body },
+      }).pipe(Effect.map(({ body }) => body)),
+    repoLabels: (token, repo) => all(token, `${repoPath(repo)}/labels`, {}, ForgejoLabel),
+    openMilestones: (token, repo) =>
+      all(token, `${repoPath(repo)}/milestones`, { state: "open" }, ForgejoMilestone),
+    repoAssignees: (token, repo) =>
+      api(token, `${repoPath(repo)}/assignees`, {}, Schema.Array(ForgejoPerson)).pipe(
+        Effect.map(({ body }) => body),
+      ),
+    createIssue: (token, repo, issue) =>
+      api(token, `${repoPath(repo)}/issues`, {}, ForgejoRepoIssue, {
+        method: "POST",
+        body: {
+          title: issue.title,
+          ...(issue.labelIds.length === 0 ? {} : { labels: issue.labelIds }),
+        },
+      }).pipe(Effect.map(({ body }) => body)),
+    setIssueAssignees: (token, repo, number, logins) =>
+      api(token, `${repoPath(repo)}/issues/${number}`, {}, ForgejoRepoIssue, {
+        method: "PATCH",
+        body: { assignees: logins },
+      }).pipe(Effect.map(({ body }) => body)),
+    // EditIssueOption.milestone is the milestone id; 0 clears it.
+    setIssueMilestone: (token, repo, number, milestoneId) =>
+      api(token, `${repoPath(repo)}/issues/${number}`, {}, ForgejoRepoIssue, {
+        method: "PATCH",
+        body: { milestone: milestoneId ?? 0 },
+      }).pipe(Effect.map(({ body }) => body)),
+    // "comment" renders as Forgejo shows an issue description, with hard line breaks; "gfm"
+    // renders a document, which joins the lines of a paragraph.
+    renderMarkdown: (token, repo, text) =>
+      request(
+        token,
+        "/markdown",
+        {},
+        {
+          method: "POST",
+          body: {
+            Mode: "comment",
+            Context: `${config.baseUrl}/${repo.owner}/${repo.name}`,
+            Text: text,
+          },
+        },
+      ).pipe(Effect.flatMap(readText)),
     setIssueState: (token, repo, number, state) =>
       api(token, `${repoPath(repo)}/issues/${number}`, {}, ForgejoRepoIssue, {
         method: "PATCH",
@@ -533,14 +672,12 @@ export const makeForgejoClient = (
         method: "POST",
         body: { labels: labelIds },
       }).pipe(Effect.map(({ body }) => body)),
-    removeIssueLabel: (token, repo, number, labelId) =>
+    removeIssueLabel: (token, repo, number, identifier) =>
       request(
         token,
-        `${repoPath(repo)}/issues/${number}/labels/${labelId}`,
+        `${repoPath(repo)}/issues/${number}/labels/${encodeURIComponent(identifier)}`,
         {},
-        {
-          method: "DELETE",
-        },
+        { method: "DELETE" },
       ).pipe(Effect.asVoid),
 
     insightRepo: (token, repo) =>
@@ -580,7 +717,7 @@ export const makeForgejoClient = (
       api(token, `${repoPath(repo)}/languages`, {}, ForgejoLanguages).pipe(
         Effect.map(({ body }) => body),
       ),
-    openMilestones: (token, repo, budget) =>
+    openMilestonesListing: (token, repo, budget) =>
       listing(token, `${repoPath(repo)}/milestones`, { state: "open" }, ForgejoMilestone, budget),
     userHeatmap: (token, login) =>
       api(

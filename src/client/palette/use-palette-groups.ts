@@ -62,12 +62,6 @@ const THEME_LABELS: Record<ThemePreference, { label: string; icon: GlyphName }> 
   dark: { label: "Dark", icon: "dark" },
 }
 
-const VIEW_ICONS: Record<OrgViewId, GlyphName> = {
-  board: "board",
-  insights: "insights",
-  epics: "epics",
-}
-
 const VIEW_SHORTCUTS: Record<OrgViewId, ShortcutId> = {
   board: "go-board",
   insights: "go-insights",
@@ -157,7 +151,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
           title: view.label,
           subtitle: "Choose an organization",
           keywords: "go",
-          icon: VIEW_ICONS[view.id],
+          icon: view.icon,
           remember: true,
           run: ({ navigate }) => navigate(orgViewHref(view.id)),
         })
@@ -171,7 +165,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
           title: view.label,
           subtitle: entry.fullName || entry.name,
           keywords: `go ${entry.name}`,
-          icon: VIEW_ICONS[view.id],
+          icon: view.icon,
           remember: true,
           ...(entry.name === lastOrg ? { shortcut: VIEW_SHORTCUTS[view.id] } : {}),
           run: ({ navigate }) =>

@@ -4,18 +4,22 @@ export const ORG_VIEWS = [
     id: "board",
     path: "/board",
     label: "Board",
-    pickerHint: "A board shows the issues of repositories in one organization.",
+    /** A glyph name from `src/client/palette/icons.tsx`. */
+    icon: "board",
+    pickerHint: "A board shows the issues of chosen repositories in one organization.",
   },
   {
     id: "insights",
     path: "/insights",
     label: "Insights",
+    icon: "insights",
     pickerHint: "Insights chart the issue activity of repositories in one organization.",
   },
   {
     id: "epics",
     path: "/epics",
     label: "Epics",
+    icon: "epics",
     pickerHint: "Epics track the progress of large pieces of work in one organization.",
   },
 ] as const

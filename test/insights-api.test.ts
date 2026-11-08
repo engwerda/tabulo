@@ -113,7 +113,9 @@ describe("GET /api/insights", () => {
     expect(response.status).toBe(200)
     const insights = (await response.json()) as Insights
     expect(insights).toMatchObject({ org: "acme", days: 30, tz: "Europe/Amsterdam" })
-    expect(insights.failedRepos).toEqual([{ repo: "broken", message: "Forgejo returned HTTP 500" }])
+    expect(insights.failedRepos).toEqual([
+      { repo: "broken", message: "Forgejo had a problem (HTTP 500); try again in a moment" },
+    ])
     expect(insights.repoStats.map((repo) => repo.name)).toEqual(["api", "web"])
     expect(insights.tiles.openIssues.value).toBe(2)
     expect(insights.tiles.issuesClosed.value).toBe(1)

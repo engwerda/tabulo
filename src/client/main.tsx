@@ -1,10 +1,12 @@
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
-import { App, SESSION_USER } from "./App.tsx"
-import { Unauthenticated } from "./api.ts"
+import { App } from "./App.tsx"
+import { RequestFailed, Unauthenticated } from "./api.ts"
 import { startTheme } from "./theme.ts"
 import "./styles.css"
+import { SESSION_USER } from "./session.ts"
+import { ToastProvider } from "./ui/toast.tsx"
 
 startTheme()
 
@@ -18,7 +20,11 @@ const queryClient = new QueryClient({
   mutationCache: new MutationCache({ onError: signOutOnUnauthenticated }),
   defaultOptions: {
     queries: {
-      retry: (failureCount, error) => !(error instanceof Unauthenticated) && failureCount < 2,
+      // A 4xx answer will not change on retry, so only server and network failures retry.
+      retry: (failureCount, error) =>
+        !(error instanceof Unauthenticated) &&
+        !(error instanceof RequestFailed && error.status < 500) &&
+        failureCount < 2,
     },
   },
 })
@@ -29,7 +35,9 @@ if (root === null) throw new Error("index.html is missing #root")
 createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <ToastProvider>
+        <App />
+      </ToastProvider>
     </QueryClientProvider>
   </StrictMode>,
 )

@@ -1,5 +1,7 @@
+@import "@fontsource-variable/inter";
 @import "tailwindcss";
 
+/* theme.ts puts .dark on <html>, and public/theme-init.js does the same before first paint. */
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
@@ -47,16 +49,52 @@
 }
 
 @theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --shadow-card: 0 1px 2px 0 rgb(24 24 27 / 0.05), 0 1px 1px -1px rgb(24 24 27 / 0.04);
+  --shadow-lift: 0 12px 28px -8px rgb(24 24 27 / 0.22), 0 4px 10px -4px rgb(24 24 27 / 0.12);
+  --shadow-pop: 0 16px 40px -12px rgb(24 24 27 / 0.28), 0 2px 6px -2px rgb(24 24 27 / 0.1);
+  --animate-fade-in: fade-in 140ms ease-out;
+  --animate-pop-in: pop-in 160ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  --animate-slide-in: slide-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-toast-in: toast-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-shimmer: shimmer 1.4s ease-in-out infinite;
   --animate-palette-in: palette-in 140ms cubic-bezier(0.16, 1, 0.3, 1);
   --animate-palette-fade: palette-fade 120ms ease-out;
 
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+    }
+  }
+  @keyframes slide-in {
+    from {
+      transform: translateX(24px);
+      opacity: 0;
+    }
+  }
+  @keyframes toast-in {
+    from {
+      transform: translateY(12px);
+      opacity: 0;
+    }
+  }
+  @keyframes shimmer {
+    50% {
+      opacity: 0.55;
+    }
+  }
   @keyframes palette-in {
     from {
       opacity: 0;
       transform: translateY(-6px) scale(0.98);
     }
   }
-
   @keyframes palette-fade {
     from {
       opacity: 0;
@@ -64,20 +102,115 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .animate-palette-in,
-  .animate-palette-fade {
-    animation: none;
-  }
-}
-
 @layer base {
+  html,
+  body {
+    /* Only the board's own scrollers move sideways; a panel at the edge never shifts the page. */
+    overflow-x: clip;
+  }
+  html {
+    font-feature-settings: "cv11", "ss01";
+    -webkit-tap-highlight-color: transparent;
+  }
   body {
     @apply bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
   }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-indigo-500;
+  }
+  ::selection {
+    @apply bg-indigo-200 text-indigo-950 dark:bg-indigo-500/40 dark:text-white;
+  }
 }
 
-/* Chart mount animations. Reduced motion shows the final state at once. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must win over every animation */
+    animation-duration: 1ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must win over every transition */
+    transition-duration: 1ms !important;
+  }
+}
+
+/* Forgejo's rendered issue description inside the card panel. */
+.prose-forgejo {
+  @apply text-sm leading-6 text-zinc-700 dark:text-zinc-300;
+  overflow-wrap: anywhere;
+}
+.prose-forgejo > * + * {
+  @apply mt-3;
+}
+.prose-forgejo :where(h1, h2, h3, h4, h5, h6) {
+  @apply mt-5 font-semibold text-zinc-900 dark:text-zinc-100;
+}
+.prose-forgejo :where(h1, h2, h3, h4, h5, h6) {
+  @apply text-sm;
+}
+.prose-forgejo a {
+  @apply font-medium text-indigo-700 underline decoration-indigo-300 underline-offset-2 hover:decoration-indigo-600 dark:text-indigo-300 dark:decoration-indigo-700;
+}
+.prose-forgejo :where(ul, ol) {
+  @apply pl-5;
+}
+.prose-forgejo ul {
+  @apply list-disc;
+}
+.prose-forgejo ol {
+  @apply list-decimal;
+}
+.prose-forgejo li + li {
+  @apply mt-1;
+}
+.prose-forgejo li:has(> input[type="checkbox"]),
+.prose-forgejo li.task-list-item {
+  @apply -ml-5 list-none;
+}
+/* Task list boxes read as status marks, not as disabled inputs. */
+.prose-forgejo input[type="checkbox"] {
+  @apply mr-1.5 inline-grid size-3.5 appearance-none place-content-center rounded border border-zinc-300 bg-white align-[-2px] dark:border-zinc-600 dark:bg-zinc-900;
+}
+.prose-forgejo input[type="checkbox"]:checked {
+  @apply border-indigo-600 bg-indigo-600 dark:border-indigo-500 dark:bg-indigo-500;
+}
+.prose-forgejo input[type="checkbox"]:checked::after {
+  content: "";
+  clip-path: polygon(14% 52%, 0 66%, 40% 100%, 100% 26%, 86% 12%, 40% 72%);
+  @apply size-2 bg-white;
+}
+.prose-forgejo :where(code) {
+  @apply rounded bg-zinc-100 px-1 py-0.5 font-mono text-[0.8125rem] dark:bg-zinc-800;
+}
+.prose-forgejo pre {
+  @apply overflow-x-auto rounded-lg bg-zinc-100 p-3 text-[0.8125rem] leading-5 dark:bg-zinc-800/80;
+}
+.prose-forgejo pre code {
+  @apply bg-transparent p-0;
+}
+.prose-forgejo blockquote {
+  @apply border-l-2 border-zinc-300 pl-3 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400;
+}
+.prose-forgejo img {
+  @apply max-w-full rounded-lg;
+}
+.prose-forgejo table {
+  @apply block overflow-x-auto text-left;
+}
+.prose-forgejo :where(th, td) {
+  @apply border border-zinc-200 px-2 py-1 dark:border-zinc-800;
+}
+.prose-forgejo hr {
+  @apply border-zinc-200 dark:border-zinc-800;
+}
+
+/* Thin scrollbars that stay out of the way on the board. */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(161 161 170 / 0.5) transparent;
+}
+
+/* Chart mount animations. The reduced-motion rule above cuts them to their final state. */
 @keyframes chart-rise {
   from {
     transform: scaleY(0);
@@ -125,14 +258,4 @@
 
 .chart-card {
   animation: chart-card-in 320ms ease-out both;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .chart-rise,
-  .chart-drop,
-  .chart-grow-x,
-  .chart-fade,
-  .chart-card {
-    animation: none;
-  }
 }

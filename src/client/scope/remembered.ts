@@ -27,9 +27,12 @@ const write = (key: string, value: string | null) => {
 const parseRepos = (selection: string | null) =>
   (selection ?? "").split(",").filter((name) => name !== "")
 
-/** The comma-separated repositories remembered for `org`, or `null` if none are. */
+/**
+ * The comma-separated repositories remembered for `org`: `""` when the user chose none, so a
+ * later visit does not choose any, and `null` when the organization was never chosen for.
+ */
 export const readRememberedRepos = (org: string): string | null =>
-  read(reposKey(org)) || read(boardReposKey(org)) || null
+  read(reposKey(org)) ?? read(boardReposKey(org))
 
 const readLastScope = (): LastScope | null => {
   const org = read(LAST_ORG_KEY)
@@ -55,8 +58,9 @@ export const rememberScope = (org: string, selection: string) => {
   publish({ org, repos: parseRepos(selection || readRememberedRepos(org)) })
 }
 
+/** Remembers that the user chose no repositories of `org`. */
 export const forgetRepos = (org: string) => {
-  write(reposKey(org), null)
+  write(reposKey(org), "")
   write(boardReposKey(org), null)
   if (lastScope?.org === org) publish({ org, repos: [] })
 }

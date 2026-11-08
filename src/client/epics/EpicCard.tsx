@@ -2,7 +2,7 @@ import { useId, useState } from "react"
 import type { BoardColumn, Epic, EpicChild } from "../../shared/api.ts"
 import { Avatar } from "../Avatar.tsx"
 import { absoluteTime, relativeTime } from "../format.ts"
-import { LabelChips } from "../rows.tsx"
+import { LabelList } from "../ui/LabelChip.tsx"
 import { completion } from "./epics-view.ts"
 
 const focus =
@@ -155,7 +155,7 @@ export const EpicCard = ({
             </span>
           )}
         </div>
-        <LabelChips labels={epic.labels} />
+        <LabelList labels={epic.labels} className="mt-1.5" />
         <div className="mt-6 flex items-end justify-between gap-3">
           <div>
             <p className="text-sm font-medium tabular-nums">

@@ -1,17 +1,27 @@
 import { Schema } from "effect"
 import {
   Activity,
+  type AddCommentRequest,
+  AddCommentResult,
   Board,
+  CardDetail,
+  CardUpdateResult,
+  type CreateCardRequest,
+  CreateCardResult,
   Dashboard,
   Epics,
   type InsightDays,
   Insights,
   Instance,
+  IssueOptions,
   type MoveCardRequest,
   MoveCardResult,
   Org,
   OrgRepo,
   SearchResults,
+  type SetAssigneeRequest,
+  type SetLabelRequest,
+  type SetMilestoneRequest,
   User,
 } from "../shared/api.ts"
 
@@ -41,6 +51,11 @@ const decodeOrgRepos = Schema.decodeUnknownPromise(Schema.Array(OrgRepo))
 const decodeBoard = Schema.decodeUnknownPromise(Board)
 const decodeEpics = Schema.decodeUnknownPromise(Epics)
 const decodeMoveCardResult = Schema.decodeUnknownPromise(MoveCardResult)
+const decodeCreateCardResult = Schema.decodeUnknownPromise(CreateCardResult)
+const decodeCardUpdateResult = Schema.decodeUnknownPromise(CardUpdateResult)
+const decodeAddCommentResult = Schema.decodeUnknownPromise(AddCommentResult)
+const decodeIssueOptions = Schema.decodeUnknownPromise(IssueOptions)
+const decodeCardDetail = Schema.decodeUnknownPromise(CardDetail)
 
 const requestJson = async (path: string, init?: RequestInit): Promise<unknown> => {
   const response = await fetch(path, {
@@ -51,7 +66,11 @@ const requestJson = async (path: string, init?: RequestInit): Promise<unknown> =
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: unknown; code?: unknown }
     throw new RequestFailed(
-      typeof body.error === "string" ? body.error : `Tabulo returned HTTP ${response.status}`,
+      typeof body.error === "string"
+        ? body.error
+        : response.status >= 500
+          ? "Tabulo did not get an answer; try again in a moment"
+          : `Something went wrong (HTTP ${response.status})`,
       response.status,
       typeof body.code === "string" ? body.code : undefined,
     )
@@ -83,13 +102,45 @@ export const fetchBoard = async (org: string, repos: ReadonlyArray<string>): Pro
     await requestJson(`/api/board?${new URLSearchParams({ org, repos: repos.join(",") })}`),
   )
 
+const postJson = (path: string, body: unknown) =>
+  requestJson(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  })
+
 export const moveCard = async (move: MoveCardRequest): Promise<MoveCardResult> =>
-  decodeMoveCardResult(
-    await requestJson("/api/board/move", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(move),
-    }),
+  decodeMoveCardResult(await postJson("/api/board/move", move))
+
+export const createCard = async (request: CreateCardRequest): Promise<CreateCardResult> =>
+  decodeCreateCardResult(await postJson("/api/board/issues", request))
+
+export const setAssignee = async (request: SetAssigneeRequest): Promise<CardUpdateResult> =>
+  decodeCardUpdateResult(await postJson("/api/board/assignees", request))
+
+export const setLabel = async (request: SetLabelRequest): Promise<CardUpdateResult> =>
+  decodeCardUpdateResult(await postJson("/api/board/labels", request))
+
+export const setMilestone = async (request: SetMilestoneRequest): Promise<CardUpdateResult> =>
+  decodeCardUpdateResult(await postJson("/api/board/milestone", request))
+
+export const addComment = async (request: AddCommentRequest): Promise<AddCommentResult> =>
+  decodeAddCommentResult(await postJson("/api/board/comment", request))
+
+export const fetchIssueOptions = async (org: string, repo: string): Promise<IssueOptions> =>
+  decodeIssueOptions(
+    await requestJson(`/api/board/issue-options?${new URLSearchParams({ org, repo })}`),
+  )
+
+export const fetchCardDetail = async (
+  org: string,
+  repo: string,
+  number: number,
+): Promise<CardDetail> =>
+  decodeCardDetail(
+    await requestJson(
+      `/api/board/issue?${new URLSearchParams({ org, repo, number: String(number) })}`,
+    ),
   )
 
 export const fetchEpics = async (org: string, repos: ReadonlyArray<string>): Promise<Epics> =>

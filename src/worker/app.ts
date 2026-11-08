@@ -1,17 +1,35 @@
 import { Cause, Clock, Effect, Exit, Schema } from "effect"
 import { type Context, Hono } from "hono"
 import { deleteCookie, getCookie, setCookie } from "hono/cookie"
-import { type Dashboard, type Instance, MoveCardRequest } from "../shared/api.ts"
+import {
+  AddCommentRequest,
+  CreateCardRequest,
+  type Dashboard,
+  type Instance,
+  MoveCardRequest,
+  SetAssigneeRequest,
+  SetLabelRequest,
+  SetMilestoneRequest,
+} from "../shared/api.ts"
 import { beginLogin, completeLogin } from "./auth/oauth.ts"
 import { currentSession, withAccessToken } from "./auth/session.ts"
 import {
+  addComment,
   BoardConfig,
+  cardDetail,
+  createCard,
+  issueOptions,
   listOrgRepos,
   listOrgs,
   loadBoard,
   moveCard,
   parseBoardQuery,
+  parseCardQuery,
   parseName,
+  parseRepoQuery,
+  setAssignee,
+  setLabel,
+  setMilestone,
 } from "./board.ts"
 import { CardRanks, makeCardRanks } from "./card-ranks.ts"
 import { loadConfig } from "./config.ts"
@@ -20,10 +38,11 @@ import { EpicsConfig, loadEpics } from "./epics.ts"
 import {
   type BoardChanged,
   BoardRequestInvalid,
+  type BoardWriteForbidden,
   type ConfigInvalid,
+  describeForgejoError,
   type ForgejoError,
   type ForgejoMovePartlyApplied,
-  type MoveForbidden,
   type OAuthCallbackInvalid,
   type OAuthGrantRejected,
   type OAuthStateInvalid,
@@ -31,6 +50,7 @@ import {
   type SessionNotFound,
 } from "./errors.ts"
 import {
+  type AccessToken,
   ForgejoClient,
   type HttpFetch,
   makeForgejoClient,
@@ -63,7 +83,7 @@ type AppError =
   | OAuthCallbackInvalid
   | OAuthGrantRejected
   | OAuthStateInvalid
-  | MoveForbidden
+  | BoardWriteForbidden
   | PageBudgetExhausted
   | SessionNotFound
 
@@ -102,21 +122,19 @@ const errorResponse = (c: AppContext, error: AppError): Response => {
     case "OAuthGrantRejected":
       return c.text("Forgejo rejected the sign-in. Sign in again.", 400)
     case "ForgejoForbidden":
-      return c.json({ error: "Forgejo did not allow this" }, 403)
+      return c.json({ error: describeForgejoError(error) }, 403)
     case "ForgejoNotFound":
-      return c.json({ error: "Not found in Forgejo, or you cannot see it" }, 404)
-    case "MoveForbidden":
+      return c.json({ error: describeForgejoError(error) }, 404)
+    case "BoardWriteForbidden":
       return c.json({ error: error.message }, 403)
     case "BoardRequestInvalid":
       return c.json({ error: error.message }, 400)
     case "BoardChanged":
       return c.json({ error: "The board changed since it was loaded", code: "board_changed" }, 409)
     case "ForgejoRequestFailed":
-      return c.json({ error: `Forgejo returned HTTP ${error.status}` }, 502)
     case "ForgejoUnreachable":
-      return c.json({ error: "Forgejo is unreachable" }, 502)
     case "ForgejoDecodeFailed":
-      return c.json({ error: "Forgejo sent an unexpected response" }, 502)
+      return c.json({ error: describeForgejoError(error) }, 502)
     case "ForgejoMovePartlyApplied":
       return c.json(
         {
@@ -135,6 +153,19 @@ const errorResponse = (c: AppContext, error: AppError): Response => {
       return c.json({ error: "Tabulo is misconfigured" }, 500)
   }
 }
+
+/** The request's JSON body, decoded with `schema`. */
+const requestBody = <A>(c: AppContext, schema: Schema.Decoder<A>) =>
+  Effect.tryPromise({
+    try: () => c.req.json<unknown>(),
+    catch: () => new BoardRequestInvalid({ message: "The body is not JSON" }),
+  }).pipe(
+    Effect.flatMap((body) =>
+      Schema.decodeUnknownEffect(schema)(body).pipe(
+        Effect.mapError((error) => new BoardRequestInvalid({ message: error.message })),
+      ),
+    ),
+  )
 
 export const createApp = (dependencies: Dependencies) => {
   const run = async (
@@ -315,24 +346,25 @@ export const createApp = (dependencies: Dependencies) => {
     ),
   )
 
-  app.post("/api/board/move", (c) =>
+  app.get("/api/board/issue", (c) =>
     run(
       c,
-      Effect.tryPromise({
-        try: () => c.req.json<unknown>(),
-        catch: () => new BoardRequestInvalid({ message: "The body is not JSON" }),
-      }).pipe(
-        Effect.flatMap((body) =>
-          Schema.decodeUnknownEffect(MoveCardRequest)(body).pipe(
-            Effect.mapError((error) => new BoardRequestInvalid({ message: error.message })),
+      Effect.flatMap(
+        parseCardQuery(c.req.query("org"), c.req.query("repo"), c.req.query("number")),
+        (query) =>
+          withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
+            cardDetail(token, query).pipe(Effect.map((detail) => c.json(detail))),
           ),
-        ),
-        Effect.flatMap((request) =>
-          withAccessToken(getCookie(c, SESSION_COOKIE), (token, session) =>
-            moveCard(token, session.user.login, request).pipe(
-              Effect.map((result) => c.json(result)),
-            ),
-          ),
+      ),
+    ),
+  )
+
+  app.get("/api/board/issue-options", (c) =>
+    run(
+      c,
+      Effect.flatMap(parseRepoQuery(c.req.query("org"), c.req.query("repo")), (repo) =>
+        withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
+          issueOptions(token, repo).pipe(Effect.map((options) => c.json(options))),
         ),
       ),
     ),
@@ -370,6 +402,31 @@ export const createApp = (dependencies: Dependencies) => {
       ),
     ),
   )
+  const boardWrite =
+    <A, R>(
+      schema: Schema.Decoder<A>,
+      write: (
+        token: AccessToken,
+        login: string,
+        request: A,
+      ) => Effect.Effect<R, AppError, BoardConfig | CardRanks | ForgejoClient>,
+    ) =>
+    (c: AppContext) =>
+      run(
+        c,
+        Effect.flatMap(requestBody(c, schema), (request) =>
+          withAccessToken(getCookie(c, SESSION_COOKIE), (token, session) =>
+            write(token, session.user.login, request).pipe(Effect.map((result) => c.json(result))),
+          ),
+        ),
+      )
+
+  app.post("/api/board/move", boardWrite(MoveCardRequest, moveCard))
+  app.post("/api/board/issues", boardWrite(CreateCardRequest, createCard))
+  app.post("/api/board/assignees", boardWrite(SetAssigneeRequest, setAssignee))
+  app.post("/api/board/labels", boardWrite(SetLabelRequest, setLabel))
+  app.post("/api/board/milestone", boardWrite(SetMilestoneRequest, setMilestone))
+  app.post("/api/board/comment", boardWrite(AddCommentRequest, addComment))
 
   return app
 }

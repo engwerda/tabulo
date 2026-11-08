@@ -25,16 +25,27 @@ export type FakeLabel = {
   is_archived: boolean
 }
 
+/** An issue comment as Forgejo 17 returns it. */
+export type FakeComment = {
+  id: number
+  html_url: string
+  issue_url: string
+  user: FakeUser
+  body: string
+  created_at: string
+  updated_at: string
+}
+
 /** An issue or pull request as Forgejo 17 returns it from the repository endpoints. */
 export type FakeIssue = {
   id: number
   number: number
   title: string
-  body: string | null
   html_url: string
   state: "open" | "closed"
   labels: Array<FakeLabel>
-  user: { id: number; login: string; avatar_url: string }
+  /** Forgejo always sends the poster's avatar; the fake derives one when it is left out. */
+  user: { id: number; login: string; avatar_url?: string }
   assignees: Array<{ id: number; login: string; full_name: string; avatar_url: string }> | null
   milestone: { id: number; title: string; state: string } | null
   created_at: string
@@ -48,6 +59,14 @@ export type FakeIssue = {
     html_url: string
   } | null
   repository: { id: number; name: string; owner: string; full_name: string }
+  /** The description as Markdown. Empty when left out or null. */
+  body?: string | null
+  /**
+   * The issue's comments, oldest first, which the fake serves from the comments endpoints and
+   * leaves out of the issue itself. The fake sets `comments` to their number. Left out, the
+   * fake makes up `comments` comments by the poster, so the count and the list agree.
+   */
+  commentRecords?: Array<FakeComment>
   [field: string]: unknown
 }
 
@@ -61,6 +80,8 @@ export type FakeRepo = {
   triagers: ReadonlyArray<string>
   /** Repository-level labels, beside the organization's. */
   labels: ReadonlyArray<FakeLabel>
+  /** Open and closed milestones. None when left out. */
+  milestones?: ReadonlyArray<FakeMilestone>
   issues: Array<FakeIssue>
   /** Issue listings answer HTTP 500. */
   failIssueListing: boolean
@@ -70,7 +91,6 @@ export type FakeRepo = {
   /** Workflow runs, newest first. Without them `/actions/runs` answers 404, as with Actions off. */
   actionRuns?: ReadonlyArray<FakeActionRun>
   languages?: Record<string, number>
-  milestones?: ReadonlyArray<FakeMilestone>
 }
 
 /** A workflow run as Forgejo 17 lists it, without the large `event_payload` and `repository`. */
@@ -90,6 +110,7 @@ export type FakeActionRun = {
   duration: number
 }
 
+/** A milestone as Forgejo 17 returns it. */
 export type FakeMilestone = {
   id: number
   title: string
@@ -197,6 +218,45 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
   }
   const users = [fixtures.user, ...fixtures.otherUsers]
   const orgs = structuredClone(fixtures.orgs) as Array<FakeOrg>
+  const issueComments = new Map<FakeIssue, Array<FakeComment>>()
+  let lastCommentId = Math.max(
+    0,
+    ...orgs.flatMap((org) =>
+      org.repos.flatMap((repo) =>
+        repo.issues.flatMap((issue) => (issue.commentRecords ?? []).map((comment) => comment.id)),
+      ),
+    ),
+  )
+  const commentJson = (issue: FakeIssue, poster: FakeUser, body: string, at: string) => {
+    lastCommentId += 1
+    return {
+      id: lastCommentId,
+      html_url: `${issue.html_url}#issuecomment-${lastCommentId}`,
+      issue_url: issue.html_url,
+      user: poster,
+      body,
+      created_at: at,
+      updated_at: at,
+    }
+  }
+  for (const issue of orgs.flatMap((org) => org.repos.flatMap((repo) => repo.issues))) {
+    issue.user.avatar_url ??= `${FORGEJO_URL}/avatars/${issue.user.login}`
+    issue.body ??= ""
+    const poster = users.find((user) => user.login === issue.user.login) ?? {
+      id: issue.user.id,
+      login: issue.user.login,
+      full_name: "",
+      avatar_url: issue.user.avatar_url,
+    }
+    const comments =
+      issue.commentRecords ??
+      Array.from({ length: issue.comments }, (_, index) =>
+        commentJson(issue, poster, `Comment ${index + 1} on #${issue.number}.`, issue.created_at),
+      )
+    delete issue.commentRecords
+    issue.comments = comments.length
+    issueComments.set(issue, comments)
+  }
   const requests: Array<RecordedRequest> = []
   const authorizationCodes = new Map<string, { challenge: string; login: string }>()
   /** Token to the login it was issued for. */
@@ -298,6 +358,14 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     fixtures.tokenScope === "write" &&
     (repo.writers.includes(login) || repo.triagers.includes(login))
 
+  /**
+   * GetRepoAssignees: users with write access and members of teams that write issues or read
+   * pull requests. The fake's writers and triagers stand for both; organization membership
+   * alone does not make a user assignable.
+   */
+  const isAssignable = (repo: FakeRepo, user: FakeUser) =>
+    repo.writers.includes(user.login) || repo.triagers.includes(user.login)
+
   const archivedRefusal = () => json({ message: "repo is archived" }, { status: 423 })
 
   const listIssues = (repo: FakeRepo, query: URLSearchParams) => {
@@ -315,11 +383,55 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     return paged(matches, query)
   }
 
+  const userJson = (user: FakeUser) => ({
+    id: user.id,
+    login: user.login,
+    full_name: user.full_name,
+    avatar_url: user.avatar_url,
+  })
+
+  /**
+   * Forgejo 17's EditIssue. For a user who cannot write the repository's issues, Forgejo drops
+   * `assignees` without an error (hackEditIssue), refuses `milestone`, and refuses `state`
+   * unless the user posted the issue (ReqEditIssue). `assignees` replaces the assignees; a
+   * login that does not exist or cannot be assigned (no issue write access) fails the request
+   * with HTTP 500, as UpdateAssignees does. `milestone: 0` clears the milestone, and an id the
+   * repository does not have fails with HTTP 500, as ChangeMilestoneAssign does.
+   */
   const editIssue = (repo: FakeRepo, issue: FakeIssue, login: string, body: unknown) => {
     if (repo.archived) return archivedRefusal()
-    const isPoster = fixtures.tokenScope === "write" && issue.user.login === login
-    if (!canWriteIssues(repo, login) && !isPoster) return forbidden()
-    const { state } = body as { state?: "open" | "closed" }
+    if (fixtures.tokenScope !== "write") return forbidden()
+    const canWrite = canWriteIssues(repo, login)
+    const { state, assignees, milestone } = body as {
+      state?: "open" | "closed"
+      assignees?: ReadonlyArray<string>
+      milestone?: number
+    }
+    if (
+      !canWrite &&
+      (milestone !== undefined || (state !== undefined && issue.user.login !== login))
+    ) {
+      return forbidden()
+    }
+    if (assignees !== undefined && canWrite) {
+      const assigned = assignees.map((name) =>
+        users.find(
+          (user) => user.login.toLowerCase() === name.toLowerCase() && isAssignable(repo, user),
+        ),
+      )
+      if (assigned.some((user) => user === undefined)) {
+        return json({ message: "user cannot be assigned" }, { status: 500 })
+      }
+      issue.assignees = assigned.flatMap((user) => (user === undefined ? [] : [userJson(user)]))
+    }
+    if (milestone !== undefined) {
+      const chosen = (repo.milestones ?? []).find((candidate) => candidate.id === milestone)
+      if (milestone !== 0 && chosen === undefined) {
+        return json({ message: "milestone does not exist" }, { status: 500 })
+      }
+      issue.milestone =
+        chosen === undefined ? null : { id: chosen.id, title: chosen.title, state: chosen.state }
+    }
     if (state !== undefined && state !== issue.state) {
       issue.state = state
       issue.closed_at = state === "closed" ? fixtures.now : null
@@ -329,10 +441,149 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
   }
 
   /**
+   * Forgejo's CreateIssue. Anyone who can read the repository may create an issue, but Forgejo
+   * keeps `labels` only for a user who can write its issues and drops them otherwise. Label ids
+   * of other organizations or repositories are ignored. Issues and pull requests share numbers.
+   */
+  const createIssue = (
+    owner: string,
+    org: FakeOrg,
+    repo: FakeRepo,
+    login: string,
+    body: unknown,
+  ) => {
+    if (repo.archived) return archivedRefusal()
+    if (fixtures.tokenScope !== "write") return forbidden()
+    const {
+      title,
+      body: text,
+      labels,
+    } = body as {
+      title?: string
+      body?: string
+      labels?: ReadonlyArray<number>
+    }
+    if (title === undefined || title.trim() === "") {
+      return json({ message: "title is required" }, { status: 422 })
+    }
+    const poster = users.find((user) => user.login === login)
+    if (poster === undefined) return forbidden()
+    const allIssues = orgs.flatMap((candidate) => candidate.repos.flatMap((r) => r.issues))
+    const number = Math.max(0, ...repo.issues.map((issue) => issue.number)) + 1
+    const issue: FakeIssue = {
+      id: Math.max(0, ...allIssues.map((candidate) => candidate.id)) + 1,
+      number,
+      title,
+      html_url: `${FORGEJO_URL}/${owner}/${repo.name}/issues/${number}`,
+      state: "open",
+      labels: [],
+      user: { id: poster.id, login: poster.login, avatar_url: poster.avatar_url },
+      assignees: null,
+      milestone: null,
+      created_at: fixtures.now,
+      updated_at: fixtures.now,
+      closed_at: null,
+      comments: 0,
+      pull_request: null,
+      repository: { id: 100, name: repo.name, owner, full_name: `${owner}/${repo.name}` },
+      body: text ?? "",
+    }
+    if (canWriteIssues(repo, login)) {
+      for (const label of [...org.labels, ...repo.labels]) {
+        if (!(labels ?? []).includes(label.id)) continue
+        const scope = exclusiveScope(label)
+        issue.labels = [
+          ...issue.labels.filter((present) => scope === "" || exclusiveScope(present) !== scope),
+          label,
+        ]
+      }
+    }
+    repo.issues.push(issue)
+    return json(issue, { status: 201 })
+  }
+
+  const commentsOf = (issue: FakeIssue) => {
+    const comments = issueComments.get(issue) ?? []
+    issueComments.set(issue, comments)
+    return comments
+  }
+
+  /**
+   * Forgejo's issue comment endpoints. GET lists every comment, oldest first, without paging.
+   * POST comments as the user: anyone who can read the repository may, unless the issue is
+   * locked and the user cannot write its issues. An empty body fails validation with 422.
+   */
+  const issueCommentsEndpoint = (
+    method: string,
+    repo: FakeRepo,
+    issue: FakeIssue,
+    login: string,
+    body: unknown,
+  ) => {
+    const comments = commentsOf(issue)
+    if (method === "GET") {
+      return json(comments, { headers: { "x-total-count": String(comments.length) } })
+    }
+    if (method !== "POST") return json({ message: "method not allowed" }, { status: 405 })
+    if (repo.archived) return archivedRefusal()
+    if (fixtures.tokenScope !== "write") return forbidden()
+    if (issue.is_locked === true && !canWriteIssues(repo, login)) return forbidden()
+    const { body: text } = body as { body?: string }
+    if (text === undefined || text === "") {
+      return json({ message: "body is required" }, { status: 422 })
+    }
+    const poster = users.find((user) => user.login === login)
+    if (poster === undefined) return forbidden()
+    const comment = commentJson(issue, userJson(poster), text, fixtures.now)
+    comments.push(comment)
+    issue.comments = comments.length
+    issue.updated_at = fixtures.now
+    return json(comment, { status: 201 })
+  }
+
+  const escapeHtml = (text: string) =>
+    text
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&#34;")
+
+  /**
+   * Forgejo's POST /markdown, with a stand-in renderer: each blank-line separated paragraph
+   * becomes a `<p>`, and in comment mode a line break becomes `<br>`. Empty text renders as
+   * an empty body, as in Forgejo.
+   */
+  const renderMarkdown = (body: unknown) => {
+    const { Text: text = "", Mode: mode } = body as { Text?: string; Mode?: string }
+    const html = text
+      .split(/\n{2,}/)
+      .filter((paragraph) => paragraph.trim() !== "")
+      .map(
+        (paragraph) =>
+          `<p>${escapeHtml(paragraph.trim()).replaceAll("\n", mode === "comment" ? "<br>\n" : "\n")}</p>`,
+      )
+      .join("\n")
+    return new Response(html, { headers: { "content-type": "text/html; charset=UTF-8" } })
+  }
+
+  /**
+   * Forgejo 15+'s DeleteIssueLabel lookup: the identifier as a name among the repository's
+   * labels, then among the organization's, then as the id of a repository label. An
+   * organization label's id finds nothing.
+   */
+  const labelByIdentifier = (org: FakeOrg, repo: FakeRepo, identifier: string) =>
+    repo.labels.find((label) => label.name === identifier) ??
+    org.labels.find((label) => label.name === identifier) ??
+    (/^-?\d+$/.test(identifier)
+      ? repo.labels.find((label) => label.id === Number(identifier))
+      : undefined)
+
+  /**
    * Forgejo's issue label endpoints. POST adds labels and PUT replaces the set; every label
    * either adds removes the issue's other labels in its exclusive scope, repository-level and
-   * organization-level alike (RemoveDuplicateExclusiveIssueLabels). DELETE removes one label.
-   * Unknown ids in a POST or PUT are ignored, as in Forgejo.
+   * organization-level alike (RemoveDuplicateExclusiveIssueLabels). Unknown ids in a POST or
+   * PUT are ignored, as in Forgejo. DELETE removes one label, found by `labelByIdentifier`,
+   * and succeeds when the issue does not have it.
    */
   const issueLabels = (
     method: string,
@@ -340,22 +591,21 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     repo: FakeRepo,
     issue: FakeIssue,
     login: string,
-    labelId: string | undefined,
+    identifier: string | undefined,
     body: unknown,
   ) => {
     if (method === "GET") return json(issue.labels)
     if (repo.archived) return archivedRefusal()
     if (!canWriteIssues(repo, login)) return forbidden()
-    const available = [...org.labels, ...repo.labels]
-    if (method === "DELETE" && labelId !== undefined) {
-      if (!available.some((label) => label.id === Number(labelId))) {
-        return json({ message: "label does not exist" }, { status: 422 })
-      }
-      issue.labels = issue.labels.filter((label) => label.id !== Number(labelId))
+    if (method === "DELETE" && identifier !== undefined) {
+      const removed = labelByIdentifier(org, repo, identifier)
+      if (removed === undefined) return json({ message: "label does not exist" }, { status: 422 })
+      issue.labels = issue.labels.filter((label) => label.id !== removed.id)
       issue.updated_at = fixtures.now
       return new Response(null, { status: 204 })
     }
-    if (labelId !== undefined || (method !== "POST" && method !== "PUT")) {
+    const available = [...org.labels, ...repo.labels]
+    if (identifier !== undefined || (method !== "POST" && method !== "PUT")) {
       return json({ message: "method not allowed" }, { status: 405 })
     }
     const ids = (body as { labels: ReadonlyArray<number> }).labels
@@ -376,20 +626,12 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
   const insightsApi = (path: string, query: URLSearchParams, login: string) => {
     const heatmapPath = /^\/api\/v1\/users\/([^/]+)\/heatmap$/.exec(path)
     if (heatmapPath !== null) return heatmapPath[1] === login ? json(fixtures.heatmap) : json([])
-    const repoRead =
-      /^\/api\/v1\/repos\/([^/]+)\/([^/]+)\/(actions\/runs|languages|milestones)$/.exec(path)
+    const repoRead = /^\/api\/v1\/repos\/([^/]+)\/([^/]+)\/(actions\/runs|languages)$/.exec(path)
     if (repoRead === null) return undefined
     const [, owner = "", name = "", what] = repoRead
     const repo = findRepo(owner, name)
     if (repo === undefined) return notFound()
     if (what === "languages") return json(repo.languages ?? {})
-    if (what === "milestones") {
-      const state = query.get("state") ?? "open"
-      return paged(
-        (repo.milestones ?? []).filter((milestone) => state === "all" || milestone.state === state),
-        query,
-      )
-    }
     if (repo.actionRuns === undefined) return notFound()
     const limit = Math.min(Number(query.get("limit") ?? 30) || 30, fixtures.maxPageSize)
     const page = Math.max(Number(query.get("page") ?? 1) || 1, 1)
@@ -408,6 +650,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
   ) => {
     const user = users.find((candidate) => candidate.login === login)
     if (path === "/api/v1/user") return json(user)
+    if (path === "/api/v1/markdown" && method === "POST") return renderMarkdown(body)
     if (path === "/api/v1/user/orgs") {
       return paged(
         orgs
@@ -480,21 +723,56 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     }
     const insightsResponse = insightsApi(path, query, login)
     if (insightsResponse !== undefined) return insightsResponse
-    const repoPath =
-      /^\/api\/v1\/repos\/([^/]+)\/([^/]+)(?:\/issues(?:\/(\d+)(\/labels(?:\/(\d+))?)?)?)?$/.exec(
-        path,
-      )
+    const repoPath = /^\/api\/v1\/repos\/([^/]+)\/([^/]+)(\/.*)?$/.exec(path)
     if (repoPath !== null) {
-      const [, owner = "", name = "", number, labels, labelId] = repoPath
+      const [, owner = "", name = "", rest = ""] = repoPath
       const org = findOrg(owner)
       const repo = findRepo(owner, name)
       if (org === undefined || repo === undefined) return notFound()
-      if (!path.includes("/issues")) return json(repoJson(owner, repo, login))
-      if (number === undefined) return listIssues(repo, query)
+      if (rest === "") return json(repoJson(owner, repo, login))
+      if (rest === "/labels") return paged(repo.labels, query)
+      if (rest === "/milestones") {
+        const state = query.get("state") ?? "open"
+        return paged(
+          (repo.milestones ?? []).filter(
+            (milestone) => state === "all" || milestone.state === state,
+          ),
+          query,
+        )
+      }
+      if (rest === "/assignees") {
+        return json(
+          users
+            .filter((candidate) => isAssignable(repo, candidate))
+            .sort((a, b) => a.login.localeCompare(b.login))
+            .map(userJson),
+        )
+      }
+      if (rest === "/issues") {
+        return method === "POST"
+          ? createIssue(owner, org, repo, login, body)
+          : listIssues(repo, query)
+      }
+      const issuePath = /^\/issues\/(\d+)(?:\/(labels|comments)(?:\/([^/]+))?)?$/.exec(rest)
+      if (issuePath === null) return notFound()
+      const [, number = "", sub, identifier] = issuePath
       const issue = repo.issues.find((candidate) => candidate.number === Number(number))
       if (issue === undefined) return notFound()
-      if (labels !== undefined) {
-        return issueLabels(method, org, repo, issue, login, labelId, body)
+      if (sub === "labels") {
+        return issueLabels(
+          method,
+          org,
+          repo,
+          issue,
+          login,
+          identifier === undefined ? undefined : decodeURIComponent(identifier),
+          body,
+        )
+      }
+      if (sub === "comments") {
+        return identifier === undefined
+          ? issueCommentsEndpoint(method, repo, issue, login, body)
+          : notFound()
       }
       return method === "PATCH" ? editIssue(repo, issue, login, body) : json(issue)
     }
