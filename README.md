@@ -303,6 +303,8 @@ The token needs read access to issues, repositories, notifications, and the user
   `wrangler.jsonc`, so rebuild after you change it. API responses are never cached.
 - Signing out, or another user signing in in the same browser, clears what Tabulo kept in the
   browser's storage, except the theme.
+- The shared card order spans repositories with different readers, so a member can tell from
+  the ranks that cards they cannot read lie between two of theirs, though not which issues.
 
 ## License
 

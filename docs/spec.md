@@ -108,8 +108,11 @@ the board.
 - **Card order.** Every card has a rank, compared by code unit, and the order belongs to the
   organization, across all its repositories. Cards sort by rank, then by key. Two moves that
   land in the same gap at the same moment can store equal ranks; the key then orders them the
-  same way for everyone, and a later move places a card after both.
-- **Who arranges.** Only members of the organization may move, reorder, or add cards. Anyone
+  same way for everyone, and a later move places a card after both. Ranks span repositories
+  that different users can read, so the ranks a user sees can show that cards they cannot read
+  lie between two of theirs, though never which issues those are.
+- **Who arranges.** Only members of the organization may move, reorder, or add cards, as
+  `/user/orgs` lists them for the user's token. Anyone
   may change a card's labels, milestone, or assignees, or comment; Forgejo decides. Forgejo
   authorizes each issue write as the user, so Tabulo does not check push access. Cards of
   archived repositories cannot be moved, added, edited, or commented on.
@@ -146,8 +149,9 @@ using part of them. Before it answers, it stores ranks in one D1 batch:
 - A shown card without a stored rank for its current column, for example one moved in Forgejo,
   gets a rank after the largest stored rank of that column in the organization. Several such
   cards are ranked most recently updated first.
-- Rows of issues that a loaded repository no longer lists (closed before the Done window,
-  deleted, or transferred) are deleted. Rows of other repositories are kept.
+- Rows of issues that a repository read to its end no longer lists (closed before the Done
+  window, deleted, or transferred) are deleted. Rows of other repositories, and of a
+  repository whose issues need more than 100 pages, are kept.
 - Neither step touches a row written after the read started. Such a row comes from a move made
   while this read's Forgejo listing was already out of date.
 
@@ -160,9 +164,11 @@ characters. The server:
 1. Answers 400 to an invalid key, and 403 unless the user is a member of the organization or
    if the repository is archived.
 2. Checks that the user's board is current. If Forgejo has the card in another column than
-   `fromColumn`, if `afterKey` or `beforeKey` has no rank in the destination column, or if
-   `beforeKey` sorts before `afterKey`, it answers 409 and changes nothing. Acting on the stale
-   view could undo someone else's change.
+   `fromColumn`, if `afterKey` or `beforeKey` has no rank in the destination column or names
+   an issue the user cannot read, or if `beforeKey` sorts before `afterKey`, it answers 409 and
+   changes nothing. Acting on the stale view could undo someone else's change. A neighbour the
+   user cannot read answers as one without a rank, so the answer does not tell which issues
+   of a repository they cannot read exist.
 3. If the column changes, writes to Forgejo as the user. To a status column it adds that label,
    and Forgejo removes the issue's other labels in the same exclusive scope; Tabulo then
    removes any other label named like a column that is left, such as a repository's
