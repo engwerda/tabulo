@@ -412,6 +412,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
     groups,
     searchStatus: status,
     searchError: search.error?.message,
+    retrySearch: () => void search.refetch(),
     minSearchLength: MIN_SEARCH_LENGTH,
   }
 }

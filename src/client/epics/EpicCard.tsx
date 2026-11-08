@@ -1,4 +1,4 @@
-import { type ReactNode, useId, useState } from "react"
+import { type ReactNode, useId } from "react"
 import { Link } from "wouter"
 import type { BoardColumn, Epic, EpicChild } from "../../shared/api.ts"
 import { AvatarStack } from "../Avatar.tsx"
@@ -78,7 +78,7 @@ const ChildIcon = ({ child }: { child: Extract<EpicChild, { _tag: "Issue" }> }) 
 
 /**
  * An issue's link: to its card in the board's side panel when the board shows it, else to
- * Forgejo. `board` is that board address.
+ * Forgejo in a new tab. `board` is that board address.
  */
 const IssueLink = ({
   board,
@@ -92,8 +92,9 @@ const IssueLink = ({
   children: ReactNode
 }) =>
   board === null ? (
-    <a href={url} className={className}>
+    <a href={url} target="_blank" rel="noreferrer" className={className}>
       {children}
+      <span className="sr-only"> (opens in Forgejo)</span>
     </a>
   ) : (
     <Link href={board} className={className}>
@@ -188,6 +189,8 @@ export const EpicCard = ({
   epic,
   columns,
   sharedLabels,
+  expanded,
+  onExpandedChange,
 }: {
   org: string
   /** The page's chosen repositories: issues of these open on their board. */
@@ -196,8 +199,10 @@ export const EpicCard = ({
   columns: ReadonlyArray<BoardColumn>
   /** Labels every epic on the page carries, such as the epic label itself: not worth repeating. */
   sharedLabels: ReadonlySet<number>
+  /** Whether the children show; the page keeps it, so Back brings it back. */
+  expanded: boolean
+  onExpandedChange: (expanded: boolean) => void
 }) => {
-  const [expanded, setExpanded] = useState(false)
   const childrenId = useId()
   const headingId = useId()
   const unavailable = epic.children.filter((child) => child._tag === "Unavailable").length
@@ -341,7 +346,7 @@ export const EpicCard = ({
             type="button"
             aria-expanded={expanded}
             aria-controls={childrenId}
-            onClick={() => setExpanded((value) => !value)}
+            onClick={() => onExpandedChange(!expanded)}
             className="flex h-10 w-full items-center justify-between gap-2 border-t pointer-coarse:h-11 border-zinc-100 px-4 text-left text-xs font-medium text-zinc-600 transition hover:bg-zinc-50 hover:text-zinc-900 focus-visible:-outline-offset-2 sm:px-5 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-100"
           >
             <span>

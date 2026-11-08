@@ -21,7 +21,14 @@ import {
 import { SearchField } from "../ui/SearchField.tsx"
 import { useToast } from "../ui/toast.tsx"
 import { EpicCard } from "./EpicCard.tsx"
-import { epicSummary, incompleteNotice, readEpicFilters, visibleEpics } from "./epics-view.ts"
+import {
+  epicSummary,
+  incompleteNotice,
+  readEpicFilters,
+  readOpenEpics,
+  visibleEpics,
+  withEpicOpen,
+} from "./epics-view.ts"
 
 const CHILD_EXAMPLE = "- [ ] #12\n- [ ] repo#34\n- [ ] owner/repo#56"
 
@@ -169,6 +176,7 @@ const NoEpics = ({ org, selected }: { org: string; selected: ReadonlyArray<strin
               className={`${buttonClass.primary} mt-4`}
             >
               New epic in {repo}
+              <span className="sr-only"> (opens in Forgejo)</span>
               <ExternalIcon className="size-3.5" />
             </a>
           )}
@@ -200,6 +208,7 @@ export const EpicsPage = ({ org }: { org: string }) => {
   const repoSelection = useRepoSelection(org)
   const [params, setParams] = useSearchParams()
   const filters = readEpicFilters(params)
+  const openEpics = readOpenEpics(params)
   const hasSelection = repoSelection.selection !== ""
   const epics = useQuery({
     queryKey: ["epics", org, repoSelection.selection],
@@ -217,6 +226,8 @@ export const EpicsPage = ({ org }: { org: string }) => {
       },
       { replace: true },
     )
+  const setEpicOpen = (key: string, open: boolean) =>
+    setParams((current) => withEpicOpen(current, key, open), { replace: true })
   const clearFilters = () =>
     setParams(
       (current) => {
@@ -416,6 +427,8 @@ export const EpicsPage = ({ org }: { org: string }) => {
                     epic={epic}
                     columns={epics.data.columns}
                     sharedLabels={sharedLabels}
+                    expanded={openEpics.has(epic.key)}
+                    onExpandedChange={(open) => setEpicOpen(epic.key, open)}
                   />
                 ))}
               </div>

@@ -40,6 +40,20 @@ export const readEpicFilters = (params: URLSearchParams) => {
   }
 }
 
+/** The epics whose children show, kept in the address so Back brings them back. */
+export const readOpenEpics = (params: URLSearchParams): ReadonlySet<string> =>
+  new Set((params.get("open") ?? "").split(",").filter((key) => key !== ""))
+
+export const withEpicOpen = (params: URLSearchParams, key: string, open: boolean) => {
+  const keys = new Set(readOpenEpics(params))
+  if (open) keys.add(key)
+  else keys.delete(key)
+  const next = new URLSearchParams(params)
+  if (keys.size === 0) next.delete("open")
+  else next.set("open", [...keys].join(","))
+  return next
+}
+
 export const visibleEpics = (epics: ReadonlyArray<Epic>, params: URLSearchParams) => {
   const filters = readEpicFilters(params)
   const text = filters.text.trim().toLowerCase()

@@ -1,6 +1,7 @@
 import { Fragment, type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { useLocation } from "wouter"
+import { ErrorNotice } from "../ui/ErrorNotice.tsx"
 import { CheckIcon, XIcon } from "../ui/icons.tsx"
 import { buttonClass, Kbd, touchTarget } from "../ui/primitives.tsx"
 import { Glyph, SearchIcon } from "./icons.tsx"
@@ -161,6 +162,10 @@ const Option = ({
           ))}
         </span>
       )}
+      {/* An issue's row does not say where it opens; a repository's says "Open in Forgejo". */}
+      {item.external === true && item.kind !== undefined && (
+        <span className="sr-only"> (opens in Forgejo)</span>
+      )}
       {item.external === true && (
         <Glyph
           name="external"
@@ -189,14 +194,13 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
   const [query, setQuery] = useState("")
   const [activeId, setActiveId] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ text: string; failed: boolean } | null>(null)
+  const dialog = useRef<HTMLDivElement>(null)
   const input = useRef<HTMLInputElement>(null)
-  const closeButton = useRef<HTMLButtonElement>(null)
-  const backButton = useRef<HTMLButtonElement>(null)
   const listId = useId()
   const recent = useMemo(readRecent, [])
   // The group being browsed, such as the board's labels: the palette lists all of it, alone.
   const [browsing, setBrowsing] = useState<string | null>(null)
-  const { groups, searchStatus, searchError, minSearchLength } = usePaletteGroups(
+  const { groups, searchStatus, searchError, retrySearch, minSearchLength } = usePaletteGroups(
     browsing === null ? query : "",
     true,
   )
@@ -312,12 +316,12 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
       event.preventDefault()
       stopBrowsing()
     } else if (event.key === "Tab") {
-      // The input and the buttons beside it are the only stops; Tab moves between them.
+      // Options are reached with the arrow keys; Tab moves between the input and the buttons.
       event.preventDefault()
-      const stops = [backButton.current, input.current, closeButton.current].filter(
-        (stop) => stop !== null,
-      )
-      const current = stops.indexOf(event.target as HTMLButtonElement | HTMLInputElement)
+      const stops = [
+        ...(dialog.current?.querySelectorAll<HTMLElement>("input, button:enabled") ?? []),
+      ]
+      const current = stops.indexOf(event.target as HTMLElement)
       stops[(current + (event.shiftKey ? -1 : 1) + stops.length) % stops.length]?.focus()
     }
   }
@@ -325,15 +329,9 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
   const issueCount = sections.find((section) => section.id === "issues")?.rows.length ?? 0
   // The search can find only issues that "Your work" already lists, which then show there alone.
   const foundAbove = (groups.find((group) => group.id === "issues")?.items.length ?? 0) > 0
-  const searchNote =
-    issueCount > 0
-      ? null
-      : searchStatus === "loading"
-        ? "Searching every repository you can access…"
-        : searchStatus === "error"
-          ? `Search failed: ${searchError ?? "try again"}`
-          : null
-  const nothingFound = rows.length === 0 && searchNote === null && query.trim() !== ""
+  const searching = issueCount === 0 && searchStatus === "loading"
+  const searchFailed = issueCount === 0 && searchStatus === "error"
+  const nothingFound = rows.length === 0 && !searching && !searchFailed && query.trim() !== ""
   let optionIndex = -1
 
   return createPortal(
@@ -349,6 +347,7 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
         className="pointer-events-none absolute inset-0 -z-10 animate-palette-fade bg-zinc-950/40 backdrop-blur-[3px] dark:bg-black/60"
       />
       <div
+        ref={dialog}
         role="dialog"
         aria-modal="true"
         aria-label="Command menu"
@@ -359,7 +358,6 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
           <SearchIcon className="size-[1.125rem] shrink-0 text-zinc-500 dark:text-zinc-400" />
           {browsed !== undefined && (
             <button
-              ref={backButton}
               type="button"
               onClick={stopBrowsing}
               aria-label={`${browsed.heading}. Back to all commands`}
@@ -397,7 +395,6 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
           />
           {searchStatus === "loading" && <Spinner />}
           <button
-            ref={closeButton}
             type="button"
             onClick={onClose}
             aria-label="Close"
@@ -450,17 +447,25 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
               )
             })}
           </div>
-          {searchNote !== null ? (
-            <p
-              className={`flex items-center gap-2 px-2.5 py-2 text-sm ${
-                searchStatus === "error"
-                  ? "text-red-700 dark:text-red-400"
-                  : "text-zinc-500 dark:text-zinc-400"
-              }`}
-            >
-              {searchStatus === "loading" && <Spinner />}
-              {searchNote}
+          {searching ? (
+            <p className="flex items-center gap-2 px-2.5 py-2 text-sm text-zinc-500 dark:text-zinc-400">
+              <Spinner />
+              Searching every repository you can access…
             </p>
+          ) : searchFailed ? (
+            <ErrorNotice
+              bare
+              tone="warning"
+              title="Could not search issues and pull requests"
+              onRetry={() => {
+                // The notice leaves while the search runs again; focus stays in the dialog.
+                input.current?.focus()
+                retrySearch()
+              }}
+              className="px-2.5 py-2"
+            >
+              {searchError}
+            </ErrorNotice>
           ) : nothingFound ? (
             <div className="grid place-items-center gap-2 px-6 py-10 text-center">
               <SearchIcon className="size-6 text-zinc-400 dark:text-zinc-500" />
