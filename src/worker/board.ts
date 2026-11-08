@@ -174,7 +174,8 @@ export const toBoardCard = (
   readOnlyReason: repo.archived ? "archived" : null,
 })
 
-const NAME = /^[A-Za-z0-9_.-]+$/
+// Forgejo allows at most 40 characters in a user or organization name and 100 in a repository's.
+const NAME = /^[A-Za-z0-9_.-]{1,100}$/
 const CARD_KEY = /^([a-z0-9_.-]+)\/([a-z0-9_.-]+)#([1-9][0-9]{0,9})$/
 const MAX_CARD_KEY_LENGTH = 200
 

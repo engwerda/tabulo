@@ -828,6 +828,9 @@ describe("POST /api/board/move", () => {
     ["issue number zero", { toColumn: "todo", afterKey: "acme/api#0" }],
     ["a space in a key", { toColumn: "todo", afterKey: "acme/a pi#1" }],
     ["a key over 200 characters", { toColumn: "todo", afterKey: `acme/${"a".repeat(196)}#1` }],
+    ["a neighbour in the repository ..", { toColumn: "todo", afterKey: "acme/..#1" }],
+    ["an issue number over ten digits", { toColumn: "todo", afterKey: "acme/api#12345678901" }],
+    ["a repository name over 100 characters", { toColumn: "todo", repo: "a".repeat(101) }],
     ["the moved card as its own neighbour", { toColumn: "todo", afterKey: "acme/api#2" }],
   ])("answers 400 to %s and writes nothing", async (_, body) => {
     const { forgejo, move } = await boardSession()

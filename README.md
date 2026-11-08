@@ -293,7 +293,8 @@ The token needs read access to issues, repositories, notifications, and the user
   stores only its SHA-256 hash. A session ends 30 days after sign-in.
 - Access and refresh tokens are encrypted with AES-GCM before they are written to D1, and never
   reach the browser.
-- Requests that change state must send an `Origin` header equal to `APP_URL`.
+- Requests that change state must send an `Origin` header equal to `APP_URL`, and a JSON body
+  of at most 1 MB or none, so an HTML form cannot send them.
 - A card move checks that you are a member of the organization and that the repository is not
   archived. Forgejo then authorizes each issue write as you.
 - The app is served with a Content Security Policy that allows only Tabulo's own scripts,

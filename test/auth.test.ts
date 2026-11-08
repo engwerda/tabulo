@@ -342,3 +342,21 @@ describe("state-changing requests", () => {
     expect(forgejo.requests.length).toBe(before)
   })
 })
+
+describe("request bodies", () => {
+  it("refuses a body over 1 MB before reading it", async () => {
+    const forgejo = createFakeForgejo()
+    const call = tabulo(forgejo.fetch)
+    const cookie = await signIn(call, forgejo)
+    const before = forgejo.requests.length
+
+    const response = await call("/api/board/comment", {
+      method: "POST",
+      headers: { cookie, origin: APP_URL, "content-type": "application/json" },
+      body: JSON.stringify({ org: "acme", repo: "api", number: 1, body: "x".repeat(1024 * 1024) }),
+    })
+
+    expect(response.status).toBe(413)
+    expect(forgejo.requests.length).toBe(before)
+  })
+})

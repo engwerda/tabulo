@@ -1,5 +1,6 @@
 import { Cause, Clock, Effect, Exit, Schema } from "effect"
 import { type Context, Hono } from "hono"
+import { bodyLimit } from "hono/body-limit"
 import { deleteCookie, getCookie, setCookie } from "hono/cookie"
 import {
   AddCommentRequest,
@@ -220,6 +221,14 @@ export const createApp = (dependencies: Dependencies) => {
     }
     return next()
   })
+
+  // The largest body Tabulo takes is a comment of 65,535 characters.
+  app.use(
+    bodyLimit({
+      maxSize: 1024 * 1024,
+      onError: (c) => c.json({ error: "The request body is too large" }, 413),
+    }),
+  )
 
   app.get("/auth/login", (c) =>
     run(
