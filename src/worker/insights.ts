@@ -45,6 +45,8 @@ export type InsightsInput = {
   readonly loaded: ReadonlyArray<RepoActivity>
   readonly failedRepos: ReadonlyArray<{ readonly repo: string; readonly message: string }>
   readonly incomplete: ReadonlyArray<IncompleteListing>
+  /** The board's status label scope; those labels are columns, not topics, so Top labels skips them. */
+  readonly statusScope: string
 }
 
 type Person = { readonly login: string; readonly avatarUrl: string }
@@ -455,6 +457,7 @@ export const buildInsights = (input: InsightsInput): Insights => {
   for (const item of issues) {
     if (item.closed !== null) continue
     for (const { name, color } of item.labels) {
+      if (name.startsWith(input.statusScope)) continue
       const entry = labelCounts.get(name) ?? { name, color: labelHexColor(color), count: 0 }
       labelCounts.set(name, { ...entry, count: entry.count + 1 })
     }
