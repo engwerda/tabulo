@@ -4,6 +4,7 @@ import { Link, Redirect } from "wouter"
 import { Avatar } from "../Avatar.tsx"
 import { fetchOrgs } from "../api.ts"
 import { Glyph } from "../palette/icons.tsx"
+import { ErrorNotice } from "../ui/ErrorNotice.tsx"
 import { AlertIcon, CheckIcon, ChevronRightIcon, InfoIcon } from "../ui/icons.tsx"
 import { cardClass, Popover } from "../ui/primitives.tsx"
 import { type OrgViewId, orgView, orgViewHref } from "./views.ts"
@@ -27,9 +28,14 @@ export const OrgPicker = ({ view }: { view: OrgViewId }) => {
       </h1>
       <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">{pickerHint}</p>
       {orgs.isError ? (
-        <p role="alert" className="mt-6 text-sm text-red-700 dark:text-red-400">
-          Could not load your organizations: {orgs.error.message}
-        </p>
+        <ErrorNotice
+          title="Could not load your organizations"
+          onRetry={() => void orgs.refetch()}
+          retrying={orgs.isFetching}
+          className="mt-6"
+        >
+          {orgs.error.message}
+        </ErrorNotice>
       ) : orgs.data === undefined ? (
         <div
           role="status"
@@ -98,7 +104,9 @@ export const OrgSwitcher = ({ org, view }: { org: string; view: OrgViewId }) => 
     <Popover
       containerClass="relative -ml-1.5 min-w-0"
       triggerClass="flex w-full min-w-0 items-center gap-2 rounded-lg py-1 pr-1.5 pl-1.5 text-left pointer-coarse:min-h-11 transition hover:bg-zinc-100 dark:hover:bg-zinc-800/70"
-      accessibleLabel={`Organization: ${title}. Switch organization`}
+      accessibleLabel={`Organization: ${title}. ${
+        orgs.isError ? "Your organizations did not load" : "Switch organization"
+      }`}
       label={
         orgs.isPending ? (
           // The login would show first and then change to the full name, moving what follows.
@@ -108,7 +116,7 @@ export const OrgSwitcher = ({ org, view }: { org: string; view: OrgViewId }) => 
           </span>
         ) : (
           <>
-            {current === undefined && orgs.data !== undefined ? (
+            {current === undefined && !orgs.isPending ? (
               <span className="grid size-6 place-items-center rounded-md bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
                 <AlertIcon className="size-3.5" />
               </span>
@@ -129,13 +137,26 @@ export const OrgSwitcher = ({ org, view }: { org: string; view: OrgViewId }) => 
     >
       {(close) => (
         <>
+          {orgs.isError && (
+            <ErrorNotice
+              bare
+              tone="warning"
+              title="Your organizations did not load"
+              onRetry={() => void orgs.refetch()}
+              retrying={orgs.isFetching}
+              className="px-2 pt-1 pb-2 [&>button]:ml-11"
+            >
+              {orgs.error.message}
+            </ErrorNotice>
+          )}
           <p
+            hidden={orgs.isError}
             id={headingId}
             className="px-2 pt-1 pb-1.5 text-2xs font-medium text-zinc-500 dark:text-zinc-400"
           >
             Organizations
           </p>
-          <div role="menu" aria-labelledby={headingId}>
+          <div role="menu" aria-labelledby={headingId} hidden={orgs.isError}>
             {(orgs.data ?? []).map((candidate) => {
               const active = candidate.name.toLowerCase() === org.toLowerCase()
               return (

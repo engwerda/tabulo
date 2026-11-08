@@ -191,7 +191,8 @@ const Picker = ({
   valueText: string
   /** The plural the search box names, such as "labels". */
   searchName: string
-  trigger: ReactNode
+  /** The value's items, such as label chips, each with a key; they wrap as one row. */
+  trigger: ReadonlyArray<ReactNode>
   choices: ReadonlyArray<Choice> | undefined
   picked: ReadonlySet<string>
   multiple: boolean
@@ -204,7 +205,17 @@ const Picker = ({
   )
   return (
     <Popover
-      label={trigger}
+      // The chevron stays beside the last item when the items wrap, as it does after one item.
+      chevron={false}
+      label={
+        <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+          {trigger.slice(0, -1)}
+          <span className="inline-flex min-w-0 items-center gap-1.5">
+            {trigger.at(-1)}
+            <ChevronDownIcon className="size-3.5 shrink-0 opacity-60" />
+          </span>
+        </span>
+      }
       accessibleLabel={`${name}: ${valueText}. Change`}
       triggerClass={editTrigger}
       containerClass="relative min-w-0"
@@ -425,6 +436,7 @@ export const CardPanel = ({
       toast({ tone: "error", title: "The comment was not added", detail: error.message }),
   })
   const heading = useRef<HTMLHeadingElement>(null)
+  const commentsHeading = useRef<HTMLHeadingElement>(null)
   const layer = useRef<HTMLDivElement>(null)
   const modal = !useSyncExternalStore(subscribeWide, () => wideQuery.matches)
   useInertOutside(modal, layer, () =>
@@ -665,18 +677,21 @@ export const CardPanel = ({
                         })
                       }}
                       trigger={
-                        card.assignees.length === 0 ? (
-                          <span className="text-zinc-500 dark:text-zinc-400">Nobody</span>
-                        ) : (
-                          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                            {card.assignees.map((person) => (
-                              <span key={person.login} className="flex items-center gap-1.5">
+                        card.assignees.length === 0
+                          ? [
+                              <span key="nobody" className="text-zinc-500 dark:text-zinc-400">
+                                Nobody
+                              </span>,
+                            ]
+                          : card.assignees.map((person) => (
+                              <span
+                                key={person.login}
+                                className="flex items-center gap-1.5 not-last:mr-1.5"
+                              >
                                 <Avatar url={person.avatarUrl} name={person.login} size="xs" />
                                 {person.login}
                               </span>
-                            ))}
-                          </span>
-                        )
+                            ))
                       }
                     />
                   ) : (
@@ -734,20 +749,20 @@ export const CardPanel = ({
                       })
                     }}
                     trigger={
-                      card.labels.length === 0 ? (
-                        <span className="text-zinc-500 dark:text-zinc-400">None</span>
-                      ) : (
-                        <span className="flex flex-wrap gap-1">
-                          {card.labels.map((label) => (
+                      card.labels.length === 0
+                        ? [
+                            <span key="none" className="text-zinc-500 dark:text-zinc-400">
+                              None
+                            </span>,
+                          ]
+                        : card.labels.map((label) => (
                             <LabelChip
                               key={label.id}
                               name={label.name}
                               color={label.color}
                               size="md"
                             />
-                          ))}
-                        </span>
-                      )
+                          ))
                     }
                   />
                 ) : (
@@ -794,11 +809,15 @@ export const CardPanel = ({
                             : `Set ${name}'s milestone to ${title}`,
                       })
                     }}
-                    trigger={
-                      card.milestone ?? (
-                        <span className="text-zinc-500 dark:text-zinc-400">None</span>
-                      )
-                    }
+                    trigger={[
+                      card.milestone === null ? (
+                        <span key="none" className="text-zinc-500 dark:text-zinc-400">
+                          None
+                        </span>
+                      ) : (
+                        <span key="milestone">{card.milestone}</span>
+                      ),
+                    ]}
                   />
                 ) : (
                   <span className="block px-1.5 py-1">{card.milestone ?? "None"}</span>
@@ -861,7 +880,12 @@ export const CardPanel = ({
             </section>
 
             <section aria-labelledby="card-comments" className="mt-8">
-              <h3 id="card-comments" className={`${sectionTitle} flex items-center gap-2`}>
+              <h3
+                id="card-comments"
+                ref={commentsHeading}
+                tabIndex={-1}
+                className={`${sectionTitle} flex w-fit scroll-mt-4 items-center gap-2 rounded-sm`}
+              >
                 Comments
                 {detail.data !== undefined && (
                   <span className="font-medium text-zinc-500 tabular-nums dark:text-zinc-400">
@@ -921,8 +945,12 @@ export const CardPanel = ({
                     key={card.key}
                     draftKey={commentDraftKey(card.key)}
                     onSubmit={(body) => comment.mutateAsync(body)}
-                    // The heading holds focus between edits; a second Escape closes the panel.
-                    onEscape={() => heading.current?.focus({ preventScroll: true })}
+                    // The comments heading holds focus between edits, scrolled into view so the
+                    // focus stays visible; a second Escape closes the panel.
+                    onEscape={() => {
+                      commentsHeading.current?.focus({ preventScroll: true })
+                      commentsHeading.current?.scrollIntoView({ block: "nearest" })
+                    }}
                   />
                 </div>
               )}

@@ -1,14 +1,8 @@
-import {
-  type RefObject,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useSyncExternalStore,
-} from "react"
+import { type RefObject, useId, useLayoutEffect, useRef } from "react"
 import { ArrowRightIcon, XIcon } from "../ui/icons.tsx"
 import { buttonClass, Kbd } from "../ui/primitives.tsx"
 import { isMac, Key } from "./keys.tsx"
+import { pageSlot } from "./page-slot.ts"
 import { MENU_KEYS, SHORTCUTS, type Shortcut, shortcutKeys } from "./shortcuts.ts"
 
 export type ShortcutSection = {
@@ -32,28 +26,10 @@ const APP_SECTIONS: ReadonlyArray<ShortcutSection> = [
 
 // The page on screen lists its own shortcuts here, so the dialog shows them wherever it opens:
 // from the page's own key or from the command menu.
-let pageSections: ReadonlyArray<ShortcutSection> = []
-const listeners = new Set<() => void>()
-const publish = (sections: ReadonlyArray<ShortcutSection>) => {
-  pageSections = sections
-  for (const listener of listeners) listener()
-}
-const subscribe = (listener: () => void) => {
-  listeners.add(listener)
-  return () => {
-    listeners.delete(listener)
-  }
-}
+const pageShortcuts = pageSlot<ReadonlyArray<ShortcutSection>>([])
 
 /** Adds a page's shortcuts before the app-wide ones while the page is mounted. */
-export const usePageShortcuts = (sections: ReadonlyArray<ShortcutSection>) => {
-  useEffect(() => {
-    publish(sections)
-    return () => {
-      if (pageSections === sections) publish([])
-    }
-  }, [sections])
-}
+export const usePageShortcuts = pageShortcuts.usePublish
 
 const SIDE_ARROWS: Readonly<Record<string, string>> = { "←": "Left arrow", "→": "Right arrow" }
 
@@ -81,7 +57,7 @@ export const ShortcutsDialog = ({
 }) => {
   const dialog = useRef<HTMLDialogElement>(null)
   const id = useId()
-  const page = useSyncExternalStore(subscribe, () => pageSections)
+  const page = pageShortcuts.useValue()
   // A layout effect closes the modal before the command menu's effect focuses its input, which
   // a still-open modal would block and its closing would undo.
   useLayoutEffect(() => {

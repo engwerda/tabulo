@@ -28,6 +28,7 @@ import {
 } from "../api.ts"
 import { relativeTime } from "../format.ts"
 import { ShortcutsDialog, usePageShortcuts } from "../palette/ShortcutsDialog.tsx"
+import { usePageCommands } from "../palette/use-palette-groups.ts"
 import { ORGS, OrgSwitcher } from "../scope/OrgPicker.tsx"
 import { RepoPicker } from "../scope/RepoPicker.tsx"
 import { useRepoSelection } from "../scope/use-repo-selection.ts"
@@ -48,6 +49,7 @@ import { useToast } from "../ui/toast.tsx"
 import type { CardActions } from "./BoardCardView.tsx"
 import { BoardColumns } from "./BoardColumns.tsx"
 import { BoardFiltersBar } from "./BoardFiltersBar.tsx"
+import { boardCommands } from "./board-commands.ts"
 import {
   applyMove,
   boardQueryKey,
@@ -59,6 +61,7 @@ import {
   matchesFilters,
   readFilters,
   replaceCard,
+  withFilter,
 } from "./board-view.ts"
 import { CardComposer } from "./CardComposer.tsx"
 import { CardPanel } from "./CardPanel.tsx"
@@ -66,6 +69,7 @@ import { drafts, titleDraftKey } from "./drafts.ts"
 import { BOARD_SHORTCUTS } from "./shortcuts.ts"
 
 const REFRESH_MS = 60_000
+const NO_COMMANDS: ReturnType<typeof boardCommands> = []
 
 /**
  * A change to a card's assignees, labels, or milestone. `done` says what happened in the toast
@@ -865,6 +869,34 @@ export const BoardPage = ({ org }: { org: string }) => {
     composerRepo !== null && creatableRepos.includes(composerRepo)
       ? composerRepo
       : creatableRepos[0]
+  const updated =
+    data === undefined
+      ? null
+      : board.isFetching
+        ? "Refreshing…"
+        : `Updated ${relativeTime(new Date(board.dataUpdatedAt).toISOString(), now)}`
+
+  usePageCommands(
+    data === undefined || allFailed
+      ? NO_COMMANDS
+      : boardCommands({
+          cards: data.cards,
+          filters,
+          newIssueColumn:
+            canCreate && firstCreatable !== undefined ? columnTitle(firstCreatable.key) : null,
+          newIssue: () => {
+            if (firstCreatable !== undefined) openComposer(firstCreatable.key)
+          },
+          toggleMine,
+          setFilter: (filter, values) =>
+            setParams((current) => withFilter(current, filter, values), { replace: true }),
+          clearFilters,
+          // The command menu gives focus back to where it was as it closes, after this runs.
+          focusSearch: () => window.setTimeout(() => searchInput.current?.focus()),
+          refresh: () => void board.refetch(),
+          updated: updated ?? "",
+        }),
+  )
 
   return (
     <RepoPaletteProvider repos={data?.repos ?? selected}>
@@ -912,13 +944,7 @@ export const BoardPage = ({ org }: { org: string }) => {
             )}
             {hasSelection && (
               <BoardMenu
-                updated={
-                  data === undefined
-                    ? null
-                    : board.isFetching
-                      ? "Refreshing…"
-                      : `Updated ${relativeTime(new Date(board.dataUpdatedAt).toISOString(), now)}`
-                }
+                updated={updated}
                 refreshing={board.isFetching}
                 onRefresh={() => void board.refetch()}
                 onShortcuts={openShortcuts}

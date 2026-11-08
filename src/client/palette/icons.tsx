@@ -15,13 +15,6 @@ const Icon = ({ children, className }: { children: ReactNode; className?: string
   </svg>
 )
 
-export const SearchIcon = ({ className }: { className?: string }) => (
-  <Icon {...(className === undefined ? {} : { className })}>
-    <circle cx="9" cy="9" r="5.5" />
-    <path d="m13.25 13.25 3.25 3.25" />
-  </Icon>
-)
-
 const GLYPHS = {
   dashboard: (
     <>
@@ -113,10 +106,53 @@ const GLYPHS = {
       <path d="M10 6.5V10l2.5 1.5" />
     </>
   ),
+  plus: <path d="M10 4.5v11M4.5 10h11" />,
+  refresh: (
+    <>
+      <path d="M15.5 9.5a5.5 5.5 0 0 0-9.9-3.1L4 8" />
+      <path d="M4 4v4h4" />
+      <path d="M4.5 10.5a5.5 5.5 0 0 0 9.9 3.1L16 12" />
+      <path d="M16 16v-4h-4" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="9" cy="9" r="5.5" />
+      <path d="m13.25 13.25 3.25 3.25" />
+    </>
+  ),
+  person: (
+    <>
+      <circle cx="10" cy="7" r="3" />
+      <path d="M4.5 16.5a5.5 5.5 0 0 1 11 0" />
+    </>
+  ),
+  tag: (
+    <>
+      <path d="M3.5 4.5v4.6a1 1 0 0 0 .3.7l6.4 6.4a1 1 0 0 0 1.4 0l4.6-4.6a1 1 0 0 0 0-1.4L9.8 3.8a1 1 0 0 0-.7-.3H4.5a1 1 0 0 0-1 1Z" />
+      <circle cx="7" cy="7" r="1" fill="currentColor" />
+    </>
+  ),
+  milestone: (
+    <>
+      <path d="M10 3.5v13" />
+      <path d="M10 4.5h5l1.5 2-1.5 2h-5" />
+    </>
+  ),
+  clear: (
+    <>
+      <path d="M3.5 5h13l-5 6v4.5l-3 1.5v-6Z" />
+      <path d="m13.5 13.5 3 3m0-3-3 3" />
+    </>
+  ),
 } as const
 
 export type GlyphName = keyof typeof GLYPHS
 
 export const Glyph = ({ name, className }: { name: GlyphName; className?: string }) => (
   <Icon {...(className === undefined ? {} : { className })}>{GLYPHS[name]}</Icon>
+)
+
+export const SearchIcon = ({ className }: { className?: string }) => (
+  <Glyph name="search" {...(className === undefined ? {} : { className })} />
 )

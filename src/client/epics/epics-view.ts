@@ -1,5 +1,31 @@
 import type { Epic, Epics } from "../../shared/api.ts"
 
+/** A repository of the page's organization by its bare name, as the epic and the board name it. */
+export const shortRepo = (org: string, repo: string) =>
+  repo.toLowerCase().startsWith(`${org.toLowerCase()}/`) ? repo.slice(org.length + 1) : repo
+
+/**
+ * The board address that opens an issue in the board's side panel, when the board of the same
+ * repositories shows it: an open issue of a chosen repository. A closed issue may have left the
+ * Done column and a pull request is never a card, so those have no board address.
+ */
+export const boardCardHref = (
+  org: string,
+  selected: ReadonlyArray<string>,
+  issue: {
+    readonly repo: string
+    readonly number: number
+    readonly state: "open" | "closed"
+    readonly kind?: "issue" | "pull"
+  },
+): string | null => {
+  const repo = shortRepo(org, issue.repo)
+  if (issue.state !== "open" || issue.kind === "pull") return null
+  if (!selected.some((name) => name.toLowerCase() === repo.toLowerCase())) return null
+  const params = new URLSearchParams({ repos: selected.join(","), card: `${repo}#${issue.number}` })
+  return `/board/${encodeURIComponent(org)}?${params}`
+}
+
 export const completion = ({ total, done }: Pick<Epic["progress"], "total" | "done">) =>
   total === 0 ? 0 : Math.round((done / total) * 100)
 

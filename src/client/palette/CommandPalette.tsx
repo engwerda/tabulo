@@ -1,10 +1,10 @@
 import { Fragment, type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { useLocation } from "wouter"
-import { CheckIcon } from "../ui/icons.tsx"
-import { buttonClass, Kbd } from "../ui/primitives.tsx"
+import { CheckIcon, XIcon } from "../ui/icons.tsx"
+import { buttonClass, Kbd, touchTarget } from "../ui/primitives.tsx"
 import { Glyph, SearchIcon } from "./icons.tsx"
-import { isMac, Key, ShortcutKeys } from "./keys.tsx"
+import { isMac, Key } from "./keys.tsx"
 import { rankSections } from "./rank.ts"
 import { readRecent, rememberCommand } from "./recent.ts"
 import { type PaletteItem, type RunContext, usePaletteGroups } from "./use-palette-groups.ts"
@@ -113,7 +113,15 @@ const Option = ({
     className="group flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2 data-active:bg-zinc-100 dark:data-active:bg-zinc-800"
   >
     <span className="grid size-7 shrink-0 place-items-center rounded-md border border-zinc-200 bg-white text-zinc-500 group-data-active:text-zinc-900 dark:border-zinc-700/80 dark:bg-zinc-900 dark:text-zinc-400 dark:group-data-active:text-zinc-100">
-      <Glyph name={item.icon} className="size-4" />
+      {item.color === undefined ? (
+        <Glyph name={item.icon} className="size-4" />
+      ) : (
+        <span
+          aria-hidden="true"
+          className="size-2.5 rounded-full"
+          style={{ backgroundColor: item.color }}
+        />
+      )}
     </span>
     <span className="min-w-0 flex-1">
       <span className="text-sm text-zinc-900 max-sm:line-clamp-2 sm:block sm:truncate dark:text-zinc-100">
@@ -140,15 +148,17 @@ const Option = ({
           <KindChip kind={item.kind} />
         </span>
       )}
-      {item.current === true && (
+      {item.current !== undefined && (
         <span className="flex items-center gap-1 text-xs font-medium text-indigo-700 dark:text-indigo-300">
           <CheckIcon className="size-3.5" />
-          Current
+          {item.current}
         </span>
       )}
-      {item.shortcut !== undefined && (
-        <span className="max-sm:hidden pointer-coarse:hidden">
-          <ShortcutKeys id={item.shortcut} />
+      {item.keys !== undefined && (
+        <span className="inline-flex items-center gap-1 max-sm:hidden pointer-coarse:hidden">
+          {item.keys.map((key) => (
+            <Key key={key} name={key} />
+          ))}
         </span>
       )}
       {item.external === true && (
@@ -181,13 +191,28 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
   const [notice, setNotice] = useState<{ text: string; failed: boolean } | null>(null)
   const input = useRef<HTMLInputElement>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
+  const backButton = useRef<HTMLButtonElement>(null)
   const listId = useId()
   const recent = useMemo(readRecent, [])
-  const { groups, searchStatus, searchError, minSearchLength } = usePaletteGroups(query, true)
+  // The group being browsed, such as the board's labels: the palette lists all of it, alone.
+  const [browsing, setBrowsing] = useState<string | null>(null)
+  const { groups, searchStatus, searchError, minSearchLength } = usePaletteGroups(
+    browsing === null ? query : "",
+    true,
+  )
+  const browsed = groups.find((group) => group.id === browsing)
 
   const sections = useMemo(
-    () => rankSections(query, groups, recent).filter((section) => section.rows.length > 0),
-    [query, groups, recent],
+    () =>
+      (browsed === undefined
+        ? rankSections(query, groups, recent)
+        : rankSections(
+            query,
+            [{ ...browsed, limit: Number.POSITIVE_INFINITY, emptyLimit: Number.POSITIVE_INFINITY }],
+            [],
+          )
+      ).filter((section) => section.rows.length > 0),
+    [query, groups, recent, browsed],
   )
   const rows = useMemo(() => sections.flatMap((section) => section.rows), [sections])
   const activeIndex = Math.max(
@@ -223,13 +248,17 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
 
   const choose = (item: PaletteItem, alternate = false) => {
     if (item.remember) rememberCommand(item.id)
-    let reporting = false
+    let staying = false
     const context: RunContext = {
       navigate,
       openShortcuts: onOpenShortcuts,
       signOut,
+      browse: (group) => {
+        staying = true
+        browse(group)
+      },
       report: (task, success, failure) => {
-        reporting = true
+        staying = true
         task.then(
           () => setNotice({ text: success, failed: false }),
           () => setNotice({ text: failure, failed: true }),
@@ -238,8 +267,17 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
     }
     const run = (alternate ? item.alternate?.run : undefined) ?? item.run
     run(context)
-    if (!reporting) onClose()
+    if (!staying) onClose()
   }
+
+  /** Lists one group alone, or every group again with null, from an empty query. */
+  const browse = (group: string | null) => {
+    setBrowsing(group)
+    setQuery("")
+    setActiveId(null)
+    input.current?.focus()
+  }
+  const stopBrowsing = () => browse(null)
 
   const move = (step: number) => {
     if (rows.length === 0) return
@@ -263,11 +301,24 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
     } else if (event.key === "Escape") {
       event.preventDefault()
       event.stopPropagation()
-      onClose()
-    } else if (event.key === "Tab") {
-      // The input and the close button are the only stops; Tab moves between them.
+      if (browsed === undefined) onClose()
+      else stopBrowsing()
+    } else if (
+      event.key === "Backspace" &&
+      event.target === input.current &&
+      query === "" &&
+      browsed !== undefined
+    ) {
       event.preventDefault()
-      ;(event.target === input.current ? closeButton : input).current?.focus()
+      stopBrowsing()
+    } else if (event.key === "Tab") {
+      // The input and the buttons beside it are the only stops; Tab moves between them.
+      event.preventDefault()
+      const stops = [backButton.current, input.current, closeButton.current].filter(
+        (stop) => stop !== null,
+      )
+      const current = stops.indexOf(event.target as HTMLButtonElement | HTMLInputElement)
+      stops[(current + (event.shiftKey ? -1 : 1) + stops.length) % stops.length]?.focus()
     }
   }
 
@@ -306,6 +357,18 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
       >
         <div className="flex items-center gap-3 border-b border-zinc-200 pr-3 pl-4 dark:border-zinc-800">
           <SearchIcon className="size-[1.125rem] shrink-0 text-zinc-500 dark:text-zinc-400" />
+          {browsed !== undefined && (
+            <button
+              ref={backButton}
+              type="button"
+              onClick={stopBrowsing}
+              aria-label={`${browsed.heading}. Back to all commands`}
+              className={`${touchTarget} inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-zinc-100 pr-1.5 pl-2 text-xs font-medium text-zinc-700 transition hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700`}
+            >
+              {browsed.heading}
+              <XIcon className="size-3 opacity-70" />
+            </button>
+          )}
           <input
             ref={input}
             type="text"
@@ -314,13 +377,17 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
             aria-controls={listId}
             aria-autocomplete="list"
             aria-activedescendant={active === undefined ? undefined : optionId(activeIndex)}
-            aria-label="Search commands, repositories, issues, and pull requests"
+            aria-label={
+              browsed === undefined
+                ? "Search commands, repositories, issues, and pull requests"
+                : `Search: ${browsed.heading}`
+            }
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"
             spellCheck={false}
             enterKeyHint="go"
-            placeholder="Search or jump to…"
+            placeholder={browsed === undefined ? "Search or jump to…" : "Search…"}
             value={query}
             onChange={(event) => {
               setQuery(event.target.value)
@@ -336,8 +403,9 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
             aria-label="Close"
             className={`${buttonClass.ghost} shrink-0`}
           >
+            {/* While a list is browsed, Esc goes back to all commands rather than closing. */}
             <span className="pointer-coarse:hidden">
-              <Kbd>Esc</Kbd>
+              {browsed === undefined ? <Kbd>Esc</Kbd> : <XIcon className="size-4" />}
             </span>
             <span className="pointer-fine:hidden">Close</span>
           </button>
@@ -399,7 +467,7 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
               <p className="text-sm text-zinc-600 dark:text-zinc-300">
                 Nothing matches “{query.trim()}”
               </p>
-              {query.trim().length < minSearchLength && (
+              {browsed === undefined && query.trim().length < minSearchLength && (
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">
                   Type {minSearchLength} characters to search issues and pull requests.
                 </p>
@@ -435,6 +503,12 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
                   <Key name={isMac ? "⌘" : "Ctrl"} />
                   <Key name="↵" />
                   {active.item.alternate.label}
+                </span>
+              )}
+              {browsed !== undefined && (
+                <span className="flex items-center gap-1.5">
+                  <Key name="Esc" />
+                  Back
                 </span>
               )}
             </span>

@@ -412,6 +412,7 @@ export const EpicsPage = ({ org }: { org: string }) => {
                   <EpicCard
                     key={epic.key}
                     org={org}
+                    selected={repoSelection.selected}
                     epic={epic}
                     columns={epics.data.columns}
                     sharedLabels={sharedLabels}

@@ -77,6 +77,15 @@ const FITTED_MIN = 224
 const FITTED_MAX = 384
 const wideQuery = window.matchMedia("(min-width: 64rem)")
 
+/** The fades of the phone's column tabs, by whether more tabs lie before and after the edges. */
+const TAB_FADES: Record<`${boolean}-${boolean}`, string> = {
+  "false-false": "",
+  "false-true": "[mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)]",
+  "true-false": "[mask-image:linear-gradient(to_right,transparent,black_2.5rem)]",
+  "true-true":
+    "[mask-image:linear-gradient(to_right,transparent,black_2.5rem,black_calc(100%-2.5rem),transparent)]",
+}
+
 /**
  * Beside the details panel the board shows whole columns: as many as fit at FITTED_MIN or
  * wider share its width, and scrolling snaps from column to column. Null lets columns size
@@ -493,6 +502,27 @@ export const BoardColumns = ({
     const tab = tabs.current?.querySelectorAll("button")[inView]
     tab?.scrollIntoView({ block: "nearest", inline: "nearest" })
   }, [inView])
+  // The tabs can run past the screen on either side; a fade at that edge says there are more.
+  const [tabsMore, setTabsMore] = useState({ before: false, after: false })
+  const measureTabs = () => {
+    const element = tabs.current
+    if (element === null) return
+    const before = element.scrollLeft > 1
+    const after = element.scrollLeft + element.clientWidth < element.scrollWidth - 1
+    setTabsMore((current) =>
+      current.before === before && current.after === after ? current : { before, after },
+    )
+  }
+  // biome-ignore lint/correctness/useExhaustiveDependencies: observes the tabs again when they change
+  useLayoutEffect(() => {
+    const element = tabs.current
+    if (element === null) return
+    measureTabs()
+    const resized = new ResizeObserver(measureTabs)
+    resized.observe(element)
+    for (const child of element.children) resized.observe(child)
+    return () => resized.disconnect()
+  }, [board.columns.length])
   return (
     <DndContext
       sensors={sensors}
@@ -511,12 +541,8 @@ export const BoardColumns = ({
       <div className="flex h-full min-h-0 flex-col">
         <div
           ref={tabs}
-          className={`scroll-thin mx-4 mb-2 shrink-0 overflow-x-auto [scrollbar-width:none] sm:hidden ${
-            // The strip can run past the screen; a fade at its end says there is more.
-            inView < board.columns.length - 1
-              ? "[mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)]"
-              : ""
-          }`}
+          onScroll={measureTabs}
+          className={`scroll-thin mx-4 mb-2 shrink-0 overflow-x-auto [scrollbar-width:none] sm:hidden ${TAB_FADES[`${tabsMore.before}-${tabsMore.after}`]}`}
         >
           <Segmented
             label="Jump to a column"
@@ -547,7 +573,7 @@ export const BoardColumns = ({
               ),
             }))}
             size="sm"
-            className="min-w-full [&>button]:h-8 [&>button]:flex-1 pointer-coarse:[&>button]:h-11"
+            className="min-w-full [&>button]:h-8 [&>button]:grow pointer-coarse:[&>button]:h-11"
           />
         </div>
         <div className={`relative flex min-h-0 flex-1 ${panelOpen ? "lg:mr-[32rem]" : ""}`}>

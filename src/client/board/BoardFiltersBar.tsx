@@ -13,6 +13,8 @@ import {
   isFiltered,
   ME,
   NONE,
+  toggled,
+  withFilter,
 } from "./board-view.ts"
 
 type Choice = {
@@ -45,9 +47,6 @@ const allChoices = ({ choices, values }: FilterSpec): ReadonlyArray<Choice> => [
     .filter((value) => !choices.some((choice) => choice.value === value))
     .map((value) => ({ value, label: value })),
 ]
-
-const toggled = (values: ReadonlyArray<string>, value: string) =>
-  values.includes(value) ? values.filter((other) => other !== value) : [...values, value]
 
 const chipClass = (active: boolean) =>
   `inline-flex h-8 pointer-coarse:h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 text-sm font-medium transition ${
@@ -305,14 +304,12 @@ export const BoardFiltersBar = ({
   const choices = filterChoices(cards)
   const set = (filter: keyof BoardFilters, value: string | ReadonlyArray<string> | null) =>
     setParams(
-      (current) => {
-        const next = new URLSearchParams(current)
-        next.delete(FILTER_PARAMS[filter])
-        for (const one of value === null ? [] : typeof value === "string" ? [value] : value) {
-          if (one !== "") next.append(FILTER_PARAMS[filter], one)
-        }
-        return next
-      },
+      (current) =>
+        withFilter(
+          current,
+          filter,
+          value === null ? [] : typeof value === "string" ? [value] : value,
+        ),
       { replace: true },
     )
   const clear = () =>

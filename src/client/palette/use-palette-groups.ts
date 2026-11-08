@@ -22,12 +22,16 @@ import {
   useThemePreference,
 } from "../theme.ts"
 import type { GlyphName } from "./icons.tsx"
+import { isMac } from "./keys.tsx"
+import { pageSlot } from "./page-slot.ts"
 import type { GroupSpec, Searchable } from "./rank.ts"
-import type { ShortcutId } from "./shortcuts.ts"
+import { type ShortcutId, shortcutKeys } from "./shortcuts.ts"
 
 export type RunContext = {
   readonly navigate: (to: string) => void
   readonly openShortcuts: () => void
+  /** Lists every item of one group, such as the board's labels, until the user goes back. */
+  readonly browse: (group: string) => void
   /** Keeps the palette open to report how `task` went, then closes it if it succeeded. */
   readonly report: (task: Promise<unknown>, success: string, failure: string) => void
   readonly signOut: () => void
@@ -35,13 +39,16 @@ export type RunContext = {
 
 export type PaletteItem = Searchable & {
   readonly icon: GlyphName
+  /** A label's color, shown as a dot in place of the icon. */
+  readonly color?: string
   /** An issue or pull request, which the row names in words so the two never look alike. */
   readonly kind?: { readonly type: DashboardItem["kind"]; readonly state: DashboardItem["state"] }
   /** Why the item is listed, such as "Review", in quiet text. */
   readonly hint?: string
-  /** The setting in effect, marked with a check. */
-  readonly current?: boolean
-  readonly shortcut?: ShortcutId
+  /** The setting or filter in effect, marked with a check and this word. */
+  readonly current?: "Current" | "On"
+  /** The keys that do the same outside the palette. */
+  readonly keys?: ReadonlyArray<string>
   readonly external?: boolean
   /** What Enter does, when it is not "Select" or, for an external item, opening a new tab. */
   readonly enterLabel?: string
@@ -53,6 +60,14 @@ export type PaletteItem = Searchable & {
 }
 
 export type SearchStatus = "idle" | "loading" | "error" | "done"
+
+const pageCommands = pageSlot<ReadonlyArray<GroupSpec<PaletteItem>>>([])
+
+/**
+ * Adds a page's own commands to the palette while the page is mounted. Groups marked
+ * `contextual` lead the palette while the query is empty.
+ */
+export const usePageCommands = pageCommands.usePublish
 
 const DEBOUNCE_MS = 200
 const MIN_SEARCH_LENGTH = 2
@@ -185,6 +200,8 @@ export const usePaletteGroups = (query: string, active: boolean) => {
   const forgejoUrl = instance.data?.forgejoUrl
   const dashboardData = dashboard.data
 
+  const pageGroups = pageCommands.useValue()
+
   const groups = useMemo((): ReadonlyArray<GroupSpec<PaletteItem>> => {
     const lastOrg = lastScope?.org ?? (orgList?.length === 1 ? orgList[0]?.name : undefined)
 
@@ -195,7 +212,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
         subtitle: "Your work",
         keywords: "home go",
         icon: "dashboard",
-        shortcut: "go-dashboard",
+        keys: shortcutKeys("go-dashboard", isMac),
         remember: true,
         run: ({ navigate }) => navigate("/"),
       },
@@ -227,7 +244,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
           keywords: `go ${entry.name}`,
           icon: view.icon,
           remember: true,
-          ...(entry.name === lastOrg ? { shortcut: VIEW_SHORTCUTS[view.id] } : {}),
+          ...(entry.name === lastOrg ? { keys: shortcutKeys(VIEW_SHORTCUTS[view.id], isMac) } : {}),
           run: ({ navigate }) =>
             navigate(
               orgViewHref(
@@ -295,7 +312,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
       keywords: "appearance color mode switch",
       icon: THEME_LABELS[preference].icon,
       remember: true,
-      current: preference === currentTheme,
+      ...(preference === currentTheme ? { current: "Current" } : {}),
       run: () => setThemePreference(preference),
     }))
     const actions: Array<PaletteItem> = [
@@ -322,7 +339,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
               title: "Show keyboard shortcuts",
               keywords: "help keys hotkeys",
               icon: "keyboard",
-              shortcut: "shortcuts",
+              keys: shortcutKeys("shortcuts", isMac),
               remember: true,
               run: ({ openShortcuts }) => openShortcuts(),
             } satisfies PaletteItem,
@@ -343,6 +360,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
     }))
 
     return [
+      ...pageGroups,
       {
         id: "navigation",
         heading: "Navigation",
@@ -380,6 +398,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
     searchItems,
     currentTheme,
     openBoard,
+    pageGroups,
   ])
 
   const status: SearchStatus = !searching

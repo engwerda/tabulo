@@ -77,7 +77,7 @@ export const shortcutKeys = (id: ShortcutId, mac: boolean): ReadonlyArray<string
 export const MENU_KEYS: ReadonlyArray<{ readonly keys: ReadonlyArray<string>; label: string }> = [
   { keys: ["↑", "↓"], label: "Move through the results" },
   { keys: ["↵"], label: "Run the highlighted result" },
-  { keys: ["Esc"], label: "Close the menu" },
+  { keys: ["Esc"], label: "Close the menu, or leave a list such as labels" },
 ]
 
 /** How long `g` waits for its second key. */

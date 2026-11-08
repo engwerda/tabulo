@@ -45,6 +45,30 @@ describe("rankSections", () => {
     ])
   })
 
+  it("shows the page's own commands before the recent items, and ranks them like any group", () => {
+    const board = group(
+      "board",
+      [
+        { id: "board:new", title: "New issue" },
+        { id: "board:refresh", title: "Refresh the board" },
+      ],
+      { contextual: true },
+    )
+    const groups = [navigation, actions, board]
+
+    expect(ids(rankSections("", groups, ["action:signout"]))).toEqual([
+      ["board", ["board:new", "board:refresh"]],
+      ["recent", ["action:signout"]],
+      ["navigation", ["nav:dashboard", "nav:board", "nav:epics"]],
+      ["actions", ["action:dark"]],
+    ])
+    expect(ids(rankSections("sign", groups, []))).toEqual([["actions", ["action:signout"]]])
+    expect(ids(rankSections("board", groups, [])).map(([id]) => id)).toEqual([
+      "navigation",
+      "board",
+    ])
+  })
+
   it("hides a group whose empty limit is 0 and skips unfiltered groups", () => {
     const sections = rankSections(
       "",

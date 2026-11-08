@@ -24,6 +24,8 @@ export type GroupSpec<T> = {
    * server already searched, and shows the group even when it has no items.
    */
   readonly filter: boolean
+  /** The page on screen's own commands: with no query they come before the recent items. */
+  readonly contextual?: boolean
 }
 
 export type Row<T> = {
@@ -55,8 +57,8 @@ const highlightedRow = <T extends Searchable>(query: string, item: T): Row<T> =>
 })
 
 /**
- * Lays out the palette. With no query it shows the recently used items first and then each
- * group's first items. With a query it ranks each group, and puts the group with the best
+ * Lays out the palette. With no query it shows the page's own commands first, then the recently
+ * used items, and then each other group's first items. With a query it ranks each group, and puts the group with the best
  * match first.
  */
 export const rankSections = <T extends Searchable>(
@@ -68,16 +70,19 @@ export const rankSections = <T extends Searchable>(
     const byId = new Map(groups.flatMap((group) => group.items.map((item) => [item.id, item])))
     const recent = recentIds.flatMap((id) => byId.get(id) ?? []).slice(0, RECENT_LIMIT)
     const taken = new Set(recent.map((item) => item.id))
-    const sections: Array<Section<T>> = []
-    if (recent.length > 0) {
-      sections.push({ id: "recent", heading: "Recent", rows: recent.map(plainRow) })
-    }
-    for (const group of groups) {
+    const firstItems = (group: GroupSpec<T>): ReadonlyArray<Section<T>> => {
       const items = group.items.filter((item) => !taken.has(item.id)).slice(0, group.emptyLimit)
-      if (items.length > 0)
-        sections.push({ id: group.id, heading: group.heading, rows: items.map(plainRow) })
+      return items.length === 0
+        ? []
+        : [{ id: group.id, heading: group.heading, rows: items.map(plainRow) }]
     }
-    return sections
+    return [
+      ...groups.filter((group) => group.contextual === true).flatMap(firstItems),
+      ...(recent.length === 0
+        ? []
+        : [{ id: "recent", heading: "Recent", rows: recent.map(plainRow) }]),
+      ...groups.filter((group) => group.contextual !== true).flatMap(firstItems),
+    ]
   }
 
   const local = groups.flatMap((group, order) => {

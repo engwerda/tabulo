@@ -39,6 +39,22 @@ export const readFilters = (params: URLSearchParams): BoardFilters => ({
   text: params.get(FILTER_PARAMS.text) ?? "",
 })
 
+/** `params` with `filter` set to `values`; no values remove the filter. */
+export const withFilter = (
+  params: URLSearchParams,
+  filter: keyof BoardFilters,
+  values: ReadonlyArray<string>,
+) => {
+  const next = new URLSearchParams(params)
+  next.delete(FILTER_PARAMS[filter])
+  for (const value of values) if (value !== "") next.append(FILTER_PARAMS[filter], value)
+  return next
+}
+
+/** `values` with `value` added, or removed when it is there. */
+export const toggled = (values: ReadonlyArray<string>, value: string) =>
+  values.includes(value) ? values.filter((other) => other !== value) : [...values, value]
+
 export const isFiltered = (filters: BoardFilters) =>
   filters.assignee.length > 0 ||
   filters.milestone !== null ||
