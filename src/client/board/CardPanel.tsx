@@ -27,7 +27,7 @@ import {
 import { LabelChip, LabelList } from "../ui/LabelChip.tsx"
 import { buttonClass, inputClass, Kbd, Popover } from "../ui/primitives.tsx"
 import { useToast } from "../ui/toast.tsx"
-import { ColumnDot, RepoTag } from "./BoardCardView.tsx"
+import { ColumnDot, RepoIssueRef } from "./BoardCardView.tsx"
 import type { CardUpdate } from "./BoardPage.tsx"
 
 /** Forgejo already sanitizes rendered Markdown; this keeps Tabulo safe if it ever does not. */
@@ -65,8 +65,12 @@ const Rendered = ({ html }: { html: string }) => (
 
 const Property = ({ name, children }: { name: string; children: ReactNode }) => (
   <>
-    <dt className="pt-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">{name}</dt>
-    <dd className="min-w-0 text-sm text-zinc-800 dark:text-zinc-200">{children}</dd>
+    <dt className="pt-1.5 text-xs font-medium text-zinc-500 pointer-coarse:pt-3.5 dark:text-zinc-400">
+      {name}
+    </dt>
+    <dd className="min-w-0 text-sm text-zinc-800 pointer-coarse:flex pointer-coarse:min-h-11 pointer-coarse:items-center dark:text-zinc-200">
+      {children}
+    </dd>
   </>
 )
 
@@ -127,7 +131,7 @@ const sectionTitle =
   "text-2xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400"
 
 const editTrigger =
-  "inline-flex max-w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-left transition hover:bg-zinc-100 disabled:pointer-events-none dark:hover:bg-zinc-800/70"
+  "inline-flex max-w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-left transition hover:bg-zinc-100 disabled:pointer-events-none pointer-coarse:min-h-11 dark:hover:bg-zinc-800/70"
 
 const menuItem =
   "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-zinc-700 transition hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none disabled:opacity-60 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
@@ -439,12 +443,13 @@ export const CardPanel = ({
           "aria-modal": modal || undefined,
           "aria-label": `${name} details`,
         }}
-        className="fixed inset-y-0 right-0 z-40 flex w-full animate-slide-in flex-col border-l border-zinc-200 bg-white shadow-pop sm:w-[32rem] dark:border-zinc-800 dark:bg-zinc-950"
+        className="fixed inset-y-0 right-0 z-40 flex w-full animate-slide-in flex-col border-l border-zinc-200 bg-white shadow-pop sm:w-[32rem] lg:absolute lg:rounded-tl-xl lg:border-t dark:border-zinc-800 dark:bg-zinc-950"
       >
         <div className="flex h-14 shrink-0 items-center gap-1 border-b border-zinc-200/70 pr-2 pl-4 dark:border-zinc-800">
           <span className="flex min-w-0 items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
-            <RepoTag repo={card.repo} />
-            <span className="font-medium tabular-nums">#{card.number}</span>
+            <span className="min-w-0 font-medium">
+              <RepoIssueRef repo={card.repo} number={card.number} />
+            </span>
             {closed && (
               <span className="inline-flex items-center gap-1 rounded-md bg-zinc-100 px-1.5 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
                 <IssueClosedIcon className="size-3.5 text-emerald-600 dark:text-emerald-400" />
@@ -519,7 +524,7 @@ export const CardPanel = ({
               {card.title}
             </h2>
 
-            <dl className="mt-6 grid grid-cols-[6.5rem_1fr] items-start gap-x-3 gap-y-2.5">
+            <dl className="mt-6 grid grid-cols-[6.5rem_1fr] items-start gap-x-3 gap-y-2.5 pointer-coarse:gap-y-1">
               <Property name="Status">
                 {movable ? (
                   <Popover
@@ -630,7 +635,7 @@ export const CardPanel = ({
                       type="button"
                       onClick={onToggleAssigned}
                       disabled={updating}
-                      className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-indigo-700 transition hover:bg-indigo-50 disabled:opacity-60 dark:text-indigo-300 dark:hover:bg-indigo-500/10"
+                      className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-indigo-700 transition hover:bg-indigo-50 disabled:opacity-60 pointer-coarse:min-h-11 pointer-coarse:px-2.5 dark:text-indigo-300 dark:hover:bg-indigo-500/10"
                     >
                       {assigned ? (
                         <UserMinusIcon className="size-3.5" />

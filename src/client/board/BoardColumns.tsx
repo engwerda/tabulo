@@ -130,7 +130,7 @@ const Column = ({
   const count = (
     <span
       className={`text-xs font-medium tabular-nums ${
-        highlighted ? "text-indigo-700 dark:text-indigo-300" : "text-zinc-500 dark:text-zinc-400"
+        highlighted ? "text-indigo-700 dark:text-indigo-300" : "text-zinc-600 dark:text-zinc-400"
       }`}
       title={shown === total ? undefined : `${shown} of ${total} shown`}
     >
@@ -220,7 +220,7 @@ const columnHighlight =
   "bg-indigo-50/80 ring-1 ring-indigo-200 ring-inset dark:bg-indigo-500/[0.07] dark:ring-indigo-500/30"
 
 const EmptyColumn = ({ filtered, column }: { filtered: boolean; column: BoardColumn }) => (
-  <li className="px-3 py-5 text-center text-xs text-zinc-500 dark:text-zinc-400">
+  <li className="px-3 py-5 text-center text-xs text-zinc-600 dark:text-zinc-400">
     {filtered
       ? "No cards match the filters"
       : column._tag === "Done"
@@ -463,21 +463,26 @@ export const BoardColumns = ({
               label: (
                 <>
                   {column.title}
-                  <span className="text-zinc-500 dark:text-zinc-400">
+                  <span className="text-zinc-600 dark:text-zinc-400">
                     {columnCards(board.cards, column.key).filter(visible).length}
                   </span>
                 </>
               ),
             }))}
             size="sm"
-            className="min-w-full [&>button]:h-8 [&>button]:flex-1"
+            className="min-w-full [&>button]:h-8 [&>button]:flex-1 pointer-coarse:[&>button]:h-11"
           />
         </div>
         <div
           ref={scroller}
           onScroll={trackColumn}
-          className={`scroll-thin flex min-h-0 flex-1 snap-x snap-mandatory scroll-px-4 gap-2.5 overflow-x-auto px-4 pb-4 sm:snap-none sm:px-6 ${
-            panelOpen ? "lg:scroll-pr-[33rem] lg:pr-[33rem]" : ""
+          // No transition: reduced motion gives every element a 1ms one, and the open card's
+          // scroll into view must measure the board already narrowed beside the panel.
+          className={`scroll-thin flex min-h-0 flex-1 snap-x snap-mandatory scroll-px-4 gap-2.5 overflow-x-auto px-4 pb-4 transition-none sm:snap-none sm:px-6 ${
+            // Beside the panel the board ends in a fade, so a column cut at its edge reads as scrollable.
+            panelOpen
+              ? "lg:mr-[32rem] lg:scroll-pr-10 lg:[mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)]"
+              : ""
           }`}
         >
           {board.columns.map((column, index) => {

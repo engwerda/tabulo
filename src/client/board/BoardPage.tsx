@@ -27,10 +27,12 @@ import {
   setAssignee,
 } from "../api.ts"
 import { relativeTime } from "../format.ts"
+import { ShortcutsDialog, usePageShortcuts } from "../palette/ShortcutsDialog.tsx"
 import { ORGS, OrgSwitcher } from "../scope/OrgPicker.tsx"
 import { RepoPicker } from "../scope/RepoPicker.tsx"
 import { useRepoSelection } from "../scope/use-repo-selection.ts"
 import { useViewer } from "../session.ts"
+import { IssueRef } from "../ui/IssueRef.tsx"
 import {
   AlertIcon,
   ColumnsIcon,
@@ -60,7 +62,7 @@ import {
 } from "./board-view.ts"
 import { CardComposer } from "./CardComposer.tsx"
 import { CardPanel } from "./CardPanel.tsx"
-import { ShortcutsDialog } from "./ShortcutsDialog.tsx"
+import { BOARD_SHORTCUTS } from "./shortcuts.ts"
 
 const REFRESH_MS = 60_000
 
@@ -76,6 +78,10 @@ export type CardUpdate = {
   readonly undo?: { readonly run: () => Promise<CardUpdateResult>; readonly done: string }
 }
 const CARD_PARAM = "card"
+
+/** The toast key of a card: a newer toast about the card replaces an older one and its Undo. */
+const aboutCard = ({ repo, number }: { readonly repo: string; readonly number: number }) =>
+  `card:${repo}#${number}`
 
 // Remembering choices is a convenience: storage can be missing or refuse writes.
 const storage = {
@@ -490,14 +496,21 @@ export const BoardPage = ({ org }: { org: string }) => {
           tone: "warning",
           title: "Moved, but its place in the column was not saved",
           detail: "Others may see the card elsewhere in the column.",
+          key: aboutCard(card),
         })
         return
       }
       if (request.fromColumn === request.toColumn) return
       toast({
         tone: "success",
-        title: `Moved ${card.repo}#${card.number} to ${columnTitle(request.toColumn)}`,
+        title: (
+          <>
+            Moved <IssueRef repo={card.repo} number={card.number} /> to{" "}
+            {columnTitle(request.toColumn)}
+          </>
+        ),
         detail: card.title,
+        key: aboutCard(card),
         ...(undo === null ? {} : { action: { label: "Undo", run: () => startMove(undo, null) } }),
       })
     },
@@ -509,6 +522,7 @@ export const BoardPage = ({ org }: { org: string }) => {
           tone: "error",
           title: "The move was only partly applied",
           detail: `${error.message}. The board shows the issue as it is now.`,
+          key: aboutCard(request),
         })
         return
       }
@@ -518,13 +532,19 @@ export const BoardPage = ({ org }: { org: string }) => {
           tone: "warning",
           title: "Someone changed the board meanwhile",
           detail: "The card did not move. The board has been reloaded; try again.",
+          key: aboutCard(request),
         })
         return
       }
       toast({
         tone: "error",
-        title: `Couldn't move ${request.repo}#${request.number}`,
+        title: (
+          <>
+            Couldn't move <IssueRef repo={request.repo} number={request.number} />
+          </>
+        ),
         detail: error.message,
+        key: aboutCard(request),
         action: { label: "Retry", run: () => startMove(cardMove, undo) },
       })
     },
@@ -597,7 +617,12 @@ export const BoardPage = ({ org }: { org: string }) => {
       putCard(card)
       toast({
         tone: orderSaved ? "success" : "warning",
-        title: `Created ${card.repo}#${card.number}`,
+        title: (
+          <>
+            Created <IssueRef repo={card.repo} number={card.number} />
+          </>
+        ),
+        key: aboutCard(card),
         detail: orderSaved
           ? card.title
           : "Its place at the top of the column was not saved, so it may show lower down.",
@@ -618,6 +643,7 @@ export const BoardPage = ({ org }: { org: string }) => {
       toast({
         tone: "success",
         title: done,
+        key: aboutCard(card),
         ...(undo === undefined
           ? {}
           : { action: { label: "Undo", run: () => update.mutate({ ...undo, issue }) } }),
@@ -627,6 +653,7 @@ export const BoardPage = ({ org }: { org: string }) => {
       toast({
         tone: "error",
         title: `Couldn't change ${variables.issue}`,
+        key: `card:${variables.issue}`,
         detail: error.message,
         action: { label: "Retry", run: () => update.mutate(variables) },
       }),
@@ -743,7 +770,11 @@ export const BoardPage = ({ org }: { org: string }) => {
     setCardParam(null, true)
   })
 
-  const openComposer = (column: string) => {
+  // Escape or Cancel returns focus to the control that opened the composer; without one, such as
+  // after the N key, to the column's + button.
+  const composerOpener = useRef<HTMLElement | null>(null)
+  const openComposer = (column: string, opener: HTMLElement | null = null) => {
+    composerOpener.current = opener
     setComposing(column)
     if (collapsed.has(column)) toggleCollapsed(column)
   }
@@ -763,7 +794,8 @@ export const BoardPage = ({ org }: { org: string }) => {
       { replace: true },
     )
 
-  // Single-key shortcuts; see ShortcutsDialog for the list.
+  // Single-key shortcuts; BOARD_SHORTCUTS lists them.
+  usePageShortcuts(BOARD_SHORTCUTS)
   const shortcuts = useRef<(event: KeyboardEvent) => void>(() => {})
   shortcuts.current = (event) => {
     if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return
@@ -916,7 +948,7 @@ export const BoardPage = ({ org }: { org: string }) => {
             {canCreate && firstCreatable !== undefined && (
               <button
                 type="button"
-                onClick={() => openComposer(firstCreatable.key)}
+                onClick={(event) => openComposer(firstCreatable.key, event.currentTarget)}
                 className={`${buttonClass.primary} ${touchTarget} ml-1 max-sm:w-8 max-sm:px-0`}
                 title="New issue (N)"
               >
@@ -962,123 +994,127 @@ export const BoardPage = ({ org }: { org: string }) => {
           </Notice>
         )}
 
-        {orgMissing ? (
-          <OrgNotFound org={org} />
-        ) : !hasSelection ? (
-          repos.isPending ? (
-            <div className="min-h-0 flex-1">
-              <BoardSkeleton />
-            </div>
-          ) : repos.isError ? null : (
-            <EmptyBoard onChoose={() => setPickerOpen(true)} />
-          )
-        ) : data === undefined ? (
-          board.isError ? (
-            <Problem
-              title="The board did not load"
-              detail={board.error.message}
-              actions={
-                <button
-                  type="button"
-                  onClick={() => void board.refetch()}
-                  className={buttonClass.primary}
-                >
-                  Try again
-                </button>
-              }
+        {/* The board area, under the toolbar: on a wide screen the card panel sits inside it. */}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {orgMissing ? (
+            <OrgNotFound org={org} />
+          ) : !hasSelection ? (
+            repos.isPending ? (
+              <div className="min-h-0 flex-1">
+                <BoardSkeleton />
+              </div>
+            ) : repos.isError ? null : (
+              <EmptyBoard onChoose={() => setPickerOpen(true)} />
+            )
+          ) : data === undefined ? (
+            board.isError ? (
+              <Problem
+                title="The board did not load"
+                detail={board.error.message}
+                actions={
+                  <button
+                    type="button"
+                    onClick={() => void board.refetch()}
+                    className={buttonClass.primary}
+                  >
+                    Try again
+                  </button>
+                }
+              />
+            ) : (
+              <div className="min-h-0 flex-1">
+                <BoardSkeleton />
+              </div>
+            )
+          ) : allFailed ? (
+            <ReposFailed
+              failures={data.failedRepos}
+              onRemove={removeFailed}
+              onRetry={() => void board.refetch()}
             />
+          ) : filtered && shownCount === 0 && data.cards.length > 0 ? (
+            <NoMatches query={boardFilters.text.trim()} onClear={clearFilters} />
           ) : (
             <div className="min-h-0 flex-1">
-              <BoardSkeleton />
-            </div>
-          )
-        ) : allFailed ? (
-          <ReposFailed
-            failures={data.failedRepos}
-            onRemove={removeFailed}
-            onRetry={() => void board.refetch()}
-          />
-        ) : filtered && shownCount === 0 && data.cards.length > 0 ? (
-          <NoMatches query={boardFilters.text.trim()} onClear={clearFilters} />
-        ) : (
-          <div className="min-h-0 flex-1">
-            <BoardColumns
-              board={data}
-              saving={saving}
-              panelOpen={selectedCard !== undefined}
-              visible={visible}
-              filtered={filtered}
-              viewer={viewer.login}
-              selectedKey={selectedCard?.key ?? null}
-              collapsed={collapsed}
-              onToggleCollapsed={toggleCollapsed}
-              composing={canCreate ? composing : null}
-              onCompose={openComposer}
-              canCreate={canCreate}
-              composer={
-                composing !== null &&
-                composerTarget !== undefined && (
-                  <CardComposer
-                    columnTitle={columnTitle(composing)}
-                    repos={creatableRepos}
-                    repo={composerTarget}
-                    onRepoChange={(repo) => {
-                      setComposerRepo(repo)
-                      storage.write(composerRepoKey(org), repo)
-                    }}
-                    onClose={() => {
-                      const column = composing
-                      setComposing(null)
-                      // Focus goes back to the column's + button, where the composer was opened.
-                      requestAnimationFrame(() =>
-                        document
-                          .querySelector<HTMLElement>(
-                            `button[aria-label="New issue in ${CSS.escape(columnTitle(column))}"]`,
-                          )
-                          ?.focus(),
-                      )
-                    }}
-                    onCreate={async (repo, title) => {
-                      if (!navigator.onLine) {
-                        offlineNotice(
-                          "The new issue is created in Forgejo once you are back online.",
+              <BoardColumns
+                board={data}
+                saving={saving}
+                panelOpen={selectedCard !== undefined}
+                visible={visible}
+                filtered={filtered}
+                viewer={viewer.login}
+                selectedKey={selectedCard?.key ?? null}
+                collapsed={collapsed}
+                onToggleCollapsed={toggleCollapsed}
+                composing={canCreate ? composing : null}
+                onCompose={openComposer}
+                canCreate={canCreate}
+                composer={
+                  composing !== null &&
+                  composerTarget !== undefined && (
+                    <CardComposer
+                      columnTitle={columnTitle(composing)}
+                      repos={creatableRepos}
+                      repo={composerTarget}
+                      onRepoChange={(repo) => {
+                        setComposerRepo(repo)
+                        storage.write(composerRepoKey(org), repo)
+                      }}
+                      onClose={() => {
+                        const column = composing
+                        const opener = composerOpener.current
+                        setComposing(null)
+                        requestAnimationFrame(() =>
+                          (opener?.isConnected
+                            ? opener
+                            : document.querySelector<HTMLElement>(
+                                `button[aria-label="New issue in ${CSS.escape(columnTitle(column))}"]`,
+                              )
+                          )?.focus(),
                         )
-                      }
-                      await create.mutateAsync({ org: data.org, repo, title, column: composing })
-                    }}
-                  />
-                )
-              }
-              actions={actions}
-              hrefBase={hrefBase}
-              onMove={(cardMove) => startMove(cardMove)}
-              onDragChange={(isDragging) => {
-                setDragging(isDragging)
-                if (isDragging) void queryClient.cancelQueries({ queryKey: boardKey })
-              }}
-            />
-          </div>
-        )}
+                      }}
+                      onCreate={async (repo, title) => {
+                        if (!navigator.onLine) {
+                          offlineNotice(
+                            "The new issue is created in Forgejo once you are back online.",
+                          )
+                        }
+                        await create.mutateAsync({ org: data.org, repo, title, column: composing })
+                      }}
+                    />
+                  )
+                }
+                actions={actions}
+                hrefBase={hrefBase}
+                onMove={(cardMove) => startMove(cardMove)}
+                onDragChange={(isDragging) => {
+                  setDragging(isDragging)
+                  if (isDragging) void queryClient.cancelQueries({ queryKey: boardKey })
+                }}
+              />
+            </div>
+          )}
 
-        {data !== undefined && selectedCard !== undefined && (
-          <CardPanel
-            org={data.org}
-            card={selectedCard}
-            columns={data.columns}
-            viewer={viewer.login}
-            movable={data.viewerCanArrange && selectedCard.readOnlyReason === null}
-            position={{ index: selectedIndex, count: selectedColumn.length }}
-            onStep={step}
-            onMoveTo={(column) => moveToTop(selectedCard, column)}
-            onToggleAssigned={() => toggleAssigned(selectedCard)}
-            onUpdate={(change) => update.mutate(change)}
-            onCommented={putCard}
-            holdReads={holdReads}
-            updating={update.isPending}
-            onCopyLink={() => copyLink(selectedCard)}
-            onClose={closePanel}
-          />
-        )}
+          {data !== undefined && selectedCard !== undefined && (
+            <CardPanel
+              org={data.org}
+              card={selectedCard}
+              columns={data.columns}
+              viewer={viewer.login}
+              movable={data.viewerCanArrange && selectedCard.readOnlyReason === null}
+              position={{ index: selectedIndex, count: selectedColumn.length }}
+              onStep={step}
+              onMoveTo={(column) => moveToTop(selectedCard, column)}
+              onToggleAssigned={() => toggleAssigned(selectedCard)}
+              onUpdate={(change) => update.mutate(change)}
+              onCommented={putCard}
+              holdReads={holdReads}
+              updating={update.isPending}
+              onCopyLink={() => copyLink(selectedCard)}
+              onClose={closePanel}
+            />
+          )}
+        </div>
         <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       </main>
     </RepoPaletteProvider>

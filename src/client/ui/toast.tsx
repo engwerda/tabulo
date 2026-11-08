@@ -6,9 +6,14 @@ type Tone = "success" | "info" | "warning" | "error"
 
 export type ToastInput = {
   readonly tone: Tone
-  readonly title: string
+  readonly title: ReactNode
   readonly detail?: string
   readonly action?: { readonly label: string; readonly run: () => void }
+  /**
+   * What the toast is about, such as one card. A new toast with the same key replaces the
+   * earlier one, so an older Undo cannot act on a state that a later change replaced.
+   */
+  readonly key?: string
 }
 
 type Toast = ToastInput & { readonly id: number }
@@ -61,7 +66,10 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
     (input: ToastInput) => {
       nextId.current += 1
       const id = nextId.current
-      setToasts((current) => [...current.slice(-1), { ...input, id }])
+      setToasts((current) => [
+        ...current.filter((toast) => input.key === undefined || toast.key !== input.key).slice(-1),
+        { ...input, id },
+      ])
       schedule(id, input.tone)
       return () => dismiss(id)
     },

@@ -78,7 +78,7 @@ export const CardComposer = ({
       />
       <div className="mt-2 flex items-center gap-2">
         {repos.length > 1 ? (
-          <label className="flex min-w-0 items-center gap-1 rounded-md bg-zinc-100 py-0.5 pr-1 pl-1.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+          <label className="flex min-w-0 items-center gap-1 rounded-md bg-zinc-100 py-0.5 pr-1 pl-1.5 text-xs pointer-coarse:min-h-11 pointer-coarse:px-2.5 text-zinc-600 has-[select:focus-visible]:outline-2 has-[select:focus-visible]:outline-offset-2 has-[select:focus-visible]:outline-indigo-500 dark:bg-zinc-800 dark:text-zinc-300">
             <RepoIcon className="size-3.5 text-zinc-400" />
             <span className="sr-only">Repository</span>
             <select
@@ -103,14 +103,14 @@ export const CardComposer = ({
         <button
           type="button"
           onClick={onClose}
-          className={`${buttonClass.ghost} ml-auto h-7 px-2 text-xs`}
+          className={`${buttonClass.ghost} ml-auto h-7 px-2 text-xs pointer-coarse:h-11 pointer-coarse:px-3 pointer-coarse:text-sm`}
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={pending || title.trim() === ""}
-          className={`${buttonClass.primary} h-7 px-2.5 text-xs`}
+          className={`${buttonClass.primary} h-7 px-2.5 text-xs pointer-coarse:h-11 pointer-coarse:px-4 pointer-coarse:text-sm`}
         >
           {pending ? "Adding…" : "Add"}
         </button>

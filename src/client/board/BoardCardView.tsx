@@ -13,6 +13,7 @@ import {
 import type { BoardCard, BoardColumn } from "../../shared/api.ts"
 import { AvatarStack } from "../Avatar.tsx"
 import { absoluteTime, shortAge } from "../format.ts"
+import { IssueRef } from "../ui/IssueRef.tsx"
 import {
   ArchiveIcon,
   CheckIcon,
@@ -41,7 +42,8 @@ export type CardActions = {
   readonly copyLink: (card: BoardCard) => void
 }
 
-export const RepoTag = ({ repo }: { repo: string }) => {
+/** An issue's reference after its repository's color mark. */
+export const RepoIssueRef = ({ repo, number }: { repo: string; number: number }) => {
   const color = useRepoColor(repo)
   return (
     <span className="flex min-w-0 items-center gap-1.5">
@@ -50,7 +52,7 @@ export const RepoTag = ({ repo }: { repo: string }) => {
         className="size-2 shrink-0 rounded-[3px]"
         style={{ backgroundColor: color }}
       />
-      <span className="truncate">{repo}</span>
+      <IssueRef repo={repo} number={number} className="min-w-0 truncate" />
     </span>
   )
 }
@@ -221,8 +223,11 @@ const ColumnMark = ({ column }: { column: BoardColumn }) => {
 const CardReference = ({ card, showRepo }: { card: BoardCard; showRepo: boolean }) => (
   <>
     {card.state === "closed" && <span className="sr-only">Closed, </span>}
-    {showRepo && <RepoTag repo={card.repo} />}
-    <span className="shrink-0 tabular-nums">#{card.number}</span>
+    {showRepo ? (
+      <RepoIssueRef repo={card.repo} number={card.number} />
+    ) : (
+      <span className="shrink-0 tabular-nums">#{card.number}</span>
+    )}
   </>
 )
 

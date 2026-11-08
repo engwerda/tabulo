@@ -62,6 +62,10 @@ const chipClass = (active: boolean) =>
       : "border-zinc-200 bg-white text-zinc-700 shadow-card hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/70"
   }`
 
+/** A phone's active-filter chip: 36px tall, with a hit area reaching into the row gap to 44px. */
+const chipTouch =
+  "relative pointer-coarse:h-9 pointer-coarse:before:absolute pointer-coarse:before:inset-x-0 pointer-coarse:before:-inset-y-1"
+
 /**
  * A filter's menu. With `multiple`, choices toggle and the menu stays open; otherwise picking a
  * choice replaces the value and closes the menu.
@@ -427,7 +431,7 @@ export const BoardFiltersBar = ({
       <div className="flex min-w-0 items-center gap-2 md:flex-wrap">
         <label className="relative min-w-0 flex-1 md:w-52 md:flex-none min-[84rem]:w-auto min-[84rem]:max-w-52 min-[84rem]:min-w-36 min-[84rem]:flex-1">
           <span className="sr-only">Search cards</span>
-          <SearchIcon className="pointer-events-none absolute top-2 left-2.5 size-4 text-zinc-400 max-md:top-2.5" />
+          <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-zinc-400" />
           <input
             ref={searchInput}
             type="search"
@@ -443,7 +447,7 @@ export const BoardFiltersBar = ({
             placeholder="Search cards"
             title="Search titles, or type #12 for issue 12"
             aria-keyshortcuts="/"
-            className={`${inputClass} peer pr-8 pl-8 max-md:h-9 [&::-webkit-search-cancel-button]:appearance-none`}
+            className={`${inputClass} peer pr-8 pl-8 max-md:h-9 max-md:pointer-coarse:h-11 [&::-webkit-search-cancel-button]:appearance-none`}
           />
           <span
             aria-hidden="true"
@@ -470,7 +474,7 @@ export const BoardFiltersBar = ({
           type="button"
           aria-haspopup="dialog"
           onClick={() => setSheetOpen(true)}
-          className={`${chipClass(menuFilterCount > 0)} h-9 md:hidden`}
+          className={`${chipClass(menuFilterCount > 0)} h-9 pointer-coarse:h-11 md:hidden`}
         >
           <SlidersIcon className="size-4 opacity-70" />
           Filters
@@ -513,14 +517,17 @@ export const BoardFiltersBar = ({
       </div>
 
       {active.length > 0 && (
-        <ul className="flex flex-wrap items-center gap-1.5 md:hidden" aria-label="Active filters">
+        <ul
+          className="flex flex-wrap items-center gap-1.5 pointer-coarse:gap-2 md:hidden"
+          aria-label="Active filters"
+        >
           {active.map((filter) => (
             <li key={filter.key}>
               <button
                 type="button"
                 onClick={filter.remove}
                 aria-label={`Remove filter ${filter.label}`}
-                className="inline-flex h-7 max-w-56 items-center gap-1 rounded-md bg-indigo-50 pr-1.5 pl-2 text-xs font-medium text-indigo-800 dark:bg-indigo-500/15 dark:text-indigo-200"
+                className={`inline-flex h-7 max-w-56 items-center gap-1 rounded-md bg-indigo-50 pr-1.5 pl-2 text-xs font-medium text-indigo-800 dark:bg-indigo-500/15 dark:text-indigo-200 ${chipTouch}`}
               >
                 <span className="truncate">{filter.label}</span>
                 <XIcon className="size-3 shrink-0 opacity-70" />
@@ -531,7 +538,7 @@ export const BoardFiltersBar = ({
             <button
               type="button"
               onClick={clear}
-              className="inline-flex h-7 items-center rounded-md px-2 text-xs font-medium text-zinc-600 dark:text-zinc-400"
+              className={`inline-flex h-7 items-center rounded-md px-2 text-xs font-medium text-zinc-600 dark:text-zinc-400 ${chipTouch}`}
             >
               Clear
             </button>
