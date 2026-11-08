@@ -111,9 +111,9 @@ const Option = ({
     onMouseMove={onHover}
     onMouseDown={(event) => event.preventDefault()}
     onClick={(event) => onChoose(event.metaKey || event.ctrlKey)}
-    className="group flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2 data-active:bg-zinc-100 dark:data-active:bg-zinc-800"
+    className="group grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-[1fr_auto] items-center rounded-lg px-2.5 py-2 data-active:bg-zinc-100 sm:grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] dark:data-active:bg-zinc-800"
   >
-    <span className="grid size-7 shrink-0 place-items-center rounded-md border border-zinc-200 bg-white text-zinc-500 group-data-active:text-zinc-900 dark:border-zinc-700/80 dark:bg-zinc-900 dark:text-zinc-400 dark:group-data-active:text-zinc-100">
+    <span className="col-start-1 row-span-2 row-start-1 mr-3 grid size-7 shrink-0 place-items-center rounded-md border border-zinc-200 bg-white text-zinc-500 group-data-active:text-zinc-900 dark:border-zinc-700/80 dark:bg-zinc-900 dark:text-zinc-400 dark:group-data-active:text-zinc-100">
       {item.color === undefined ? (
         <Glyph name={item.icon} className="size-4" />
       ) : (
@@ -124,31 +124,31 @@ const Option = ({
         />
       )}
     </span>
-    <span className="min-w-0 flex-1">
-      <span className="text-sm text-zinc-900 max-sm:line-clamp-2 sm:block sm:truncate dark:text-zinc-100">
-        <Highlight text={item.title} indices={titleIndices} />
-      </span>
-      {/* Phones give the title the width: the state chip moves down beside the reference. */}
-      <span className="flex min-w-0 items-center gap-2 empty:hidden max-sm:mt-0.5">
-        {item.subtitle !== undefined && item.subtitle !== "" && (
-          <Subtitle item={item} indices={subtitleIndices} />
-        )}
-        {item.kind !== undefined && (
-          <span className="shrink-0 sm:hidden">
-            <KindChip kind={item.kind} />
-          </span>
-        )}
-      </span>
+    <span className="col-start-2 row-start-1 min-w-0 text-sm text-zinc-900 max-sm:line-clamp-2 sm:truncate dark:text-zinc-100">
+      <Highlight text={item.title} indices={titleIndices} />
     </span>
-    <span className="flex shrink-0 items-center gap-2">
-      {item.hint !== undefined && (
-        <span className="text-xs text-zinc-500 max-sm:hidden dark:text-zinc-400">{item.hint}</span>
+    {/*
+      One state chip: on a phone it follows the reference, which gives the title the width; wider,
+      the line dissolves into the grid and the chip takes a column of its own.
+    */}
+    <span className="col-start-2 row-start-2 flex min-w-0 items-center gap-2 empty:hidden max-sm:mt-0.5 sm:contents">
+      {item.subtitle !== undefined && item.subtitle !== "" && (
+        <span className="min-w-0 sm:col-start-2 sm:row-start-2">
+          <Subtitle item={item} indices={subtitleIndices} />
+        </span>
       )}
       {item.kind !== undefined && (
-        <span className="max-sm:hidden">
+        <span className="shrink-0 sm:col-start-4 sm:row-span-2 sm:row-start-1 sm:ml-2">
           <KindChip kind={item.kind} />
         </span>
       )}
+    </span>
+    {item.hint !== undefined && (
+      <span className="col-start-3 row-span-2 row-start-1 ml-3 text-xs text-zinc-500 max-sm:hidden dark:text-zinc-400">
+        {item.hint}
+      </span>
+    )}
+    <span className="col-start-3 row-span-2 row-start-1 ml-2 flex items-center gap-2 empty:hidden sm:col-start-5">
       {item.current !== undefined && (
         <span className="flex items-center gap-1 text-xs font-medium text-indigo-700 dark:text-indigo-300">
           <CheckIcon className="size-3.5" />
@@ -332,6 +332,9 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
   const searching = issueCount === 0 && searchStatus === "loading"
   const searchFailed = issueCount === 0 && searchStatus === "error"
   const nothingFound = rows.length === 0 && !searching && !searchFailed && query.trim() !== ""
+  // The count answers a query; an empty list already says why it is empty.
+  const showCount = query.trim() !== "" && rows.length > 0
+  const resultCount = `${rows.length} ${rows.length === 1 ? "result" : "results"}`
   let optionIndex = -1
 
   return createPortal(
@@ -490,33 +493,44 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-t border-zinc-200 bg-zinc-50/80 px-4 py-2 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950/40 dark:text-zinc-400">
+        {/* Phones and touch screens get no key hints, and with no row there is nothing to move to. */}
+        <div
+          className={`flex items-center justify-between gap-3 border-t border-zinc-200 bg-zinc-50/80 px-4 py-2 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950/40 dark:text-zinc-400 ${
+            notice !== null || showCount
+              ? ""
+              : active === undefined
+                ? "hidden"
+                : "max-sm:hidden pointer-coarse:hidden"
+          }`}
+        >
           {notice === null ? (
-            <span className="hidden items-center gap-3 sm:flex pointer-coarse:hidden">
-              <span className="flex items-center gap-1.5">
-                <Key name="↑" />
-                <Key name="↓" />
-                Navigate
-              </span>
-              <span className="flex items-center gap-1.5">
-                <Key name="↵" />
-                {active?.item.enterLabel ??
-                  (active?.item.external === true ? "Open in a new tab" : "Select")}
-              </span>
-              {active?.item.alternate !== undefined && (
+            active !== undefined && (
+              <span className="hidden items-center gap-3 sm:flex pointer-coarse:hidden">
                 <span className="flex items-center gap-1.5">
-                  <Key name={isMac ? "⌘" : "Ctrl"} />
+                  <Key name="↑" />
+                  <Key name="↓" />
+                  Navigate
+                </span>
+                <span className="flex items-center gap-1.5">
                   <Key name="↵" />
-                  {active.item.alternate.label}
+                  {active?.item.enterLabel ??
+                    (active?.item.external === true ? "Open in a new tab" : "Select")}
                 </span>
-              )}
-              {browsed !== undefined && (
-                <span className="flex items-center gap-1.5">
-                  <Key name="Esc" />
-                  Back
-                </span>
-              )}
-            </span>
+                {active?.item.alternate !== undefined && (
+                  <span className="flex items-center gap-1.5">
+                    <Key name={isMac ? "⌘" : "Ctrl"} />
+                    <Key name="↵" />
+                    {active.item.alternate.label}
+                  </span>
+                )}
+                {browsed !== undefined && (
+                  <span className="flex items-center gap-1.5">
+                    <Key name="Esc" />
+                    Back
+                  </span>
+                )}
+              </span>
+            )
           ) : (
             <span
               className={`flex items-center gap-1.5 font-medium ${
@@ -529,14 +543,15 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
               {notice.text}
             </span>
           )}
-          <span className="sm:ml-auto">
-            {rows.length} {rows.length === 1 ? "result" : "results"}
-          </span>
+          {showCount && <span className="sm:ml-auto">{resultCount}</span>}
         </div>
+        {/* A failed search announces itself in its notice. */}
         <div role="status" className="sr-only">
           {searchStatus === "loading"
             ? "Searching issues and pull requests"
-            : `${rows.length} ${rows.length === 1 ? "result" : "results"}`}
+            : query.trim() === "" || (searchFailed && rows.length === 0)
+              ? ""
+              : resultCount}
         </div>
       </div>
     </div>,

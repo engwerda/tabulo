@@ -5,8 +5,8 @@ const score = (query: string, text: string) => fuzzyMatch(query, text)?.score ??
 
 describe("fuzzyMatch", () => {
   it("matches an empty query against anything, with nothing to highlight", () => {
-    expect(fuzzyMatch("", "Dashboard")).toEqual({ score: 0, indices: [] })
-    expect(fuzzyMatch("  ", "Dashboard")).toEqual({ score: 0, indices: [] })
+    expect(fuzzyMatch("", "Dashboard")).toEqual({ score: 0, quality: 0, indices: [] })
+    expect(fuzzyMatch("  ", "Dashboard")).toEqual({ score: 0, quality: 0, indices: [] })
   })
 
   it("matches a subsequence, ignoring case, and reports the matched characters", () => {

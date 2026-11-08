@@ -1,4 +1,4 @@
-import { fuzzyMatch, fuzzyMatchFields } from "./fuzzy.ts"
+import { type FieldsMatch, fuzzyMatch, fuzzyMatchFields } from "./fuzzy.ts"
 
 /** What the palette can match a query against. */
 export type Searchable = {
@@ -24,7 +24,10 @@ export type GroupSpec<T> = {
    * server already searched, and shows the group even when it has no items.
    */
   readonly filter: boolean
-  /** The page on screen's own commands: with no query they come before the recent items. */
+  /**
+   * The page on screen's own commands: with no query they come before the recent items, and with
+   * one they lead any group whose best match is no better, such as the page's filter values.
+   */
   readonly contextual?: boolean
 }
 
@@ -41,6 +44,16 @@ export type Section<T> = {
 }
 
 const RECENT_LIMIT = 5
+// Qualities add up fractions, so two equal matches may differ in the last bits.
+const EPSILON = 1e-9
+
+/** Negative when `a` matches better than `b`, ignoring where the match starts. */
+const qualityOrder = (a: FieldsMatch, b: FieldsMatch) =>
+  Math.abs(a.quality - b.quality) < EPSILON ? 0 : b.quality - a.quality
+
+/** Negative when `a` is the better match: by quality, then by an earlier start. */
+const compareMatches = (a: FieldsMatch, b: FieldsMatch) => qualityOrder(a, b) || b.score - a.score
+
 const none: ReadonlyArray<number> = []
 
 const plainRow = <T extends Searchable>(item: T): Row<T> => ({
@@ -91,20 +104,30 @@ export const rankSections = <T extends Searchable>(
       const match = fuzzyMatchFields(query, [item.title, item.subtitle ?? "", item.keywords ?? ""])
       if (match === null) return []
       const [titleIndices = none, subtitleIndices = none] = match.indices
-      return [{ score: match.score, row: { item, titleIndices, subtitleIndices } }]
+      return [{ match, row: { item, titleIndices, subtitleIndices } }]
     })
-    if (scored.length === 0) return []
-    scored.sort((a, b) => b.score - a.score)
+    scored.sort((a, b) => compareMatches(a.match, b.match))
+    const best = scored[0]?.match
+    if (best === undefined) return []
     const rows = scored.slice(0, group.limit).map(({ row }) => row)
     return [
       {
         order,
-        best: scored[0]?.score ?? 0,
+        best,
+        contextual: group.contextual === true,
         section: { id: group.id, heading: group.heading, rows },
       },
     ]
   })
-  local.sort((a, b) => b.best - a.best || a.order - b.order)
+  // Groups go by how well their best item matches; where in a title the match sits only breaks
+  // a tie after the page's own commands do.
+  local.sort(
+    (a, b) =>
+      qualityOrder(a.best, b.best) ||
+      Number(b.contextual) - Number(a.contextual) ||
+      compareMatches(a.best, b.best) ||
+      a.order - b.order,
+  )
   const shown = new Set(local.flatMap((entry) => entry.section.rows.map((row) => row.item.id)))
   // Server results come last and keep every item the server returned, except repeats of a row
   // already shown above.

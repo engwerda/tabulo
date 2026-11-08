@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { useEffect, useMemo, useState } from "react"
 import { useRoute, useSearchParams } from "wouter"
-import type { BoardCard, DashboardItem } from "../../shared/api.ts"
+import type { DashboardItem } from "../../shared/api.ts"
 import {
   fetchBoard,
   fetchDashboard,
@@ -12,6 +12,7 @@ import {
 } from "../api.ts"
 import { boardQueryKey } from "../board/board-view.ts"
 import { DASHBOARD } from "../Dashboard.tsx"
+import { boardCardHref } from "../epics/epics-view.ts"
 import { ORGS } from "../scope/OrgPicker.tsx"
 import { readRememberedRepos, useLastScope } from "../scope/remembered.ts"
 import { ORG_VIEWS, type OrgViewId, orgViewHref } from "../scope/views.ts"
@@ -98,16 +99,16 @@ const VIEW_SHORTCUTS: Record<OrgViewId, ShortcutId> = {
 
 const openExternal = (url: string) => window.open(url, "_blank", "noopener,noreferrer")
 
-/** The board on screen, and the address that opens one of its cards in the side panel. */
-type OpenBoard = {
-  readonly cards: ReadonlyMap<string, BoardCard>
-  readonly cardHref: (card: BoardCard) => string
-}
+/**
+ * Where the page opens an issue: on an org view, the board's side panel when it is a card of the
+ * view's repositories; null for Forgejo.
+ */
+type BoardHref = (item: DashboardItem) => string | null
 
 const issueItem = (
   item: DashboardItem,
   id: string,
-  board: OpenBoard | undefined,
+  boardHref: BoardHref,
   extra: { readonly keywords?: string; readonly hint?: string; readonly remember: boolean },
 ): PaletteItem => {
   const base = {
@@ -118,15 +119,13 @@ const issueItem = (
     kind: { type: item.kind, state: item.state },
     ...extra,
   }
-  const card = board?.cards.get(`${item.repo}#${item.number}`.toLowerCase())
-  if (board === undefined || card === undefined) {
-    return { ...base, external: true, run: () => openExternal(item.url) }
-  }
+  const href = boardHref(item)
+  if (href === null) return { ...base, external: true, run: () => openExternal(item.url) }
   return {
     ...base,
     enterLabel: "Open on the board",
     alternate: { label: "Open in Forgejo", run: () => openExternal(item.url) },
-    run: ({ navigate }) => navigate(board.cardHref(card)),
+    run: ({ navigate }) => navigate(href),
   }
 }
 
@@ -158,30 +157,36 @@ export const usePaletteGroups = (query: string, active: boolean) => {
     staleTime: Number.POSITIVE_INFINITY,
   })
 
-  // On a board, an issue that is one of its cards opens in the board's side panel.
-  const [onBoard, boardParams] = useRoute("/board/:org")
-  const boardOrg = onBoard ? boardParams.org : undefined
+  // On an org view, an open issue of the chosen repositories opens in the board's side panel, as
+  // an epic's child does.
+  const [onOrgPage, route] = useRoute("/:view/:org")
+  const view = onOrgPage ? ORG_VIEWS.find(({ path }) => path === `/${route.view}`) : undefined
+  const viewOrg = view === undefined ? undefined : route?.org
+  const onBoard = view?.id === "board"
   const [params] = useSearchParams()
-  const boardRepos = parseRepos(params.get("repos"))
+  const selection = params.get("repos") ?? ""
   // The board's own query; the palette only reads what the board has loaded.
   const board = useQuery({
-    queryKey: boardQueryKey(boardOrg ?? "", boardRepos.join(",")),
-    queryFn: () => fetchBoard(boardOrg ?? "", boardRepos),
+    queryKey: boardQueryKey(onBoard ? (viewOrg ?? "") : "", parseRepos(selection).join(",")),
+    queryFn: () => fetchBoard(viewOrg ?? "", parseRepos(selection)),
     enabled: false,
   })
-  const boardData = board.data
-  const boardSearch = params.toString()
-  const openBoard = useMemo((): OpenBoard | undefined => {
-    if (boardOrg === undefined || boardData === undefined) return undefined
-    return {
-      cards: new Map(boardData.cards.map((card) => [card.key.toLowerCase(), card])),
-      cardHref: (card) => {
-        const next = new URLSearchParams(boardSearch)
-        next.set("card", `${card.repo}#${card.number}`)
-        return `/board/${encodeURIComponent(boardOrg)}?${next}`
-      },
+  const boardData = onBoard ? board.data : undefined
+  const pageSearch = params.toString()
+  const boardHref = useMemo((): BoardHref => {
+    if (viewOrg === undefined) return () => null
+    const selected = parseRepos(selection)
+    if (boardData === undefined) return (item) => boardCardHref(viewOrg, selected, item)
+    // The board on screen also knows which issues are its cards, and keeps its filters open.
+    const cards = new Map(boardData.cards.map((card) => [card.key.toLowerCase(), card]))
+    return (item) => {
+      const card = cards.get(`${item.repo}#${item.number}`.toLowerCase())
+      if (card === undefined || boardCardHref(viewOrg, selected, item) === null) return null
+      const next = new URLSearchParams(pageSearch)
+      next.set("card", `${card.repo}#${card.number}`)
+      return `/board/${encodeURIComponent(viewOrg)}?${next}`
     }
-  }, [boardOrg, boardData, boardSearch])
+  }, [viewOrg, selection, boardData, pageSearch])
 
   const text = query.trim()
   const debounced = useDebounced(text)
@@ -297,7 +302,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
         if (seen.has(item.url)) continue
         seen.add(item.url)
         work.push(
-          issueItem(item, `work:${item.url}`, openBoard, {
+          issueItem(item, `work:${item.url}`, boardHref, {
             keywords: label,
             hint: label,
             remember: true,
@@ -355,7 +360,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
     ]
 
     const issues: ReadonlyArray<PaletteItem> = (searchItems ?? []).map((item) => ({
-      ...issueItem(item, `issue:${item.url}`, openBoard, { remember: false }),
+      ...issueItem(item, `issue:${item.url}`, boardHref, { remember: false }),
       ...(seen.has(item.url) ? { sameAs: `work:${item.url}` } : {}),
     }))
 
@@ -397,7 +402,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
     dashboardData,
     searchItems,
     currentTheme,
-    openBoard,
+    boardHref,
     pageGroups,
   ])
 

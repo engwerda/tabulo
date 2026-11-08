@@ -49,6 +49,12 @@ const ColumnChip = ({
   )
 }
 
+/** How a bar segment or a legend dot is drawn: with classes, or with a color the data gives. */
+type Paint = { readonly className?: string; readonly color?: string }
+
+const UNAVAILABLE_BAR =
+  "bg-[repeating-linear-gradient(-45deg,var(--color-zinc-300)_0_1px,transparent_1px_4px)] dark:bg-[repeating-linear-gradient(-45deg,var(--color-zinc-600)_0_1px,transparent_1px_4px)]"
+
 /** Open is neutral; a closed epic counts as done, in the Done column's green. */
 const StateChip = ({ state }: { state: Epic["state"] }) => (
   <span className={`${chipClass} shrink-0`}>
@@ -124,6 +130,16 @@ const ForgejoLink = ({
   </a>
 )
 
+/** Marks a row whose own link opens Forgejo, in the slot where other rows keep `ForgejoLink`. */
+const ForgejoMark = ({ className }: { className: string }) => (
+  <span
+    aria-hidden="true"
+    className={`inline-flex size-7 shrink-0 items-center justify-center text-zinc-500 dark:text-zinc-400 ${className}`}
+  >
+    <ExternalIcon className="size-3.5" />
+  </span>
+)
+
 const ChildRow = ({
   org,
   selected,
@@ -176,7 +192,9 @@ const ChildRow = ({
         </div>
       </div>
       {child.assignees.length > 0 && <AvatarStack people={child.assignees} size="xs" />}
-      {board !== null && (
+      {board === null ? (
+        <ForgejoMark className="-my-1" />
+      ) : (
         <ForgejoLink url={child.url} name={`${repo}#${child.number}`} className="-my-1" />
       )}
     </li>
@@ -211,18 +229,30 @@ export const EpicCard = ({
     ...columns.filter((column) => column._tag === "Done"),
     ...columns.filter((column) => column._tag !== "Done").reverse(),
   ]
-  const segments = byProgress.map((column) => ({
+  // Only progress has ink: Todo is the bar's empty track, and Unavailable is hatched.
+  const segments: Array<{
+    key: string
+    title: string
+    count: number
+    bar: Paint
+    dot: Paint
+  }> = byProgress.map((column) => ({
     key: column.key,
     title: column.title,
     count: epic.progress.byColumn[column.key] ?? 0,
-    color: columnColor(column),
+    bar:
+      column._tag === "Todo"
+        ? { className: "bg-zinc-200 dark:bg-zinc-800" }
+        : { color: columnColor(column) },
+    dot: { color: columnColor(column) },
   }))
   if (unavailable > 0)
     segments.push({
       key: "unavailable",
       title: "Unavailable",
       count: unavailable,
-      color: "var(--chart-grid)",
+      bar: { className: UNAVAILABLE_BAR },
+      dot: { className: "border border-dashed border-zinc-400 dark:border-zinc-500" },
     })
   const filled = segments.filter(({ count }) => count > 0)
   const percent = completion(epic.progress)
@@ -250,7 +280,9 @@ export const EpicCard = ({
               {epic.title}
             </IssueLink>
           </h3>
-          {epicBoard !== null && (
+          {epicBoard === null ? (
+            <ForgejoMark className="-my-0.5" />
+          ) : (
             <ForgejoLink url={epic.url} name={`${epic.repo}#${epic.number}`} className="-my-0.5" />
           )}
         </div>
@@ -292,15 +324,15 @@ export const EpicCard = ({
             <div
               role="img"
               aria-label={filled.map(({ title, count }) => `${title}: ${count}`).join(", ")}
-              className="mt-2.5 flex h-2 gap-0.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800"
+              className="mt-2.5 flex h-2 gap-0.5 overflow-hidden rounded-full"
             >
-              {filled.map(({ key, count, color }) => (
+              {filled.map(({ key, count, bar }) => (
                 <span
                   key={key}
-                  className="min-w-0 first:rounded-l-full last:rounded-r-full"
+                  className={`min-w-0 first:rounded-l-full last:rounded-r-full ${bar.className ?? ""}`}
                   style={{
                     width: `${(count / epic.progress.total) * 100}%`,
-                    backgroundColor: color,
+                    backgroundColor: bar.color,
                   }}
                 />
               ))}
@@ -309,12 +341,12 @@ export const EpicCard = ({
               aria-hidden="true"
               className="mt-2.5 flex flex-wrap gap-x-3.5 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400"
             >
-              {filled.map(({ key, title, count, color }) => (
+              {filled.map(({ key, title, count, dot }) => (
                 <li key={key} className="flex items-center gap-1.5">
                   <span
                     aria-hidden="true"
-                    className="size-2 rounded-full"
-                    style={{ backgroundColor: color }}
+                    className={`size-2 rounded-full ${dot.className ?? ""}`}
+                    style={{ backgroundColor: dot.color }}
                   />
                   {title}
                   <span className="font-medium text-zinc-800 tabular-nums dark:text-zinc-200">

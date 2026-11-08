@@ -96,6 +96,29 @@ describe("rankSections", () => {
     expect(both[0]?.id).toBe("navigation")
   })
 
+  it("puts the page's own commands before a group that matches as well, but not better", () => {
+    const board = group("board", [{ id: "board:by-label", title: "Filter by label…" }], {
+      contextual: true,
+    })
+    const labels = group("board:labels", [
+      { id: "board:label:none", title: "No label" },
+      { id: "board:label:bug", title: "bug" },
+    ])
+
+    expect(ids(rankSections("lab", [labels, board], [])).map(([id]) => id)).toEqual([
+      "board",
+      "board:labels",
+    ])
+    expect(ids(rankSections("bug", [labels, board], []))).toEqual([
+      ["board:labels", ["board:label:bug"]],
+    ])
+    const labelled = group("board:labels", [{ id: "board:label:lab", title: "lab" }])
+    expect(ids(rankSections("lab", [board, labelled], [])).map(([id]) => id)).toEqual([
+      "board:labels",
+      "board",
+    ])
+  })
+
   it("matches the subtitle and keywords", () => {
     expect(ids(rankSections("acme board", [navigation], []))).toEqual([
       ["navigation", ["nav:board"]],

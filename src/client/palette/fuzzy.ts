@@ -1,6 +1,11 @@
 export type FuzzyMatch = {
   /** Higher is better; comparable only between matches of the same query. */
   readonly score: number
+  /**
+   * The score without the cost of starting late in the text, so two matches of a word's start
+   * are equal wherever the word sits.
+   */
+  readonly quality: number
   /** Indices into the text of the characters that matched, ascending. */
   readonly indices: ReadonlyArray<number>
 }
@@ -108,7 +113,12 @@ const matchTerm = (term: string, text: string): FuzzyMatch | null => {
     j = code >> 1
     state = (code & 1) as State
   }
-  return { score: last[end] ?? 0, indices }
+  const total = last[end] ?? 0
+  return {
+    score: total,
+    quality: total + LEADING * Math.min(indices[0] ?? 0, MAX_LEADING),
+    indices,
+  }
 }
 
 /**
@@ -119,16 +129,18 @@ const matchTerm = (term: string, text: string): FuzzyMatch | null => {
  */
 export const fuzzyMatch = (query: string, text: string): FuzzyMatch | null => {
   const terms = query.split(/\s+/).filter((term) => term !== "")
-  if (terms.length === 0) return { score: 0, indices: [] }
+  if (terms.length === 0) return { score: 0, quality: 0, indices: [] }
   let total = 0
+  let quality = 0
   const indices = new Set<number>()
   for (const term of terms) {
     const match = matchTerm(term, text)
     if (match === null) return null
     total += match.score
+    quality += match.quality
     for (const index of match.indices) indices.add(index)
   }
-  return { score: total, indices: [...indices].sort((a, b) => a - b) }
+  return { score: total, quality, indices: [...indices].sort((a, b) => a - b) }
 }
 
 /** Later fields count for less, so a title match beats a subtitle or keyword match. */
@@ -136,6 +148,7 @@ const FIELD_WEIGHT = 0.6
 
 export type FieldsMatch = {
   readonly score: number
+  readonly quality: number
   /** Matched character indices per field, in the order of `fields`. */
   readonly indices: ReadonlyArray<ReadonlyArray<number>>
 }
@@ -153,6 +166,7 @@ export const fuzzyMatchFields = (
   const terms = query.split(/\s+/).filter((term) => term !== "")
   const indices = fields.map(() => new Set<number>())
   let total = 0
+  let quality = 0
   for (const term of terms) {
     let best: Placement | null = null
     for (const [field, text] of fields.entries()) {
@@ -163,7 +177,8 @@ export const fuzzyMatchFields = (
     }
     if (best === null) return null
     total += best.score
+    quality += best.match.quality * FIELD_WEIGHT ** best.field
     for (const index of best.match.indices) indices[best.field]?.add(index)
   }
-  return { score: total, indices: indices.map((set) => [...set].sort((a, b) => a - b)) }
+  return { score: total, quality, indices: indices.map((set) => [...set].sort((a, b) => a - b)) }
 }
