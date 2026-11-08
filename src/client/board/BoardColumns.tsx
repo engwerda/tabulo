@@ -262,7 +262,7 @@ const Column = ({
       <SortableContext items={cards.map((card) => card.key)} strategy={verticalListSortingStrategy}>
         <ul
           ref={droppable.setNodeRef}
-          className="scroll-thin flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-1.5 pt-0.5 pb-2"
+          className="scroll-thin flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-1.5 pt-1.5 pb-2"
         >
           {children}
         </ul>

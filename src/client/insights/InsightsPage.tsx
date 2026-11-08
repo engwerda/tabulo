@@ -233,12 +233,12 @@ export const InsightsPage = ({ org }: { org: string }) => {
                 onRetry={() => void insights.refetch()}
                 retrying={insights.isFetching}
               >
-                Showing the last loaded numbers. {insights.error.message}
+                {`Showing the last loaded numbers. ${insights.error.message}`}
               </ErrorNotice>
             )}
             {data.repoStats.length === 0 ? (
               <ErrorNotice
-                title="No repository loaded"
+                title="Could not load any repository"
                 onRetry={() => void insights.refetch()}
                 retrying={insights.isFetching}
               >

@@ -275,12 +275,12 @@ export const EpicsPage = ({ org }: { org: string }) => {
         {hasSelection && (epics.data?.failedRepos.length ?? 0) > 0 && (
           <ErrorNotice
             tone="warning"
-            title="Some repositories could not be loaded"
+            title="Could not load some repositories"
             onRetry={() => void epics.refetch()}
             retrying={epics.isFetching}
             className="mb-4"
           >
-            {epics.data?.failedRepos.map(({ repo, message }) => `${repo} (${message})`).join(", ")}
+            {`${epics.data?.failedRepos.map(({ repo, message }) => `${repo} (${message})`).join(", ")}.`}
           </ErrorNotice>
         )}
         {hasSelection && notice !== "" && (

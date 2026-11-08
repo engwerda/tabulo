@@ -487,7 +487,7 @@ export const CardPanel = ({
       onCommented({ ...card, comments: card.comments + 1 })
     },
     onError: (error) =>
-      toast({ tone: "error", title: "The comment was not added", detail: error.message }),
+      toast({ tone: "error", title: "Could not add the comment", detail: error.message }),
   })
   const heading = useRef<HTMLHeadingElement>(null)
   const commentsHeading = useRef<HTMLHeadingElement>(null)
@@ -578,7 +578,7 @@ export const CardPanel = ({
           "aria-label": `${name} details`,
         }}
         onKeyDown={(event) => loopFocus(event, modal)}
-        className="fixed inset-y-0 right-0 z-40 flex w-full animate-slide-in flex-col border-l border-zinc-200 bg-white shadow-pop sm:w-[32rem] lg:absolute lg:rounded-tl-xl lg:border-t dark:border-zinc-800 dark:bg-zinc-950"
+        className="fixed inset-y-0 right-0 z-40 flex w-full animate-slide-in flex-col border-zinc-200 bg-white shadow-pop sm:w-[32rem] lg:border-l lg:absolute lg:rounded-tl-xl lg:border-t dark:border-zinc-800 dark:bg-zinc-950"
       >
         <div className="flex h-14 shrink-0 items-center gap-1 border-b border-zinc-200/70 pr-2 pl-4 dark:border-zinc-800">
           <span className="flex min-w-0 items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">

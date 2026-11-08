@@ -245,14 +245,15 @@ export const RepoHealthTable = ({
             return (
               <Fragment key={repo.name}>
                 <tr className="border-b border-zinc-100 hover:bg-zinc-50/70 dark:border-zinc-800/70 dark:hover:bg-zinc-800/30">
-                  <th scope="row" className="py-2.5 pr-3 pl-2 font-medium sm:pl-3">
+                  {/* On touch the name's link fills the cell, beside the details button. */}
+                  <th scope="row" className="relative py-2.5 pr-3 pl-2 font-medium sm:pl-3">
                     <span className="flex min-w-0 items-center gap-1.5">
                       <button
                         type="button"
                         aria-expanded={open}
                         aria-controls={detailsId}
                         onClick={() => toggle(repo.name)}
-                        className={`grid size-6 shrink-0 place-items-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-indigo-500 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 ${touchTarget}`}
+                        className={`z-10 grid size-6 shrink-0 place-items-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-indigo-500 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 ${touchTarget}`}
                       >
                         <Chevron open={open} />
                         <span className="sr-only">Health details for {repo.name}</span>
@@ -261,7 +262,7 @@ export const RepoHealthTable = ({
                         href={repo.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="truncate text-zinc-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 dark:text-zinc-100"
+                        className="truncate text-zinc-900 pointer-coarse:before:absolute pointer-coarse:before:inset-0 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 dark:text-zinc-100"
                       >
                         {repo.name}
                         <span className="sr-only"> (opens in Forgejo)</span>

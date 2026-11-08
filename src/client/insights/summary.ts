@@ -80,7 +80,7 @@ export const insightsSummary = (insights: Insights, orgName: string): string => 
     ...(tiles.ciSuccessRate.value === null
       ? []
       : [
-          `- **CI success rate:** ${formatPercent(tiles.ciSuccessRate.value)}${tiles.ciSuccessRate.previous === null ? "" : ` (period before: ${formatPercent(tiles.ciSuccessRate.previous)})`}`,
+          `- **CI pass rate:** ${formatPercent(tiles.ciSuccessRate.value)}${tiles.ciSuccessRate.previous === null ? "" : ` (period before: ${formatPercent(tiles.ciSuccessRate.previous)})`}`,
         ]),
   ]
 

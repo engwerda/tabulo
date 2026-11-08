@@ -711,13 +711,14 @@ const Milestones = ({
             Date.parse(milestone.dueOn) < now &&
             milestone.openIssues > 0
           return (
-            <li key={milestone.url}>
+            // The name's link stretches over the row, so the whole row is one target.
+            <li key={milestone.url} className="relative">
               <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
                 <a
                   href={milestone.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="min-w-0 truncate hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
+                  className="min-w-0 truncate before:absolute before:inset-0 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
                 >
                   <span className="text-zinc-800 dark:text-zinc-200">{milestone.title}</span>{" "}
                   <span className="text-xs text-zinc-500 dark:text-zinc-400">{milestone.repo}</span>

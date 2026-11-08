@@ -108,7 +108,11 @@ const IssueLink = ({
     </Link>
   )
 
-/** Forgejo's page of an issue whose title opens its board card. */
+/**
+ * Forgejo's page of an issue whose title opens its board card. It shows on hover or focus of
+ * its row, where a pointer can hover, so that only the always-shown `ForgejoMark` reads as
+ * "this row opens Forgejo".
+ */
 const ForgejoLink = ({
   url,
   name,
@@ -124,7 +128,7 @@ const ForgejoLink = ({
     rel="noreferrer"
     aria-label={`Open ${name} in Forgejo`}
     title="Open in Forgejo"
-    className={`${buttonClass.iconSmall} z-10 shrink-0 ${className}`}
+    className={`${buttonClass.iconSmall} z-10 shrink-0 opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100 [@media(hover:none)]:opacity-100 ${className}`}
   >
     <ExternalIcon className="size-3.5" />
   </a>
@@ -169,7 +173,7 @@ const ChildRow = ({
   const board = boardCardHref(org, selected, child)
   return (
     // The title's link stretches over the row, so the whole row is one target.
-    <li className="relative flex items-start gap-3 px-4 py-2.5 transition hover:bg-zinc-100/60 sm:px-5 dark:hover:bg-zinc-800/40">
+    <li className="group/row relative flex items-start gap-3 px-4 py-2.5 transition hover:bg-zinc-100/60 sm:px-5 dark:hover:bg-zinc-800/40">
       <ChildIcon child={child} />
       <div className="min-w-0 flex-1">
         <IssueLink
@@ -269,7 +273,7 @@ export const EpicCard = ({
           />
           <StateChip state={epic.state} />
         </div>
-        <div className="mt-2 flex items-start gap-2">
+        <div className="group/row mt-2 flex items-start gap-2">
           <h3 id={headingId} className="min-w-0 flex-1 text-base/6 font-semibold tracking-tight">
             {/* On touch the link reaches into the space above and below it, to 44px. */}
             <IssueLink

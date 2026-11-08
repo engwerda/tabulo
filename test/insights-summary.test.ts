@@ -93,7 +93,7 @@ describe("insightsSummary", () => {
 - **Issues closed:** 5 (period before: 6)
 - **Pull requests merged:** 7 (period before: 2)
 - **Median time to close an issue:** 30h
-- **CI success rate:** 75% (period before: 50%)
+- **CI pass rate:** 75% (period before: 50%)
 
 ## Needs attention
 

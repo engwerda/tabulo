@@ -33,7 +33,7 @@ import { ORGS, OrgSwitcher } from "../scope/OrgPicker.tsx"
 import { RepoPicker } from "../scope/RepoPicker.tsx"
 import { useRepoSelection } from "../scope/use-repo-selection.ts"
 import { useViewer } from "../session.ts"
-import { ErrorNotice } from "../ui/ErrorNotice.tsx"
+import { ErrorNotice, sentence } from "../ui/ErrorNotice.tsx"
 import { IssueRef } from "../ui/IssueRef.tsx"
 import {
   ColumnsIcon,
@@ -218,7 +218,7 @@ const inlineAction =
   "relative font-medium pointer-coarse:before:absolute pointer-coarse:before:inset-x-0 pointer-coarse:before:-inset-y-3 text-zinc-700 underline decoration-zinc-300 underline-offset-2 transition hover:text-zinc-900 hover:decoration-zinc-500 dark:text-zinc-300 dark:decoration-zinc-600 dark:hover:text-zinc-100"
 
 /**
- * Why repositories did not load, with the action that takes them off the board. A title that
+ * Why repositories could not be loaded, with the action that takes them off the board. A title that
  * already names the one repository leaves only its reason here.
  */
 const FailedRepos = ({
@@ -234,9 +234,8 @@ const FailedRepos = ({
 }) => (
   <>
     {named
-      ? failures[0]?.message
-      : failures.map((failure) => `${failure.repo} (${failure.message})`).join(", ")}
-    .{" "}
+      ? sentence(failures[0]?.message ?? "")
+      : `${failures.map((failure) => `${failure.repo} (${failure.message})`).join(", ")}.`}{" "}
     <button type="button" onClick={onRemove} className={inlineAction}>
       Remove {failures.length === 1 ? "it" : "them"} from the board
     </button>
@@ -436,10 +435,12 @@ export const BoardPage = ({ org }: { org: string }) => {
     }),
   )
 
-  const refetchAfterWrites = () =>
-    queryClient.isMutating({ mutationKey: writeKey }) > 1
-      ? undefined
-      : queryClient.invalidateQueries({ queryKey: boardKey })
+  // Not returned: React Query would keep the write pending, and its card "Saving", until the
+  // board reload finished.
+  const refetchAfterWrites = () => {
+    if (queryClient.isMutating({ mutationKey: writeKey }) > 1) return
+    void queryClient.invalidateQueries({ queryKey: boardKey })
+  }
 
   /** Stops board reads in flight, whose answers predate a write and would undo it on screen. */
   const holdReads = () => queryClient.cancelQueries({ queryKey: boardKey }, { revert: false })
@@ -488,7 +489,7 @@ export const BoardPage = ({ org }: { org: string }) => {
         toast({
           tone: "error",
           title: "The move was only partly applied",
-          detail: `${error.message}. The board shows the issue as it is now.`,
+          detail: `${sentence(error.message)} The board shows the issue as it is now.`,
           key: aboutCard(request),
         })
         return
@@ -507,7 +508,7 @@ export const BoardPage = ({ org }: { org: string }) => {
         tone: "error",
         title: (
           <>
-            Couldn't move <IssueRef repo={request.repo} number={request.number} />
+            Could not move <IssueRef repo={request.repo} number={request.number} />
           </>
         ),
         detail: error.message,
@@ -597,7 +598,7 @@ export const BoardPage = ({ org }: { org: string }) => {
       })
     },
     onError: (error) =>
-      toast({ tone: "error", title: "The issue was not created", detail: error.message }),
+      toast({ tone: "error", title: "Could not create the issue", detail: error.message }),
   })
 
   const update = useMutation({
@@ -619,7 +620,7 @@ export const BoardPage = ({ org }: { org: string }) => {
     onError: (error, variables) =>
       toast({
         tone: "error",
-        title: `Couldn't change ${variables.issue}`,
+        title: `Could not change ${variables.issue}`,
         key: `card:${variables.issue}`,
         detail: error.message,
         action: { label: "Retry", run: () => update.mutate(variables) },
@@ -1005,9 +1006,9 @@ export const BoardPage = ({ org }: { org: string }) => {
             retrying={repos.isFetching}
             className="mx-4 mb-3 sm:mx-6"
           >
-            {repos.error.message}
-            {filtersShown &&
-              ". The board still shows its cards; choosing repositories waits until they load."}
+            {filtersShown
+              ? `${sentence(repos.error.message)} The board still shows its cards; choosing repositories waits until they load.`
+              : repos.error.message}
           </ErrorNotice>
         )}
         {refreshFailed && (
@@ -1018,7 +1019,7 @@ export const BoardPage = ({ org }: { org: string }) => {
             retrying={board.isFetching}
             className="mx-4 mb-3 sm:mx-6"
           >
-            {board.error?.message}. The cards shown were loaded{" "}
+            {sentence(board.error?.message ?? "")} The cards shown were loaded{" "}
             <time dateTime={loadedAt} title={absoluteTime(loadedAt)}>
               {relativeTime(loadedAt, now)}
             </time>
@@ -1030,7 +1031,7 @@ export const BoardPage = ({ org }: { org: string }) => {
           dismissedFailures !== failureId && (
             <ErrorNotice
               tone="warning"
-              title="Some repositories did not load"
+              title="Could not load some repositories"
               onRetry={() => void board.refetch()}
               retrying={board.isFetching}
               className="mx-4 mb-3 sm:mx-6"
@@ -1073,7 +1074,7 @@ export const BoardPage = ({ org }: { org: string }) => {
           ) : data === undefined ? (
             board.isError ? (
               <ErrorNotice
-                title="The board did not load"
+                title="Could not load the board"
                 onRetry={() => void board.refetch()}
                 retrying={board.isFetching}
                 className="mx-4 sm:mx-6"
@@ -1089,8 +1090,8 @@ export const BoardPage = ({ org }: { org: string }) => {
             <ErrorNotice
               title={
                 data.failedRepos.length === 1
-                  ? `${data.failedRepos[0]?.repo} did not load`
-                  : "None of the repositories loaded"
+                  ? `Could not load ${data.failedRepos[0]?.repo}`
+                  : "Could not load any of the repositories"
               }
               onRetry={() => void board.refetch()}
               retrying={board.isFetching}
