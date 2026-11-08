@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react"
+import { type KeyboardEvent, useEffect, useRef, useState } from "react"
 import type { OrgRepo } from "../../shared/api.ts"
-import { ArchiveIcon, LockIcon, RepoIcon, SearchIcon } from "../ui/icons.tsx"
-import { buttonClass, inputClass, Popover } from "../ui/primitives.tsx"
+import { ArchiveIcon, LockIcon, RepoIcon } from "../ui/icons.tsx"
+import { buttonClass, Popover } from "../ui/primitives.tsx"
 import { useRepoColor } from "../ui/repo-palette.tsx"
+import { SearchField } from "../ui/SearchField.tsx"
 
 type RepoPickerProps = {
   readonly repos: ReadonlyArray<OrgRepo>
@@ -15,6 +16,35 @@ type RepoPickerProps = {
 const checkboxClass = "size-4 shrink-0 cursor-pointer rounded accent-indigo-600"
 const rowClass =
   "flex cursor-pointer items-center gap-2.5 rounded-lg px-2 text-sm transition hover:bg-zinc-100 has-focus-visible:bg-zinc-100 dark:hover:bg-zinc-800 dark:has-focus-visible:bg-zinc-800"
+
+const ARROW_KEYS = ["ArrowDown", "ArrowUp", "Home", "End"]
+
+/**
+ * Up and down arrows move between the checkboxes, and from the search box into them, Home and End
+ * to the ends: the keys of the app's menus, in a panel that also keeps Tab.
+ */
+const moveCheckboxFocus = (event: KeyboardEvent<HTMLElement>) => {
+  if (!ARROW_KEYS.includes(event.key)) return
+  const typing = event.target instanceof HTMLInputElement && event.target.type === "search"
+  if (typing && (event.key === "Home" || event.key === "End")) return
+  const boxes = [
+    ...event.currentTarget.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+  ]
+  if (boxes.length === 0) return
+  event.preventDefault()
+  const current = boxes.indexOf(document.activeElement as HTMLInputElement)
+  const next =
+    event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? boxes.length - 1
+        : event.key === "ArrowDown"
+          ? (current + 1) % boxes.length
+          : current === -1
+            ? boxes.length - 1
+            : (current - 1 + boxes.length) % boxes.length
+  boxes[next]?.focus()
+}
 
 const RepoDot = ({ repo, chosen }: { repo: string; chosen: boolean }) => {
   const color = useRepoColor(repo)
@@ -72,26 +102,18 @@ export const RepoPicker = ({ repos, selected, onChange, open, onOpenChange }: Re
         <>
           <RepoIcon className="size-4 opacity-70" />
           <span className="truncate max-sm:hidden">{summary}</span>
-          <span className="whitespace-nowrap tabular-nums sm:hidden">
-            {selected.length} {selected.length === 1 ? "repo" : "repos"}
+          {/* A phone leaves the organization's name the room: the icon and count say enough. */}
+          <span aria-hidden="true" className="tabular-nums sm:hidden">
+            {selected.length}
           </span>
         </>
       }
       panelClass="w-80 p-1.5"
     >
       {() => (
-        <>
-          <label className="relative block">
-            <span className="sr-only">Search repositories</span>
-            <SearchIcon className="pointer-events-none absolute top-2 left-2.5 size-4 text-zinc-500 dark:text-zinc-400" />
-            <input
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search repositories"
-              className={`${inputClass} pl-8 shadow-none`}
-            />
-          </label>
+        // biome-ignore lint/a11y/noStaticElementInteractions: the handler only moves focus between the checkboxes inside
+        <div onKeyDown={moveCheckboxFocus}>
+          <SearchField label="Search repositories" value={search} onChange={setSearch} inMenu />
           {visible.length > 0 && (
             <div className="mt-1.5 mb-1 border-b border-zinc-100 pb-1 dark:border-zinc-800">
               <label className={`${rowClass} h-9 font-medium pointer-coarse:h-11`}>
@@ -146,7 +168,7 @@ export const RepoPicker = ({ repos, selected, onChange, open, onOpenChange }: Re
               ))
             )}
           </fieldset>
-        </>
+        </div>
       )}
     </Popover>
   )

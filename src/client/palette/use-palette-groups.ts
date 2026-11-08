@@ -257,15 +257,20 @@ export const usePaletteGroups = (query: string, active: boolean) => {
             "Could not copy the link",
           ),
       },
-      {
-        id: "action:shortcuts",
-        title: "Show keyboard shortcuts",
-        keywords: "help keys hotkeys",
-        icon: "keyboard",
-        shortcut: "shortcuts",
-        remember: true,
-        run: ({ openShortcuts }) => openShortcuts(),
-      },
+      // A touch screen has no keys to list, as in the board's options menu.
+      ...(window.matchMedia("(pointer: coarse)").matches
+        ? []
+        : [
+            {
+              id: "action:shortcuts",
+              title: "Show keyboard shortcuts",
+              keywords: "help keys hotkeys",
+              icon: "keyboard",
+              shortcut: "shortcuts",
+              remember: true,
+              run: ({ openShortcuts }) => openShortcuts(),
+            } satisfies PaletteItem,
+          ]),
       {
         id: "action:sign-out",
         title: "Sign out",
@@ -276,9 +281,10 @@ export const usePaletteGroups = (query: string, active: boolean) => {
       },
     ]
 
-    const issues: ReadonlyArray<PaletteItem> = (searchItems ?? []).map((item) =>
-      issueItem(item, `issue:${item.url}`, { remember: false }),
-    )
+    const issues: ReadonlyArray<PaletteItem> = (searchItems ?? []).map((item) => ({
+      ...issueItem(item, `issue:${item.url}`, { remember: false }),
+      ...(seen.has(item.url) ? { sameAs: `work:${item.url}` } : {}),
+    }))
 
     return [
       {

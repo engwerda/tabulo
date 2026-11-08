@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { type GroupSpec, rankSections } from "../src/client/palette/rank.ts"
 
-type Item = { id: string; title: string; subtitle?: string; keywords?: string }
+type Item = { id: string; title: string; subtitle?: string; keywords?: string; sameAs?: string }
 
 const group = (
   id: string,
@@ -93,6 +93,27 @@ describe("rankSections", () => {
     expect(ids(rankSections("ep", [navigation, waiting], []))).toEqual([
       ["navigation", ["nav:epics"]],
       ["issues", []],
+    ])
+  })
+
+  it("leaves out a server result that repeats a row shown above, and only then", () => {
+    const work = group("work", [
+      { id: "work:1", title: "Public API docs" },
+      { id: "work:2", title: "Rotate keys" },
+    ])
+    const issues = group(
+      "issues",
+      [
+        { id: "issue:1", title: "Public API docs", sameAs: "work:1" },
+        { id: "issue:2", title: "Rotate keys", sameAs: "work:2" },
+        { id: "issue:3", title: "Public status page" },
+      ],
+      { filter: false, limit: 2 },
+    )
+
+    expect(ids(rankSections("public", [work, issues], []))).toEqual([
+      ["work", ["work:1"]],
+      ["issues", ["issue:2", "issue:3"]],
     ])
   })
 

@@ -1,4 +1,11 @@
-import { useEffect, useId, useLayoutEffect, useRef, useSyncExternalStore } from "react"
+import {
+  type RefObject,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useSyncExternalStore,
+} from "react"
 import { ArrowRightIcon, XIcon } from "../ui/icons.tsx"
 import { buttonClass, Kbd } from "../ui/primitives.tsx"
 import { isMac, Key } from "./keys.tsx"
@@ -62,7 +69,16 @@ const ShortcutKey = ({ name }: { name: string }) => {
 }
 
 /** Every shortcut that works where the user is: the page's own first, then the app's. */
-export const ShortcutsDialog = ({ open, onClose }: { open: boolean; onClose: () => void }) => {
+export const ShortcutsDialog = ({
+  open,
+  onClose,
+  returnFocus,
+}: {
+  open: boolean
+  onClose: () => void
+  /** Where focus goes on close when what had it before the dialog opened is gone. */
+  returnFocus?: RefObject<HTMLElement | null>
+}) => {
   const dialog = useRef<HTMLDialogElement>(null)
   const id = useId()
   const page = useSyncExternalStore(subscribe, () => pageSections)
@@ -84,7 +100,14 @@ export const ShortcutsDialog = ({ open, onClose }: { open: boolean; onClose: () 
     <dialog
       ref={dialog}
       tabIndex={-1}
-      onClose={onClose}
+      onClose={() => {
+        onClose()
+        // The browser puts focus back after this event, on <body> when what had it is gone.
+        window.setTimeout(() => {
+          const target = returnFocus?.current
+          if (document.activeElement === document.body && target?.isConnected) target.focus()
+        })
+      }}
       onClick={(event) => {
         if (event.target === dialog.current) onClose()
       }}

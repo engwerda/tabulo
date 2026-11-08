@@ -2,7 +2,7 @@ import { Fragment, type KeyboardEvent, useEffect, useId, useMemo, useRef, useSta
 import { createPortal } from "react-dom"
 import { useLocation } from "wouter"
 import { CheckIcon } from "../ui/icons.tsx"
-import { Kbd, touchTarget } from "../ui/primitives.tsx"
+import { buttonClass, Kbd } from "../ui/primitives.tsx"
 import { Glyph, SearchIcon } from "./icons.tsx"
 import { Key, ShortcutKeys } from "./keys.tsx"
 import { rankSections } from "./rank.ts"
@@ -147,7 +147,7 @@ const Option = ({
         </span>
       )}
       {item.shortcut !== undefined && (
-        <span className="max-sm:hidden">
+        <span className="max-sm:hidden pointer-coarse:hidden">
           <ShortcutKeys id={item.shortcut} />
         </span>
       )}
@@ -270,6 +270,8 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
   }
 
   const issueCount = sections.find((section) => section.id === "issues")?.rows.length ?? 0
+  // The search can find only issues that "Your work" already lists, which then show there alone.
+  const foundAbove = (groups.find((group) => group.id === "issues")?.items.length ?? 0) > 0
   const searchNote =
     issueCount > 0
       ? null
@@ -330,7 +332,7 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className={`inline-flex h-8 shrink-0 items-center rounded-lg px-1.5 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 pointer-coarse:px-2.5 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 ${touchTarget}`}
+            className={`${buttonClass.ghost} shrink-0`}
           >
             <span className="pointer-coarse:hidden">
               <Kbd>Esc</Kbd>
@@ -405,7 +407,9 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
             searchStatus === "done" &&
             issueCount === 0 && (
               <p className="px-2.5 py-2 text-sm text-zinc-500 dark:text-zinc-400">
-                No issues or pull requests match.
+                {foundAbove
+                  ? "No other issues or pull requests match."
+                  : "No issues or pull requests match."}
               </p>
             )
           )}
@@ -413,7 +417,7 @@ const PaletteDialog = ({ onClose, onOpenShortcuts, signOut }: PaletteDialogProps
 
         <div className="flex items-center justify-between gap-3 border-t border-zinc-200 bg-zinc-50/80 px-4 py-2 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950/40 dark:text-zinc-400">
           {notice === null ? (
-            <span className="hidden items-center gap-3 sm:flex">
+            <span className="hidden items-center gap-3 sm:flex pointer-coarse:hidden">
               <span className="flex items-center gap-1.5">
                 <Key name="↑" />
                 <Key name="↓" />

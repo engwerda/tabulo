@@ -7,6 +7,8 @@ export type Searchable = {
   readonly subtitle?: string | undefined
   /** Matched but never shown, so "theme" finds "Dark". */
   readonly keywords?: string | undefined
+  /** The id of an item in another group that this one repeats; it is left out when that one shows. */
+  readonly sameAs?: string | undefined
 }
 
 export type GroupSpec<T> = {
@@ -78,34 +80,36 @@ export const rankSections = <T extends Searchable>(
     return sections
   }
 
-  const ranked = groups.map((group, order) => {
-    if (!group.filter) {
-      const rows = group.items.slice(0, group.limit).map((item) => highlightedRow(query, item))
-      return {
-        order,
-        best: Number.NEGATIVE_INFINITY,
-        section: { id: group.id, heading: group.heading, rows },
-      }
-    }
+  const local = groups.flatMap((group, order) => {
+    if (!group.filter) return []
     const scored = group.items.flatMap((item) => {
       const match = fuzzyMatchFields(query, [item.title, item.subtitle ?? "", item.keywords ?? ""])
       if (match === null) return []
       const [titleIndices = none, subtitleIndices = none] = match.indices
       return [{ score: match.score, row: { item, titleIndices, subtitleIndices } }]
     })
+    if (scored.length === 0) return []
     scored.sort((a, b) => b.score - a.score)
     const rows = scored.slice(0, group.limit).map(({ row }) => row)
-    return {
-      order,
-      best: scored[0]?.score ?? Number.NEGATIVE_INFINITY,
-      section: { id: group.id, heading: group.heading, rows },
-    }
+    return [
+      {
+        order,
+        best: scored[0]?.score ?? 0,
+        section: { id: group.id, heading: group.heading, rows },
+      },
+    ]
   })
-  const searched = ranked.filter(
-    (entry, index) => !(groups[index]?.filter ?? true) || entry.section.rows.length > 0,
-  )
-  const local = searched.filter((entry) => groups[entry.order]?.filter)
-  const remote = searched.filter((entry) => !groups[entry.order]?.filter)
   local.sort((a, b) => b.best - a.best || a.order - b.order)
-  return [...local, ...remote].map((entry) => entry.section)
+  const shown = new Set(local.flatMap((entry) => entry.section.rows.map((row) => row.item.id)))
+  // Server results come last and keep every item the server returned, except repeats of a row
+  // already shown above.
+  const remote = groups.flatMap((group) => {
+    if (group.filter) return []
+    const rows = group.items
+      .filter((item) => item.sameAs === undefined || !shown.has(item.sameAs))
+      .slice(0, group.limit)
+      .map((item) => highlightedRow(query, item))
+    return [{ id: group.id, heading: group.heading, rows }]
+  })
+  return [...local.map((entry) => entry.section), ...remote]
 }

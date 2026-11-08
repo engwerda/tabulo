@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
+import { useId } from "react"
 import { Link, Redirect } from "wouter"
 import { Avatar } from "../Avatar.tsx"
 import { fetchOrgs } from "../api.ts"
@@ -92,6 +93,7 @@ export const OrgSwitcher = ({ org, view }: { org: string; view: OrgViewId }) => 
   const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
   const current = orgs.data?.find((candidate) => candidate.name.toLowerCase() === org.toLowerCase())
   const title = current?.fullName || current?.name || org
+  const headingId = useId()
   return (
     <Popover
       containerClass="relative -ml-1.5 min-w-0"
@@ -123,44 +125,54 @@ export const OrgSwitcher = ({ org, view }: { org: string; view: OrgViewId }) => 
         )
       }
       panelClass="w-72 p-1.5"
+      focusFirstItem
     >
       {(close) => (
-        <nav aria-label="Organizations">
-          <p className="px-2 pt-1 pb-1.5 text-2xs font-medium text-zinc-500 dark:text-zinc-400">
+        <>
+          <p
+            id={headingId}
+            className="px-2 pt-1 pb-1.5 text-2xs font-medium text-zinc-500 dark:text-zinc-400"
+          >
             Organizations
           </p>
-          <ul>
+          <div role="menu" aria-labelledby={headingId}>
             {(orgs.data ?? []).map((candidate) => {
               const active = candidate.name.toLowerCase() === org.toLowerCase()
               return (
-                <li key={candidate.name}>
-                  <Link
-                    href={orgViewHref(view, candidate.name)}
-                    onClick={close}
-                    aria-current={active ? "page" : undefined}
-                    className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm transition hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none aria-[current=page]:font-medium dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
-                  >
-                    <Avatar
-                      url={candidate.avatarUrl}
-                      name={candidate.fullName || candidate.name}
-                      size="sm"
-                      className="rounded-md"
-                    />
-                    <span className="min-w-0 flex-1 truncate">
-                      {candidate.fullName || candidate.name}
-                    </span>
-                    {active && (
-                      <CheckIcon className="size-4 text-indigo-600 dark:text-indigo-400" />
-                    )}
-                  </Link>
-                </li>
+                <Link
+                  key={candidate.name}
+                  href={orgViewHref(view, candidate.name)}
+                  role="menuitemradio"
+                  aria-checked={active}
+                  onClick={close}
+                  // A menu item answers Space as well as Enter, as the app's other menus do.
+                  onKeyDown={(event) => {
+                    if (event.key !== " ") return
+                    event.preventDefault()
+                    event.currentTarget.click()
+                  }}
+                  className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-zinc-700 transition pointer-coarse:min-h-11 hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none aria-checked:font-medium aria-checked:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800 dark:aria-checked:text-zinc-50"
+                >
+                  <Avatar
+                    url={candidate.avatarUrl}
+                    name={candidate.fullName || candidate.name}
+                    size="sm"
+                    className="rounded-md"
+                  />
+                  <span className="min-w-0 flex-1 truncate">
+                    {candidate.fullName || candidate.name}
+                  </span>
+                  {active && <CheckIcon className="size-4 text-indigo-600 dark:text-indigo-400" />}
+                </Link>
               )
             })}
-          </ul>
+          </div>
           {orgs.isPending && (
-            <p className="px-2 py-1.5 text-sm text-zinc-500 dark:text-zinc-400">Loading…</p>
+            <p role="status" className="px-2 py-1.5 text-sm text-zinc-500 dark:text-zinc-400">
+              Loading…
+            </p>
           )}
-        </nav>
+        </>
       )}
     </Popover>
   )
