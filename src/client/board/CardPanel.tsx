@@ -246,7 +246,7 @@ const Picker = ({
         choices.status === "failed" ? (
           <ErrorNotice
             bare
-            title={`Could not load the ${searchName}`}
+            title={`Could not load ${searchName}`}
             onRetry={choices.retry}
             retrying={choices.retrying}
             // The panel is too narrow for Retry beside the reason; below it, it lines up with it.
@@ -718,7 +718,7 @@ export const CardPanel = ({
                       valueText={
                         card.assignees.map((person) => person.login).join(", ") || "nobody"
                       }
-                      searchName="people"
+                      searchName="assignees"
                       multiple
                       disabled={updating}
                       choices={assigneeChoices}

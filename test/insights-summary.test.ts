@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { formatChange, formatHours, formatSpan, niceTicks } from "../src/client/charts/scale.ts"
+import {
+  formatChange,
+  formatHours,
+  formatSpan,
+  labelStride,
+  niceTicks,
+} from "../src/client/charts/scale.ts"
 import { formatWindowStart, insightsSummary, priorLabel } from "../src/client/insights/summary.ts"
 import type { Insights } from "../src/shared/api.ts"
 
@@ -148,6 +154,14 @@ describe("chart scale", () => {
     expect(niceTicks(3, 4)).toEqual([0, 1, 2, 3])
     expect(niceTicks(184, 3)).toEqual([0, 50, 100, 150, 200])
     expect(niceTicks(61, 3)).toEqual([0, 20, 40, 60, 80])
+  })
+
+  it("spaces axis labels further apart only where long neighbours would touch", () => {
+    const weeks = Array.from({ length: 53 }, () => "Jun 15")
+    expect(labelStride(weeks, 680, 52)).toBe(5)
+    const withYears = weeks.map((label, index) => (index < 13 ? "Dec 29 ’25" : label))
+    expect(labelStride(withYears, 680, 52)).toBe(6)
+    expect(labelStride(["Jan 5 ’26", "Mar 2"], 0, 52)).toBe(2)
   })
 
   it("formats durations in the unit that reads best", () => {

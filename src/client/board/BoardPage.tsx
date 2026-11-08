@@ -472,8 +472,8 @@ export const BoardPage = ({ org }: { org: string }) => {
         tone: "success",
         title: (
           <>
-            Moved <IssueRef repo={card.repo} number={card.number} /> to{" "}
-            {columnTitle(request.toColumn)}
+            Moved <IssueRef repo={card.repo} number={card.number} />{" "}
+            {undo === null ? "back to" : "to"} {columnTitle(request.toColumn)}
           </>
         ),
         detail: card.title,

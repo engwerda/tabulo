@@ -12,20 +12,14 @@ import { Punchcard } from "../charts/Punchcard.tsx"
 import { SegmentedBar } from "../charts/SegmentedBar.tsx"
 import { ShowAll } from "../charts/ShowAll.tsx"
 import { StatFigure, StatTile } from "../charts/StatTile.tsx"
-import {
-  formatCount,
-  formatDay,
-  formatHours,
-  formatMinutes,
-  formatPercent,
-} from "../charts/scale.ts"
+import { formatCount, formatHours, formatMinutes, formatPercent } from "../charts/scale.ts"
 import { useWidth } from "../charts/use-width.ts"
 import { cardClass, Segmented } from "../ui/primitives.tsx"
 import { AllClear, AttentionList } from "./AttentionList.tsx"
 import { type Cell, packRows, type Row } from "./layout.ts"
 import { RepoHealthTable } from "./RepoHealthTable.tsx"
 import { formatWindowStart, priorLabel } from "./summary.ts"
-import { bucketTotals, formatDate, type Grain, spansYears, timeBuckets } from "./weeks.ts"
+import { axisDay, bucketTotals, formatDate, type Grain, spansYears, timeBuckets } from "./weeks.ts"
 
 const SERIES = {
   opened: "var(--chart-1)",
@@ -330,11 +324,7 @@ const Backlog = ({
       }
     >
       <AreaChart
-        labels={dates.map((date) =>
-          date.slice(0, 4) === end.slice(0, 4)
-            ? formatDay(date)
-            : `${formatDay(date)} ’${date.slice(2, 4)}`,
-        )}
+        labels={dates.map((date) => axisDay(date, dates))}
         values={values}
         seriesLabel="open issues"
         partialLast

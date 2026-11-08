@@ -1,5 +1,5 @@
 import { type ReactNode, useId } from "react"
-import { formatCount, linearScale, niceTicks } from "./scale.ts"
+import { formatCount, labelStride, linearScale, niceTicks } from "./scale.ts"
 import { Readout, Tooltip, type TooltipRow } from "./Tooltip.tsx"
 import { useActiveIndex } from "./use-active-index.ts"
 import { useEntrance } from "./use-entrance.ts"
@@ -72,9 +72,10 @@ const barPath = (x: number, width: number, base: number, end: number, radius = 4
 const ALWAYS_LABELED = 8
 
 /** Which category labels fit along the axis, counted back from the latest. */
-const shownLabels = (count: number, plotWidth: number) => {
+const shownLabels = (labels: ReadonlyArray<string>, plotWidth: number) => {
+  const count = labels.length
   if (count <= ALWAYS_LABELED) return () => true
-  const every = Math.max(1, Math.ceil(count / Math.max(1, Math.floor(plotWidth / MIN_LABEL_GAP))))
+  const every = labelStride(labels, plotWidth, MIN_LABEL_GAP)
   return (index: number) => (count - 1 - index) % every === 0
 }
 
@@ -133,7 +134,10 @@ const ColumnFrame = ({
     const index = Math.floor((pointerX - MARGIN.left) / band)
     return index >= 0 && index < categories.length ? index : null
   })
-  const showLabel = shownLabels(categories.length, plotWidth)
+  const showLabel = shownLabels(
+    categories.map((category) => category.label),
+    plotWidth,
+  )
   const tip = active === null ? null : tooltip(active)
   const partial = categories.findIndex((category) => category.partial === true)
   const id = useId()

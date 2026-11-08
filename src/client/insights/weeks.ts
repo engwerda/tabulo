@@ -7,7 +7,10 @@ export type Grain = "week" | "month"
 export type TimeBucket = {
   /** The week's Monday, or the month as `YYYY-MM`. */
   readonly key: string
-  /** The axis label: "Nov 3" for a week, "Nov" for a month. */
+  /**
+   * The axis label: "Nov 3" for a week, "Nov" for a month, with "’25" where a range that spans two
+   * years needs it.
+   */
   readonly label: string
   /**
    * The tooltip title and table row: "Week of Nov 3, 2025" or "Nov 2025", with a week's year
@@ -31,6 +34,17 @@ export const spansYears = (dates: ReadonlyArray<string>) =>
 export const formatDate = (date: string, withYear: boolean) =>
   withYear ? `${formatDay(date)}, ${date.slice(0, 4)}` : formatDay(date)
 
+/**
+ * `YYYY-MM-DD`, one of `dates`, as an axis label: "Nov 3", or "Nov 3 ’25" when the dates span two
+ * years and it falls in the earlier one or in January. Unlike a month, a week is marked whenever
+ * it is in the earlier year, since the axis shows only the labels it has room for.
+ */
+export const axisDay = (date: string, dates: ReadonlyArray<string>) =>
+  spansYears(dates) &&
+  (date.slice(0, 4) !== (dates.at(-1) ?? "").slice(0, 4) || date.slice(5, 7) === "01")
+    ? `${formatDay(date)} ’${date.slice(2, 4)}`
+    : formatDay(date)
+
 /** The columns for weeks starting on `weekStarts`; the last week is the current one. */
 export const timeBuckets = (
   weekStarts: ReadonlyArray<string>,
@@ -41,7 +55,7 @@ export const timeBuckets = (
   if (grain === "week") {
     return weekStarts.map((week, index) => ({
       key: week,
-      label: formatDay(week),
+      label: axisDay(week, weekStarts),
       title: `Week of ${formatDate(week, withYear)}${index === last ? ", so far" : ""}`,
       partial: index === last,
       weeks: [index],

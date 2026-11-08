@@ -15,6 +15,22 @@ describe("timeBuckets", () => {
     expect(timeBuckets(year.slice(-13), "week")[0]?.title).toBe("Week of Aug 10")
   })
 
+  it("marks the year on week labels in the earlier year or in January, when the range spans two", () => {
+    const labels = timeBuckets(year, "week").map((week) => week.label)
+    expect(labels.slice(0, 2)).toEqual(["Nov 3 ’25", "Nov 10 ’25"])
+    expect(labels[8]).toBe("Dec 29 ’25")
+    expect(labels.slice(9, 14)).toEqual([
+      "Jan 5 ’26",
+      "Jan 12 ’26",
+      "Jan 19 ’26",
+      "Jan 26 ’26",
+      "Feb 2",
+    ])
+    expect(labels.at(-1)).toBe("Nov 2")
+    expect(timeBuckets(year.slice(-13), "week")[0]?.label).toBe("Aug 10")
+    expect(timeBuckets(year.slice(10, 20), "week")[0]?.label).toBe("Jan 12")
+  })
+
   it("groups a year of weeks into months, marking the year at the start and at January", () => {
     const months = timeBuckets(year, "month")
     expect(months.map((month) => month.label)).toEqual([

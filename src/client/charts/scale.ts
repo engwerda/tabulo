@@ -21,6 +21,30 @@ export const niceTicks = (max: number, target = 4, { integer = true } = {}) => {
   return ticks
 }
 
+// An axis label at text-2xs is about this wide per character, tabular figures included.
+const LABEL_CHAR_WIDTH = 5.8
+const LABEL_SPACE = 8
+
+/**
+ * How many points apart the shown axis labels are, counted back from the last: at least `minGap`
+ * pixels apart in `plotWidth`, and further when two shown neighbours, such as "Dec 29 ’25" and
+ * "Jan 26 ’26", would touch.
+ */
+export const labelStride = (labels: ReadonlyArray<string>, plotWidth: number, minGap: number) => {
+  const count = labels.length
+  const spacing = plotWidth / Math.max(count, 1)
+  const fits = (every: number) => {
+    for (let index = count - 1 - every; index >= 0; index -= every) {
+      const pair = (labels[index]?.length ?? 0) + (labels[index + every]?.length ?? 0)
+      if ((pair / 2) * LABEL_CHAR_WIDTH + LABEL_SPACE > every * spacing) return false
+    }
+    return true
+  }
+  let every = Math.max(1, Math.ceil(count / Math.max(1, Math.floor(plotWidth / minGap))))
+  while (every < count && !fits(every)) every++
+  return every
+}
+
 const compactFormat = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 })
 const fullFormat = new Intl.NumberFormat("en")
 

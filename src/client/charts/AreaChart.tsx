@@ -1,4 +1,4 @@
-import { formatCount, linearScale, niceTicks } from "./scale.ts"
+import { formatCount, labelStride, linearScale, niceTicks } from "./scale.ts"
 import { Readout, Tooltip } from "./Tooltip.tsx"
 import { useActiveIndex } from "./use-active-index.ts"
 import { useEntrance } from "./use-entrance.ts"
@@ -58,7 +58,7 @@ export const AreaChart = ({
   const line = `M${points.join("L")}`
   const settled = partialLast && count > 1 ? `M${points.slice(0, -1).join("L")}` : line
   const area = `${line}L${x(count - 1)},${y(0)}L${x(0)},${y(0)}Z`
-  const every = Math.max(1, Math.ceil(count / Math.max(1, Math.floor(plotWidth / MIN_LABEL_GAP))))
+  const every = labelStride(labels, plotWidth, MIN_LABEL_GAP)
   const last = count - 1
   const lastValue = values[last] ?? 0
   const play = useEntrance(`area:${labels.join(",")}|${values.join(",")}`)

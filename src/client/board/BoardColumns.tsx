@@ -282,7 +282,7 @@ const EmptyColumn = ({ filtered, column }: { filtered: boolean; column: BoardCol
       ? "No cards match the filters"
       : column._tag === "Done"
         ? "Nothing closed recently"
-        : "No issues"}
+        : "No cards"}
   </li>
 )
 
