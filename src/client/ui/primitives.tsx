@@ -10,7 +10,7 @@ import {
   useState,
 } from "react"
 import { createPortal } from "react-dom"
-import { ChevronDownIcon } from "./icons.tsx"
+import { CheckIcon, ChevronDownIcon } from "./icons.tsx"
 
 /**
  * On a touch screen a small control gets an invisible 44px hit area around it, so compact
@@ -325,7 +325,7 @@ export const Popover = ({
   )
 }
 
-/** A single choice in a menu-like listbox of a Popover. */
+/** A single choice in a menu-like listbox of a Popover, checked at the end when chosen. */
 export const MenuOption = ({
   selected,
   onSelect,
@@ -348,7 +348,10 @@ export const MenuOption = ({
       selected ? "font-medium text-zinc-900 dark:text-zinc-50" : "text-zinc-700 dark:text-zinc-300"
     }`}
   >
-    {children}
+    <span className="flex min-w-0 flex-1 items-center gap-2">{children}</span>
+    <CheckIcon
+      className={`size-4 shrink-0 text-indigo-600 dark:text-indigo-400 ${selected ? "" : "invisible"}`}
+    />
   </button>
 )
 

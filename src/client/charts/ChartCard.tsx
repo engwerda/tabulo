@@ -1,5 +1,6 @@
 import { type ReactNode, type Ref, useId, useState } from "react"
 import { cardClass, touchTarget } from "../ui/primitives.tsx"
+import { HiddenTable } from "./DataTable.tsx"
 
 type ChartCardProps = {
   readonly title: string
@@ -94,7 +95,7 @@ export const ChartCard = ({
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
           {children}
-          {table !== undefined && <div className="sr-only">{table}</div>}
+          {table !== undefined && <HiddenTable>{table}</HiddenTable>}
         </div>
       )}
     </section>

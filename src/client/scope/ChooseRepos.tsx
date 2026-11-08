@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import { useId } from "react"
 import { fetchOrgRepos } from "../api.ts"
 import { Glyph } from "../palette/icons.tsx"
-import { AlertIcon } from "../ui/icons.tsx"
+import { ErrorNotice } from "../ui/ErrorNotice.tsx"
 import { buttonClass, cardClass } from "../ui/primitives.tsx"
 import { MAX_REPOS } from "./first-visit.ts"
 import type { RepoSelection } from "./use-repo-selection.ts"
@@ -35,30 +35,13 @@ export const ChooseRepos = ({
   const headingId = useId()
   if (repos.isError) {
     return (
-      <div
-        role="alert"
-        className={`${cardClass} flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-4 sm:px-5`}
+      <ErrorNotice
+        title={`Could not load the repositories of ${org}`}
+        onRetry={() => void repos.refetch()}
+        retrying={repos.isFetching}
       >
-        <div className="flex min-w-0 flex-1 basis-72 items-start gap-3">
-          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-red-50 text-red-600 dark:bg-red-950/50 dark:text-red-400">
-            <AlertIcon className="size-4" />
-          </span>
-          <div className="min-w-0">
-            <h2 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-              Could not load the repositories of {org}
-            </h2>
-            <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">{repos.error.message}</p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => void repos.refetch()}
-          disabled={repos.isFetching}
-          className={`${buttonClass.secondary} max-sm:ml-11`}
-        >
-          Retry
-        </button>
-      </div>
+        {repos.error.message}
+      </ErrorNotice>
     )
   }
   const active = (repos.data ?? []).filter((repo) => !repo.archived).map((repo) => repo.name)

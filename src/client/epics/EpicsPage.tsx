@@ -7,7 +7,8 @@ import { Glyph } from "../palette/icons.tsx"
 import { ChooseRepos } from "../scope/ChooseRepos.tsx"
 import { ScopeBar } from "../scope/ScopeBar.tsx"
 import { useRepoSelection } from "../scope/use-repo-selection.ts"
-import { AlertIcon, CopyIcon, ExternalIcon, SortIcon, XIcon } from "../ui/icons.tsx"
+import { ErrorNotice } from "../ui/ErrorNotice.tsx"
+import { CopyIcon, ExternalIcon, SortIcon, XIcon } from "../ui/icons.tsx"
 import { PageTitle } from "../ui/PageTitle.tsx"
 import {
   buttonClass,
@@ -55,37 +56,6 @@ const LoadingEpics = () => (
         ))}
       </div>
     </div>
-  </div>
-)
-
-const Banner = ({
-  tone,
-  onRetry,
-  children,
-}: {
-  tone: "error" | "warning"
-  onRetry?: () => void
-  children: ReactNode
-}) => (
-  <div
-    role={tone === "error" ? "alert" : "status"}
-    className={`mb-4 flex items-start gap-2.5 rounded-lg border px-3.5 py-2.5 text-sm ${
-      tone === "error"
-        ? "border-red-200 bg-red-50 text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200"
-        : "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100"
-    }`}
-  >
-    <AlertIcon className="mt-0.5 size-4" />
-    <p className="min-w-0 flex-1">{children}</p>
-    {onRetry !== undefined && (
-      <button
-        type="button"
-        onClick={onRetry}
-        className="-my-0.5 shrink-0 rounded-md px-1.5 py-0.5 font-medium underline-offset-2 hover:underline"
-      >
-        Retry
-      </button>
-    )}
   </div>
 )
 
@@ -278,21 +248,35 @@ export const EpicsPage = ({ org }: { org: string }) => {
 
   return (
     <main className="pb-12">
-      <ScopeBar org={org} view="epics" repoSelection={repoSelection} />
       <div className="mx-auto max-w-screen-2xl px-4 sm:px-6">
+        <ScopeBar org={org} view="epics" repoSelection={repoSelection} />
         <PageTitle title="Epics" meta="Large pieces of work, tracked through their child issues." />
         {epics.isError && hasSelection && (
-          <Banner tone="error" onRetry={() => void epics.refetch()}>
-            Could not {epics.data === undefined ? "load" : "refresh"} epics: {epics.error.message}
-          </Banner>
+          <ErrorNotice
+            title={`Could not ${epics.data === undefined ? "load" : "refresh"} epics`}
+            onRetry={() => void epics.refetch()}
+            retrying={epics.isFetching}
+            className="mb-4"
+          >
+            {epics.error.message}
+          </ErrorNotice>
         )}
         {hasSelection && (epics.data?.failedRepos.length ?? 0) > 0 && (
-          <Banner tone="warning" onRetry={() => void epics.refetch()}>
-            Some repositories could not be loaded:{" "}
-            {epics.data?.failedRepos.map(({ repo, message }) => `${repo} (${message})`).join(", ")}.
-          </Banner>
+          <ErrorNotice
+            tone="warning"
+            title="Some repositories could not be loaded"
+            onRetry={() => void epics.refetch()}
+            retrying={epics.isFetching}
+            className="mb-4"
+          >
+            {epics.data?.failedRepos.map(({ repo, message }) => `${repo} (${message})`).join(", ")}
+          </ErrorNotice>
         )}
-        {hasSelection && notice !== "" && <Banner tone="warning">{notice}</Banner>}
+        {hasSelection && notice !== "" && (
+          <ErrorNotice tone="warning" title="Some epics may be missing" className="mb-4">
+            {notice}
+          </ErrorNotice>
+        )}
         {repoSelection.resolving ? (
           <LoadingEpics />
         ) : !hasSelection ? (

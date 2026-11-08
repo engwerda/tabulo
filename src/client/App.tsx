@@ -203,7 +203,7 @@ const SearchButton = () => {
       onClick={openPalette}
       aria-haspopup="dialog"
       aria-keyshortcuts="Control+K Meta+K"
-      className="flex h-8 shrink-0 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-2 text-sm text-zinc-500 pointer-coarse:h-11 pointer-coarse:px-3 shadow-[0_1px_0_rgb(0_0_0/0.03)] transition-colors hover:border-zinc-300 hover:text-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 lg:w-52 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-none dark:hover:border-zinc-600 dark:hover:text-zinc-200"
+      className="flex h-8 shrink-0 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-2 text-sm text-zinc-500 pointer-coarse:h-11 pointer-coarse:min-w-11 pointer-coarse:justify-center pointer-coarse:px-3 shadow-[0_1px_0_rgb(0_0_0/0.03)] transition-colors hover:border-zinc-300 hover:text-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 lg:w-52 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-none dark:hover:border-zinc-600 dark:hover:text-zinc-200"
     >
       <SearchIcon className="size-4 shrink-0" />
       <span className="sr-only lg:not-sr-only lg:flex-1 lg:text-left">Search…</span>

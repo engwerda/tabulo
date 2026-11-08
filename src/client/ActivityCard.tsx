@@ -3,10 +3,10 @@ import { type ReactNode, useState } from "react"
 import { browserTimeZone, fetchActivity } from "./api.ts"
 import { CalendarHeatmap } from "./charts/CalendarHeatmap.tsx"
 import { TableToggle } from "./charts/ChartCard.tsx"
-import { DataTable } from "./charts/DataTable.tsx"
+import { DataTable, HiddenTable } from "./charts/DataTable.tsx"
 import { formatCount, formatLongDay } from "./charts/scale.ts"
-import { AlertIcon } from "./ui/icons.tsx"
-import { buttonClass, cardClass } from "./ui/primitives.tsx"
+import { ErrorNotice } from "./ui/ErrorNotice.tsx"
+import { cardClass } from "./ui/primitives.tsx"
 
 const STALE_TIME_MS = 5 * 60 * 1000
 
@@ -74,21 +74,15 @@ export const ActivityCard = () => {
       <section aria-labelledby={headingId} className={`${cardClass} px-4 py-3`}>
         <Heading />
         {activity.isError ? (
-          <div role="alert" className="mt-2 flex items-center gap-3 text-sm">
-            <AlertIcon className="size-4 text-red-600 dark:text-red-400" />
-            <p className="min-w-0 flex-1 text-zinc-700 dark:text-zinc-300">
-              Could not load your activity.{" "}
-              <span className="text-zinc-500 dark:text-zinc-400">{activity.error.message}</span>
-            </p>
-            <button
-              type="button"
-              onClick={() => void activity.refetch()}
-              disabled={activity.isFetching}
-              className={`${buttonClass.secondary} shrink-0`}
-            >
-              Retry
-            </button>
-          </div>
+          <ErrorNotice
+            bare
+            className="mt-3"
+            title="Could not load your activity"
+            onRetry={() => void activity.refetch()}
+            retrying={activity.isFetching}
+          >
+            {activity.error.message}
+          </ErrorNotice>
         ) : (
           <div role="status" className="mt-3 mb-1 flex gap-8">
             <span className="sr-only">Loading your activity…</span>
@@ -167,7 +161,7 @@ export const ActivityCard = () => {
                 days={data.days}
                 ariaLabel={`${data.total} contributions over the last year; longest streak ${data.longestStreak} days.`}
               />
-              <div className="sr-only">{table}</div>
+              <HiddenTable>{table}</HiddenTable>
             </>
           )}
         </div>

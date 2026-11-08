@@ -1,8 +1,20 @@
-import { type ReactNode, useState } from "react"
+import { createContext, type ReactNode, useContext, useState } from "react"
 import { ShowAll } from "./ShowAll.tsx"
 
 /** Rows shown before "Show all": enough for a quarter of weeks, short enough to see the end. */
 const SHOWN_ROWS = 14
+
+const Hidden = createContext(false)
+
+/**
+ * A chart's table kept for assistive technology while the chart shows. It lists every row, with
+ * no "Show all" button that keyboard focus could reach but no one could see.
+ */
+export const HiddenTable = ({ children }: { children: ReactNode }) => (
+  <Hidden.Provider value={true}>
+    <div className="sr-only">{children}</div>
+  </Hidden.Provider>
+)
 
 /** The table view of a chart: every value the chart draws, readable without it. */
 export const DataTable = ({
@@ -14,8 +26,9 @@ export const DataTable = ({
   readonly columns: ReadonlyArray<string>
   readonly rows: ReadonlyArray<{ readonly key: string; readonly cells: ReadonlyArray<ReactNode> }>
 }) => {
+  const hidden = useContext(Hidden)
   const [expanded, setExpanded] = useState(false)
-  const shown = expanded ? rows : rows.slice(0, SHOWN_ROWS)
+  const shown = expanded || hidden ? rows : rows.slice(0, SHOWN_ROWS)
   return (
     <div className="flex flex-col overflow-x-auto">
       <table className="w-full text-left text-xs">
@@ -51,7 +64,7 @@ export const DataTable = ({
           ))}
         </tbody>
       </table>
-      {rows.length > SHOWN_ROWS && (
+      {!hidden && rows.length > SHOWN_ROWS && (
         <ShowAll total={rows.length} expanded={expanded} onToggle={() => setExpanded(!expanded)} />
       )}
     </div>

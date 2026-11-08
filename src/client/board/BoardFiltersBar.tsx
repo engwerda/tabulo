@@ -2,7 +2,7 @@ import { type ReactNode, type RefObject, useEffect, useRef, useState } from "rea
 import type { SetSearchParams } from "wouter"
 import type { BoardCard } from "../../shared/api.ts"
 import { Avatar } from "../Avatar.tsx"
-import { CheckIcon, MilestoneIcon, SlidersIcon, TagIcon, UserIcon, XIcon } from "../ui/icons.tsx"
+import { MilestoneIcon, SlidersIcon, TagIcon, UserIcon, XIcon } from "../ui/icons.tsx"
 import { buttonClass, MenuOption, Popover } from "../ui/primitives.tsx"
 import { SearchField } from "../ui/SearchField.tsx"
 import { LabelName } from "./BoardCardView.tsx"
@@ -128,9 +128,6 @@ const FilterMenu = ({ spec }: { spec: FilterSpec }) => {
               }}
             >
               <span className="flex-1">Any {name.toLowerCase()}</span>
-              {values.length === 0 && (
-                <CheckIcon className="size-4 text-indigo-600 dark:text-indigo-400" />
-              )}
             </MenuOption>
             {shown.map((choice) => {
               const on = values.includes(choice.value)
@@ -152,7 +149,6 @@ const FilterMenu = ({ spec }: { spec: FilterSpec }) => {
                 >
                   {choice.icon}
                   <span className="min-w-0 flex-1 truncate">{choice.display ?? choice.label}</span>
-                  {on && <CheckIcon className="size-4 text-indigo-600 dark:text-indigo-400" />}
                 </MenuOption>
               )
             })}

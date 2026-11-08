@@ -208,8 +208,8 @@ export const InsightsPage = ({ org }: { org: string }) => {
 
   return (
     <main>
-      <ScopeBar org={org} view="insights" repoSelection={repoSelection} />
       <div className="mx-auto max-w-screen-2xl px-4 pb-8 sm:px-6">
+        <ScopeBar org={org} view="insights" repoSelection={repoSelection} />
         <PageTitle
           title="Insights"
           meta={

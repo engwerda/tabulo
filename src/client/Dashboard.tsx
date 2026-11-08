@@ -7,15 +7,8 @@ import { relativeTime } from "./format.ts"
 import { ItemRow, NotificationRow } from "./rows.tsx"
 import { SectionCard } from "./SectionCard.tsx"
 import { useViewer } from "./session.ts"
-import {
-  AlertIcon,
-  AtIcon,
-  BellIcon,
-  IssueOpenIcon,
-  PullIcon,
-  RefreshIcon,
-  UserIcon,
-} from "./ui/icons.tsx"
+import { ErrorNotice } from "./ui/ErrorNotice.tsx"
+import { AtIcon, BellIcon, IssueOpenIcon, PullIcon, RefreshIcon, UserIcon } from "./ui/icons.tsx"
 import { buttonClass, cardClass } from "./ui/primitives.tsx"
 
 export const DASHBOARD = ["dashboard"] as const
@@ -133,7 +126,7 @@ const Summary = ({ data }: { data: Dashboard }) => {
             <li key={key}>
               <a
                 href={`#${SECTIONS[key].id}`}
-                className="rounded-md px-0.5 underline-offset-4 transition-colors hover:text-zinc-900 hover:underline focus-visible:outline-2 focus-visible:outline-indigo-500 dark:hover:text-zinc-100"
+                className="inline-block rounded-md px-0.5 underline-offset-4 transition-colors pointer-coarse:py-2.5 hover:text-zinc-900 hover:underline focus-visible:outline-2 focus-visible:outline-indigo-500 dark:hover:text-zinc-100"
               >
                 <span className="font-semibold text-zinc-900 tabular-nums dark:text-zinc-100">
                   {count}
@@ -286,21 +279,13 @@ export const DashboardView = () => {
 
       {data === undefined ? (
         dashboard.isError ? (
-          <div role="alert" className={`${cardClass} flex items-center gap-3 px-4 py-3 text-sm`}>
-            <AlertIcon className="size-4 text-red-600 dark:text-red-400" />
-            <p className="min-w-0 flex-1 text-zinc-700 dark:text-zinc-300">
-              Could not load your dashboard.{" "}
-              <span className="text-zinc-500 dark:text-zinc-400">{dashboard.error.message}</span>
-            </p>
-            <button
-              type="button"
-              onClick={retry}
-              disabled={dashboard.isFetching}
-              className={`${buttonClass.secondary} shrink-0`}
-            >
-              Retry
-            </button>
-          </div>
+          <ErrorNotice
+            title="Could not load your dashboard"
+            onRetry={retry}
+            retrying={dashboard.isFetching}
+          >
+            {dashboard.error.message}
+          </ErrorNotice>
         ) : (
           <SkeletonGrid />
         )
