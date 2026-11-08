@@ -78,12 +78,8 @@ export type FakeRepo = {
   writers: ReadonlyArray<string>
   /** Logins who may write issues without push access, as a triage team can. */
   triagers: ReadonlyArray<string>
-  /** Logins that Forgejo answers 404 for every read of the repository, as it does without access. */
   hiddenFrom?: ReadonlyArray<string>
-  /**
-   * Logins that can read the repository but not its issues, as a team with only the code unit
-   * can: Forgejo answers 404 for its issue endpoints.
-   */
+  /** As a team with only the code unit: the repository reads, its issues answer 404. */
   issuesHiddenFrom?: ReadonlyArray<string>
   /** Repository-level labels, beside the organization's. */
   labels: ReadonlyArray<FakeLabel>
@@ -136,6 +132,7 @@ export type FakeOrg = {
   full_name: string
   avatar_url: string
   members: ReadonlyArray<string>
+  publicMembers?: ReadonlyArray<string>
   labels: ReadonlyArray<FakeLabel>
   repos: Array<FakeRepo>
 }
@@ -722,6 +719,13 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
         headers: { location: `${FORGEJO_URL}/api/v1/orgs/${org.name}/public_members/${member}` },
       })
     }
+    const publicMemberPath = /^\/api\/v1\/orgs\/([^/]+)\/public_members\/([^/]+)$/.exec(path)
+    if (publicMemberPath !== null) {
+      const [, orgName = "", member = ""] = publicMemberPath
+      return findOrg(orgName)?.publicMembers?.includes(member)
+        ? new Response(null, { status: 204 })
+        : notFound()
+    }
     const orgPath = /^\/api\/v1\/orgs\/([^/]+)\/(repos|labels)$/.exec(path)
     if (orgPath !== null) {
       const [, orgName = "", what] = orgPath
@@ -796,7 +800,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     return notFound()
   }
 
-  const fetch = async (request: Request): Promise<Response> => {
+  const answer = async (request: Request): Promise<Response> => {
     const url = new URL(request.url)
     if (url.origin !== FORGEJO_URL) throw new Error(`unexpected outbound request to ${url.origin}`)
     const body = request.method === "GET" || request.method === "DELETE" ? "" : await request.text()
@@ -827,6 +831,18 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     return api(request.method, url.pathname, url.searchParams, login, parsed)
   }
 
+  // The Workers runtime's fetch follows redirects, and Tabulo's requests do not opt out.
+  const fetch = async (request: Request): Promise<Response> => {
+    const response = await answer(request)
+    const location = response.headers.get("location")
+    return request.redirect === "follow" &&
+      location !== null &&
+      response.status >= 300 &&
+      response.status < 400
+      ? fetch(new Request(location, { headers: request.headers }))
+      : response
+  }
+
   return {
     fetch,
     requests,
@@ -840,7 +856,6 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     issue: (owner: string, repo: string, number: number) =>
       findRepo(owner, repo)?.issues.find((issue) => issue.number === number),
     revokeAccessTokens: () => validAccessTokens.clear(),
-    /** Renames a user. As in Forgejo, their tokens and memberships follow them. */
     renameUser: (from: string, to: string) => {
       const index = users.findIndex((user) => user.login === from)
       const user = users[index]
@@ -849,7 +864,11 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
       for (const tokens of [validAccessTokens, validRefreshTokens]) {
         for (const [token, login] of tokens) if (login === from) tokens.set(token, to)
       }
-      for (const org of orgs) org.members = org.members.map((name) => (name === from ? to : name))
+      const rename = (name: string) => (name === from ? to : name)
+      for (const org of orgs) {
+        org.members = org.members.map(rename)
+        if (org.publicMembers !== undefined) org.publicMembers = org.publicMembers.map(rename)
+      }
     },
   }
 }

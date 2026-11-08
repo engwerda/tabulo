@@ -757,9 +757,10 @@ describe("POST /api/board/move", () => {
   })
 
   it("decides membership by the signed-in user, not by the login they had at sign-in", async () => {
-    const { forgejo, call, move } = await boardSession()
+    const { forgejo, call, move } = await boardSession({
+      orgs: [{ ...boardOrg(), publicMembers: ["grace"] }],
+    })
     const outsiderCookie = await signIn(call, forgejo, "linus")
-    // The outsider leaves their login behind, and a member takes it.
     forgejo.renameUser("linus", "linus-old")
     forgejo.renameUser("grace", "linus")
 
@@ -1065,8 +1066,6 @@ describe("card order", () => {
     expect(await rankRows()).toEqual(before)
   })
 
-  // A member who cannot read a repository must not learn, from a move's answer, which of its
-  // issues exist or which column they are in.
   it.each([
     ["a repository the user cannot see", { hiddenFrom: ["grace"] }],
     ["a repository whose issues the user cannot read", { issuesHiddenFrom: ["grace"] }],
@@ -1613,8 +1612,6 @@ describe("POST /api/board/comment", () => {
     expect(forgejo.issue("acme", "api", 1)?.comments).toBe(1)
   })
 
-  // Forgejo rejects a token that expires between the comment and its render; Tabulo then
-  // refreshes the token and runs the request again, which must not post the comment twice.
   it("posts the comment once when Forgejo rejects the token while rendering it", async () => {
     let renders = 0
     const { forgejo, post } = await boardSession({
