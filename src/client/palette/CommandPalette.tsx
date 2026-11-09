@@ -5,10 +5,11 @@ import { ErrorNotice } from "../ui/ErrorNotice.tsx"
 import { CheckIcon, XIcon } from "../ui/icons.tsx"
 import { buttonClass, Kbd, touchTarget } from "../ui/primitives.tsx"
 import { Glyph, SearchIcon } from "./icons.tsx"
+import type { PaletteItem, RunContext } from "./item.ts"
 import { isMac, Key } from "./keys.tsx"
 import { rankSections } from "./rank.ts"
 import { readRecent, rememberCommand } from "./recent.ts"
-import { type PaletteItem, type RunContext, usePaletteGroups } from "./use-palette-groups.ts"
+import { usePaletteGroups } from "./use-palette-groups.ts"
 
 const CONFIRM_MS = 800
 

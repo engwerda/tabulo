@@ -66,3 +66,30 @@ export const signIn = async (
   if (session === undefined) throw new Error(`sign-in failed with HTTP ${response.status}`)
   return `${SESSION_COOKIE}=${session.value}`
 }
+
+export const postJson = (call: Call, cookie: string, path: string, body: unknown) =>
+  call(path, {
+    method: "POST",
+    headers: { cookie, origin: APP_URL, "content-type": "application/json" },
+    body: JSON.stringify(body),
+  })
+
+export const defaultBoardRepos = (call: Call, org: string) => {
+  let version = 0
+  return async (cookie: string, repos: ReadonlyArray<string>) => {
+    const response = await postJson(call, cookie, "/api/boards/update", {
+      org,
+      board: "default",
+      version,
+      name: "Board",
+      repos,
+      columns: [],
+      hidden: [],
+      dropUnreadable: true,
+    })
+    if (response.status !== 200) {
+      throw new Error(`setting the default board failed with HTTP ${response.status}`)
+    }
+    version = ((await response.json()) as { board: { version: number } }).board.version
+  }
+}

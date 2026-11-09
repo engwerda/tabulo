@@ -1,11 +1,16 @@
 import type { Board, BoardCard } from "../../shared/api.ts"
 import { compareCardOrder, rankForDrop } from "../../shared/card-order.ts"
 
-/**
- * The board's query: the organization and its chosen repositories as `useRepoSelection` joins
- * them. The command palette reads the same entry to open cards in the board's panel.
- */
-export const boardQueryKey = (org: string, selection: string) => ["board", org, selection] as const
+// Organization names compare without regard to case, and the board's own `org` is lowercased
+// while the address keeps the case it was typed in.
+export const everyBoardQueryKey = (org: string) => ["board", org.toLowerCase()] as const
+
+export const boardQueryKey = (org: string, board: string) =>
+  [...everyBoardQueryKey(org), board] as const
+
+export const boardListQueryKey = (org: string) => ["boards", org] as const
+
+export const boardWriteKey = (org: string) => ["board-write", org.toLowerCase()] as const
 
 /** Every card of a column in board order. */
 export const columnCards = (cards: ReadonlyArray<BoardCard>, column: string) =>
@@ -181,6 +186,23 @@ export const applyMove = (board: Board, move: CardMove, now: string): Board => {
     state: closed ? "closed" : "open",
     closedAt: closed ? (card.closedAt ?? now) : null,
   }))
+}
+
+/**
+ * Only what `applyMove` changed goes back, so whatever else changed meanwhile stays, such as
+ * saved settings, another card's move, or this card's assignees.
+ */
+export const revertMove = (board: Board, before: BoardCard): Board => {
+  const shown = board.columns.some((column) => column.key === before.column)
+  return {
+    ...board,
+    cards: board.cards.flatMap((card) => {
+      if (card.key !== before.key) return [card]
+      if (!shown) return []
+      const { column, rank, state, closedAt } = before
+      return [{ ...card, column, rank, state, closedAt }]
+    }),
+  }
 }
 
 export const replaceCard = (board: Board, key: string, change: (card: BoardCard) => BoardCard) => ({

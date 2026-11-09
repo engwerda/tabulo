@@ -3,6 +3,7 @@ import type { ReactNode } from "react"
 import { useSearchParams } from "wouter"
 import { Avatar } from "../Avatar.tsx"
 import { fetchEpics, fetchInstance, fetchOrgRepos } from "../api.ts"
+import { useLastBoard } from "../board/use-last-board.ts"
 import { Glyph } from "../palette/icons.tsx"
 import { ChooseRepos } from "../scope/ChooseRepos.tsx"
 import { ScopeBar } from "../scope/ScopeBar.tsx"
@@ -206,6 +207,7 @@ const Stat = ({
 
 export const EpicsPage = ({ org }: { org: string }) => {
   const repoSelection = useRepoSelection(org)
+  const lastBoard = useLastBoard(org)
   const [params, setParams] = useSearchParams()
   const filters = readEpicFilters(params)
   const openEpics = readOpenEpics(params)
@@ -422,7 +424,7 @@ export const EpicsPage = ({ org }: { org: string }) => {
                   <EpicCard
                     key={epic.key}
                     org={org}
-                    selected={repoSelection.selected}
+                    board={lastBoard}
                     epic={epic}
                     columns={epics.data.columns}
                     sharedLabels={sharedLabels}

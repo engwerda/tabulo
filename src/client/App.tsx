@@ -3,14 +3,23 @@ import { type ComponentType, lazy, Suspense, useEffect } from "react"
 import { Link, Route, Switch, useLocation } from "wouter"
 import type { User } from "../shared/api.ts"
 import { Avatar } from "./Avatar.tsx"
-import { fetchOrgs, signOut } from "./api.ts"
+import { fetchBoards, fetchOrgs, signOut } from "./api.ts"
+import { boardListQueryKey } from "./board/board-view.ts"
 import { DashboardView } from "./Dashboard.tsx"
-import { Glyph, type GlyphName, SearchIcon } from "./palette/icons.tsx"
+import { Glyph, SearchIcon } from "./palette/icons.tsx"
+import type { GlyphName } from "./palette/item.ts"
 import { ShortcutKeys } from "./palette/keys.tsx"
 import { PaletteProvider, usePalette } from "./palette/PaletteProvider.tsx"
 import { ORGS, OrgPicker } from "./scope/OrgPicker.tsx"
 import { useLastScope } from "./scope/remembered.ts"
-import { isOrgViewPath, ORG_VIEWS, type OrgViewId, orgViewHref } from "./scope/views.ts"
+import {
+  boardIdFromPath,
+  isOrgViewPath,
+  ORG_VIEWS,
+  type OrgViewId,
+  type OrgViewParams,
+  orgViewHref,
+} from "./scope/views.ts"
 import { forgetSignedInUser, SESSION_USER, useSession } from "./session.ts"
 import { RETURN_KEY } from "./stored-data.ts"
 import { ThemeControl } from "./ThemeControl.tsx"
@@ -89,23 +98,32 @@ const decodePathSegment = (segment: string) => {
   }
 }
 
-/** Names the browser tab after the view and organization, so tabs and history stay apart. */
 const useRouteTitle = () => {
   const [path] = useLocation()
   const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
   const view = ORG_VIEWS.find((candidate) => isOrgViewPath(candidate, path))
-  const org = view === undefined ? undefined : decodePathSegment(path.split("/")[2] ?? "")
+  const segments = path.split("/")
+  const org = view === undefined ? undefined : decodePathSegment(segments[2] ?? "")
   const orgName =
     orgs.data?.find((candidate) => candidate.name.toLowerCase() === org?.toLowerCase())?.fullName ||
     org
+  // The board page loads its organization's boards; the title only reads them.
+  const boards = useQuery({
+    queryKey: boardListQueryKey(org ?? ""),
+    queryFn: () => fetchBoards(org ?? ""),
+    enabled: false,
+  })
+  const boardId = view?.id === "board" ? boardIdFromPath(segments[3]) : undefined
+  const boardName = boards.data?.boards.find((board) => board.id === boardId)?.name
+  const label = boardName ?? view?.label
   useDocumentTitle(
     path === "/"
       ? "Dashboard"
-      : view === undefined
+      : label === undefined
         ? "Page not found"
         : orgName
-          ? `${view.label} · ${orgName}`
-          : view.label,
+          ? `${label} · ${orgName}`
+          : label,
   )
 }
 
@@ -197,7 +215,7 @@ const SignInPage = () => (
 )
 
 // Each view loads on first visit, so the dashboard does not download drag and drop or charts.
-const ORG_VIEW_PAGES: Record<OrgViewId, ComponentType<{ org: string }>> = {
+const ORG_VIEW_PAGES: Record<OrgViewId, ComponentType<OrgViewParams>> = {
   board: lazy(() => import("./board/BoardPage.tsx").then((m) => ({ default: m.BoardPage }))),
   insights: lazy(() =>
     import("./insights/InsightsPage.tsx").then((m) => ({ default: m.InsightsPage })),
@@ -212,14 +230,13 @@ type NavItem = {
   readonly active: boolean
 }
 
-/** The header's links; an organization view returns to the last organization and its repositories. */
 const useNav = (): ReadonlyArray<NavItem> => {
   const [path] = useLocation()
   const lastScope = useLastScope()
   return [
     { href: "/", label: "Dashboard", icon: "dashboard", active: path === "/" },
     ...ORG_VIEWS.map((view) => ({
-      href: orgViewHref(view.id, lastScope?.org, lastScope?.repos),
+      href: orgViewHref(view.id, lastScope ?? undefined),
       label: view.label,
       icon: view.icon,
       active: isOrgViewPath(view, path),
@@ -468,14 +485,14 @@ const SignedIn = ({ user }: { user: User }) => {
             <Suspense fallback={<ViewLoading />}>
               <Switch>
                 <Route path="/" component={DashboardView} />
-                {ORG_VIEWS.map(({ id, path }) => {
+                {ORG_VIEWS.map(({ id, path, route }) => {
                   const Page = ORG_VIEW_PAGES[id]
                   return [
                     <Route key={id} path={path}>
                       <OrgPicker view={id} />
                     </Route>,
-                    <Route key={`${id}/:org`} path={`${path}/:org`}>
-                      {({ org }) => <Page key={org} org={org} />}
+                    <Route<OrgViewParams> key={`${id}${route}`} path={`${path}${route}`}>
+                      {({ org, board }) => <Page key={org} org={org} board={board} />}
                     </Route>,
                   ]
                 })}

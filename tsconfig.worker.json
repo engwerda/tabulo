@@ -10,6 +10,9 @@
     "src/worker",
     "src/shared",
     "src/client/format.ts",
+    "src/client/board/board-commands.ts",
+    "src/client/board/board-settings.ts",
+    "src/client/board/board-sync.ts",
     "src/client/board/board-view.ts",
     "src/client/charts/scale.ts",
     "src/client/insights/summary.ts",
@@ -18,9 +21,12 @@
     "src/client/insights/people.ts",
     "src/client/epics/epics-view.ts",
     "src/client/palette/fuzzy.ts",
+    "src/client/palette/item.ts",
     "src/client/palette/rank.ts",
     "src/client/palette/shortcuts.ts",
     "src/client/scope/first-visit.ts",
+    "src/client/scope/remembered.ts",
+    "src/client/scope/views.ts",
     "src/client/stored-data.ts",
     "test"
   ]

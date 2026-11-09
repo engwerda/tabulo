@@ -7,6 +7,7 @@ import { Glyph } from "../palette/icons.tsx"
 import { ErrorNotice } from "../ui/ErrorNotice.tsx"
 import { AlertIcon, CheckIcon, ChevronRightIcon, InfoIcon } from "../ui/icons.tsx"
 import { cardClass, Popover } from "../ui/primitives.tsx"
+import { rememberedScope } from "./remembered.ts"
 import { type OrgViewId, orgView, orgViewHref } from "./views.ts"
 
 export const ORGS = ["orgs"] as const
@@ -14,7 +15,7 @@ export const ORGS = ["orgs"] as const
 export const OrgPicker = ({ view }: { view: OrgViewId }) => {
   const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
   if (orgs.data?.length === 1 && orgs.data[0] !== undefined) {
-    return <Redirect to={orgViewHref(view, orgs.data[0].name)} replace />
+    return <Redirect to={orgViewHref(view, rememberedScope(orgs.data[0].name))} replace />
   }
   const { label, icon, pickerHint } = orgView(view)
   return (
@@ -67,7 +68,7 @@ export const OrgPicker = ({ view }: { view: OrgViewId }) => {
           {orgs.data.map((org) => (
             <li key={org.name}>
               <Link
-                href={orgViewHref(view, org.name)}
+                href={orgViewHref(view, rememberedScope(org.name))}
                 className="group flex items-center gap-3 px-4 py-3 transition hover:bg-zinc-50 focus-visible:-outline-offset-2 dark:hover:bg-zinc-800/50"
               >
                 <Avatar
@@ -162,7 +163,7 @@ export const OrgSwitcher = ({ org, view }: { org: string; view: OrgViewId }) => 
               return (
                 <Link
                   key={candidate.name}
-                  href={orgViewHref(view, candidate.name)}
+                  href={orgViewHref(view, rememberedScope(candidate.name))}
                   role="menuitemradio"
                   aria-checked={active}
                   onClick={close}

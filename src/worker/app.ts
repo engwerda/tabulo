@@ -4,13 +4,17 @@ import { bodyLimit } from "hono/body-limit"
 import { deleteCookie, getCookie, setCookie } from "hono/cookie"
 import {
   AddCommentRequest,
+  CreateBoardRequest,
   CreateCardRequest,
   type Dashboard,
+  DeleteBoardRequest,
   type Instance,
+  MAX_BOARDS,
   MoveCardRequest,
   SetAssigneeRequest,
   SetLabelRequest,
   SetMilestoneRequest,
+  UpdateBoardRequest,
 } from "../shared/api.ts"
 import { beginLogin, completeLogin } from "./auth/oauth.ts"
 import { currentSession, withAccessToken } from "./auth/session.ts"
@@ -28,16 +32,21 @@ import {
   parseCardQuery,
   parseName,
   parseRepoQuery,
+  parseReposQuery,
   setAssignee,
   setLabel,
   setMilestone,
 } from "./board.ts"
+import { BoardStore, makeBoardStore } from "./board-store.ts"
+import { createBoard, deleteBoard, listBoards, updateBoard } from "./boards.ts"
 import { CardRanks, makeCardRanks } from "./card-ranks.ts"
 import { loadConfig } from "./config.ts"
 import { loadDashboardSections } from "./dashboard.ts"
 import { EpicsConfig, loadEpics } from "./epics.ts"
 import {
   type BoardChanged,
+  type BoardLimitReached,
+  type BoardNotFound,
   BoardRequestInvalid,
   type BoardWriteForbidden,
   type ConfigInvalid,
@@ -77,6 +86,8 @@ export type Dependencies = {
 
 type AppError =
   | BoardChanged
+  | BoardLimitReached
+  | BoardNotFound
   | BoardRequestInvalid
   | ConfigInvalid
   | ForgejoError
@@ -137,6 +148,10 @@ const errorResponse = (c: AppContext, error: AppError): Response => {
       return c.json({ error: error.message }, 400)
     case "BoardChanged":
       return c.json({ error: "The board changed since it was loaded", code: "board_changed" }, 409)
+    case "BoardNotFound":
+      return c.json({ error: "There is no such board", code: "board_not_found" }, 404)
+    case "BoardLimitReached":
+      return c.json({ error: `An organization can have at most ${MAX_BOARDS} boards` }, 400)
     case "ForgejoRequestFailed":
     case "ForgejoUnreachable":
     case "ForgejoDecodeFailed":
@@ -179,7 +194,7 @@ export const createApp = (dependencies: Dependencies) => {
     program: Effect.Effect<
       Response,
       AppError,
-      BoardConfig | CardRanks | EpicsConfig | ForgejoClient | SessionStore
+      BoardConfig | BoardStore | CardRanks | EpicsConfig | ForgejoClient | SessionStore
     >,
   ): Promise<Response> => {
     const exit = await Effect.runPromiseExit(
@@ -194,6 +209,7 @@ export const createApp = (dependencies: Dependencies) => {
           Effect.provideService(BoardConfig, config.board),
           Effect.provideService(EpicsConfig, { label: config.epicLabel }),
           Effect.provideService(CardRanks, makeCardRanks(c.env.DB)),
+          Effect.provideService(BoardStore, makeBoardStore(c.env.DB)),
         )
       }).pipe(Effect.provideService(Clock.Clock, dependencies.clock ?? Clock.Clock.defaultValue())),
     )
@@ -340,10 +356,21 @@ export const createApp = (dependencies: Dependencies) => {
     ),
   )
 
+  app.get("/api/boards", (c) =>
+    run(
+      c,
+      Effect.flatMap(parseName("org", c.req.query("org")), (org) =>
+        withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
+          listBoards(token, org).pipe(Effect.map((boards) => c.json(boards))),
+        ),
+      ),
+    ),
+  )
+
   app.get("/api/board", (c) =>
     run(
       c,
-      Effect.flatMap(parseBoardQuery(c.req.query("org"), c.req.query("repos")), (query) =>
+      Effect.flatMap(parseBoardQuery(c.req.query("org"), c.req.query("board")), (query) =>
         withAccessToken(getCookie(c, SESSION_COOKIE), (token, session) =>
           loadBoard(token, session.user.login, query).pipe(Effect.map((board) => c.json(board))),
         ),
@@ -354,7 +381,7 @@ export const createApp = (dependencies: Dependencies) => {
   app.get("/api/epics", (c) =>
     run(
       c,
-      Effect.flatMap(parseBoardQuery(c.req.query("org"), c.req.query("repos")), (query) => {
+      Effect.flatMap(parseReposQuery(c.req.query("org"), c.req.query("repos")), (query) => {
         const pool: PageBudget = { remaining: PAGE_BUDGET }
         return withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
           loadEpics(token, query, pool).pipe(Effect.map((epics) => c.json(epics))),
@@ -427,7 +454,7 @@ export const createApp = (dependencies: Dependencies) => {
         token: AccessToken,
         login: string,
         request: A,
-      ) => Effect.Effect<R, AppError, BoardConfig | CardRanks | ForgejoClient>,
+      ) => Effect.Effect<R, AppError, BoardConfig | BoardStore | CardRanks | ForgejoClient>,
     ) =>
     (c: AppContext) =>
       run(
@@ -439,6 +466,9 @@ export const createApp = (dependencies: Dependencies) => {
         ),
       )
 
+  app.post("/api/boards", boardWrite(CreateBoardRequest, createBoard))
+  app.post("/api/boards/update", boardWrite(UpdateBoardRequest, updateBoard))
+  app.post("/api/boards/delete", boardWrite(DeleteBoardRequest, deleteBoard))
   app.post("/api/board/move", boardWrite(MoveCardRequest, moveCard))
   app.post("/api/board/issues", boardWrite(CreateCardRequest, createCard))
   app.post("/api/board/assignees", boardWrite(SetAssigneeRequest, setAssignee))

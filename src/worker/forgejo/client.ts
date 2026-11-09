@@ -135,6 +135,8 @@ export class ForgejoClient extends Context.Service<
     readonly userOrgs: (
       token: AccessToken,
     ) => Effect.Effect<ReadonlyArray<ForgejoOrg>, ForgejoError>
+    /** ForgejoNotFound when the organization does not exist or Forgejo does not show it to the user. */
+    readonly org: (token: AccessToken, org: string) => Effect.Effect<ForgejoOrg, ForgejoError>
     readonly orgRepos: (
       token: AccessToken,
       org: string,
@@ -582,6 +584,10 @@ export const makeForgejoClient = (
         Effect.map(knownTotal),
       ),
     userOrgs: (token) => all(token, "/user/orgs", {}, ForgejoOrg),
+    org: (token, org) =>
+      api(token, `/orgs/${encodeURIComponent(org)}`, {}, ForgejoOrg).pipe(
+        Effect.map(({ body }) => body),
+      ),
     orgRepos: (token, org) => all(token, `/orgs/${encodeURIComponent(org)}/repos`, {}, ForgejoRepo),
     orgLabels: (token, org, budget = { remaining: MAX_PAGES }) =>
       listing(token, `/orgs/${encodeURIComponent(org)}/labels`, {}, ForgejoLabel, budget),

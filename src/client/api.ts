@@ -4,11 +4,15 @@ import {
   type AddCommentRequest,
   AddCommentResult,
   Board,
+  BoardList,
   CardDetail,
   CardUpdateResult,
+  type CreateBoardRequest,
   type CreateCardRequest,
   CreateCardResult,
   Dashboard,
+  DEFAULT_BOARD_ID,
+  type DeleteBoardRequest,
   Epics,
   type InsightDays,
   Insights,
@@ -18,10 +22,13 @@ import {
   MoveCardResult,
   Org,
   OrgRepo,
+  type SavedBoard,
+  SavedBoardResult,
   SearchResults,
   type SetAssigneeRequest,
   type SetLabelRequest,
   type SetMilestoneRequest,
+  type UpdateBoardRequest,
   User,
 } from "../shared/api.ts"
 
@@ -44,11 +51,15 @@ export class RequestFailed extends Error {
   }
 }
 
+export const isNotFound = (error: unknown) => error instanceof RequestFailed && error.status === 404
+
 const decodeUser = Schema.decodeUnknownPromise(User)
 const decodeDashboard = Schema.decodeUnknownPromise(Dashboard)
 const decodeOrgs = Schema.decodeUnknownPromise(Schema.Array(Org))
 const decodeOrgRepos = Schema.decodeUnknownPromise(Schema.Array(OrgRepo))
 const decodeBoard = Schema.decodeUnknownPromise(Board)
+const decodeBoardList = Schema.decodeUnknownPromise(BoardList)
+const decodeSavedBoardResult = Schema.decodeUnknownPromise(SavedBoardResult)
 const decodeEpics = Schema.decodeUnknownPromise(Epics)
 const decodeMoveCardResult = Schema.decodeUnknownPromise(MoveCardResult)
 const decodeCreateCardResult = Schema.decodeUnknownPromise(CreateCardResult)
@@ -97,10 +108,11 @@ export const fetchOrgs = async (): Promise<ReadonlyArray<Org>> =>
 export const fetchOrgRepos = async (org: string): Promise<ReadonlyArray<OrgRepo>> =>
   decodeOrgRepos(await requestJson(`/api/orgs/${encodeURIComponent(org)}/repos`))
 
-export const fetchBoard = async (org: string, repos: ReadonlyArray<string>): Promise<Board> =>
-  decodeBoard(
-    await requestJson(`/api/board?${new URLSearchParams({ org, repos: repos.join(",") })}`),
-  )
+export const fetchBoard = async (org: string, board = DEFAULT_BOARD_ID): Promise<Board> =>
+  decodeBoard(await requestJson(`/api/board?${new URLSearchParams({ org, board })}`))
+
+export const fetchBoards = async (org: string): Promise<BoardList> =>
+  decodeBoardList(await requestJson(`/api/boards?${new URLSearchParams({ org })}`))
 
 const postJson = (path: string, body: unknown) =>
   requestJson(path, {
@@ -108,6 +120,16 @@ const postJson = (path: string, body: unknown) =>
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   })
+
+export const createBoard = async (request: CreateBoardRequest): Promise<SavedBoard> =>
+  (await decodeSavedBoardResult(await postJson("/api/boards", request))).board
+
+export const updateBoard = async (request: UpdateBoardRequest): Promise<SavedBoard> =>
+  (await decodeSavedBoardResult(await postJson("/api/boards/update", request))).board
+
+export const deleteBoard = async (request: DeleteBoardRequest): Promise<void> => {
+  await postJson("/api/boards/delete", request)
+}
 
 export const moveCard = async (move: MoveCardRequest): Promise<MoveCardResult> =>
   decodeMoveCardResult(await postJson("/api/board/move", move))

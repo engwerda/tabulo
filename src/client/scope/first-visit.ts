@@ -1,7 +1,4 @@
-import type { OrgRepo } from "../../shared/api.ts"
-
-/** The server's limit on repositories per view, and the most a first visit chooses by itself. */
-export const MAX_REPOS = 20
+import { MAX_REPOS, type OrgRepo } from "../../shared/api.ts"
 
 /**
  * What an empty address chooses on the first visit to an organization: the remembered

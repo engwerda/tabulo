@@ -9,6 +9,7 @@ import {
   type Insights,
 } from "../../shared/api.ts"
 import { browserTimeZone, fetchInsights, fetchOrgs } from "../api.ts"
+import { useLastBoard } from "../board/use-last-board.ts"
 import { formatSpan } from "../charts/scale.ts"
 import { boardCardHref } from "../epics/epics-view.ts"
 import { relativeTime } from "../format.ts"
@@ -160,6 +161,7 @@ const failures = (failed: Insights["failedRepos"]) =>
 
 export const InsightsPage = ({ org }: { org: string }) => {
   const repoSelection = useRepoSelection(org)
+  const lastBoard = useLastBoard(org)
   const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
   const orgName =
     orgs.data?.find((candidate) => candidate.name.toLowerCase() === org.toLowerCase())?.fullName ||
@@ -305,7 +307,7 @@ export const InsightsPage = ({ org }: { org: string }) => {
                 <InsightsDashboard
                   insights={data}
                   boardHref={(repo, number) =>
-                    boardCardHref(org, repoSelection.selected, { repo, number, state: "open" })
+                    boardCardHref(org, lastBoard, { repo, number, state: "open" })
                   }
                   onChoosePerson={setPerson}
                 />

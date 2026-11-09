@@ -318,7 +318,7 @@ export const BoardColumns = ({
   const [overColumn, setOverColumn] = useState<string | null>(null)
   // The dragged card shows in the column it is over, so that column opens a gap where it lands.
   const [preview, setPreview] = useState<DragPreview | null>(null)
-  const showRepo = board.repos.length > 1
+  const showRepo = board.board.repos.length > 1
 
   const cardsByKey = new Map(board.cards.map((card) => [card.key, card] as const))
   const shownKeys = (column: string) =>

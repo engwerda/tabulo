@@ -1,4 +1,4 @@
-import { Clock, Context, Effect, Exit } from "effect"
+import { Clock, Context, Effect, Exit, Result } from "effect"
 import type {
   AddCommentRequest,
   AddCommentResult,
@@ -20,15 +20,24 @@ import type {
   SetLabelRequest,
   SetMilestoneRequest,
 } from "../shared/api.ts"
+import { MAX_REPOS } from "../shared/api.ts"
 import { rankForDrop } from "../shared/card-order.ts"
+import {
+  type BoardId,
+  BoardStore,
+  DEFAULT_BOARD,
+  parseBoardId,
+  toSavedBoard,
+  unchangedDefault,
+} from "./board-store.ts"
 import { CardRanks, rankCards, rankOf, topRank } from "./card-ranks.ts"
 import type { BoardSettings } from "./config.ts"
 import {
   BoardChanged,
+  BoardNotFound,
   BoardRequestInvalid,
   BoardWriteForbidden,
   describeForgejoError,
-  FORGEJO_READ_ERRORS,
   type ForgejoError,
   ForgejoForbidden,
   ForgejoMovePartlyApplied,
@@ -49,7 +58,6 @@ export class BoardConfig extends Context.Service<BoardConfig, BoardSettings>()(
 ) {}
 
 const DAY_MS = 24 * 60 * 60 * 1000
-const MAX_BOARD_REPOS = 20
 // Each repository needs three Forgejo reads at once; Workers allow six open connections.
 const REPO_CONCURRENCY = 2
 
@@ -64,9 +72,21 @@ const toBoardLabel = ({ id, name, color }: ForgejoLabel): BoardLabel => ({
   color: labelHexColor(color),
 })
 
+export type ColumnPlan = {
+  readonly columns: ReadonlyArray<string>
+  readonly hidden: ReadonlyArray<string>
+}
+
+/**
+ * The plan of moves, new issues, card edits, and issue options, which name no board: they need
+ * only which columns exist and where an issue is.
+ */
+export const UNORDERED: ColumnPlan = { columns: [], hidden: [] }
+
 /** The columns of a board and the one rule that puts an issue in a column. */
 export type BoardLayout = {
   readonly columns: ReadonlyArray<BoardColumn>
+  readonly hidden: ReadonlySet<string>
   readonly column: (key: string) => BoardColumn | undefined
   /**
    * Whether the label names a Status column. Repository-level labels count too: repositories
@@ -80,16 +100,15 @@ export type BoardLayout = {
 }
 
 export const boardLayout = (
-  settings: BoardSettings,
+  statusScope: string,
   orgLabels: ReadonlyArray<ForgejoLabel>,
+  plan: ColumnPlan,
 ): BoardLayout => {
   const statusLabels = new Map(
     orgLabels
       .filter(
         (label) =>
-          label.exclusive &&
-          label.is_archived !== true &&
-          label.name.startsWith(settings.statusScope),
+          label.exclusive && label.is_archived !== true && label.name.startsWith(statusScope),
       )
       .map((label) => [label.name, label] as const),
   )
@@ -98,9 +117,12 @@ export const boardLayout = (
     | { readonly _tag: "Todo" }
     | { readonly _tag: "Done" }
     | { readonly _tag: "Status"; readonly label: ForgejoLabel }
-  const slots: Array<Slot> = settings.columnOrder.flatMap((ref): Array<Slot> => {
-    if (ref._tag !== "Status") return [ref]
-    const label = statusLabels.get(ref.name)
+  // A stored key the organization has no column for is skipped, so a label removed in Forgejo
+  // does not break the board.
+  const slots: Array<Slot> = plan.columns.flatMap((key): Array<Slot> => {
+    if (key === TODO.key) return [{ _tag: "Todo" }]
+    if (key === DONE.key) return [{ _tag: "Done" }]
+    const label = statusLabels.get(key)
     return label === undefined ? [] : [{ _tag: "Status", label }]
   })
   if (!slots.some((slot) => slot._tag === "Todo")) slots.unshift({ _tag: "Todo" })
@@ -122,7 +144,7 @@ export const boardLayout = (
     return {
       _tag: "Status",
       key: slot.label.name,
-      title: slot.label.name.slice(settings.statusScope.length),
+      title: slot.label.name.slice(statusScope.length),
       label: toBoardLabel(slot.label),
     }
   })
@@ -133,6 +155,7 @@ export const boardLayout = (
 
   return {
     columns,
+    hidden: new Set(plan.hidden.filter((key) => byKey.has(key))),
     column: (key) => byKey.get(key),
     isColumnLabel,
     columnOf: (issue) => (issue.state === "closed" ? DONE.key : labelColumnOf(issue)),
@@ -231,7 +254,13 @@ export const parseCardQuery = (
     return { repo: ref, number: Number(number) }
   })
 
-export const parseBoardQuery = (org: string | undefined, repos: string | undefined) =>
+export const parseBoardQuery = (org: string | undefined, board: string | undefined) =>
+  Effect.map(parseName("org", org), (name) => ({
+    org: name,
+    board: board === undefined ? DEFAULT_BOARD : parseBoardId(board),
+  }))
+
+export const parseReposQuery = (org: string | undefined, repos: string | undefined) =>
   Effect.gen(function* () {
     const parsed = yield* Effect.forEach(
       (repos ?? "").split(",").filter((name) => name !== ""),
@@ -241,9 +270,9 @@ export const parseBoardQuery = (org: string | undefined, repos: string | undefin
     if (names.length === 0) {
       return yield* new BoardRequestInvalid({ message: "Choose at least one repository" })
     }
-    if (names.length > MAX_BOARD_REPOS) {
+    if (names.length > MAX_REPOS) {
       return yield* new BoardRequestInvalid({
-        message: `Choose at most ${MAX_BOARD_REPOS} repositories`,
+        message: `Choose at most ${MAX_REPOS} repositories`,
       })
     }
     return { org: yield* parseName("org", org), repos: names }
@@ -253,6 +282,20 @@ const isOrgMember = (token: AccessToken, org: string) =>
   ForgejoClient.use((forgejo) => forgejo.userOrgs(token)).pipe(
     Effect.map((orgs) => orgs.some(({ name }) => name.toLowerCase() === org)),
   )
+
+export const requireMember = (token: AccessToken, org: string, message: string) =>
+  Effect.flatMap(isOrgMember(token, org), (member) =>
+    member ? Effect.void : Effect.fail(new BoardWriteForbidden({ message })),
+  )
+
+export const requireOrgVisible = (token: AccessToken, org: string) =>
+  ForgejoClient.use((forgejo) => forgejo.org(token, org)).pipe(Effect.asVoid)
+
+export const defaultPlan = (org: string) =>
+  Effect.gen(function* () {
+    const stored = yield* BoardStore.use((boards) => boards.find(org, DEFAULT_BOARD))
+    return stored ?? { columns: (yield* BoardConfig).defaultColumns, hidden: [] }
+  })
 
 export const listOrgs = (token: AccessToken) =>
   ForgejoClient.use((forgejo) => forgejo.userOrgs(token)).pipe(
@@ -287,12 +330,17 @@ type RepoCards =
       readonly complete: boolean
     }
   | { readonly _tag: "Failed"; readonly repo: string; readonly message: string }
+  | { readonly _tag: "Unreadable" }
+
+type RepoRead =
+  | RepoCards
+  | { readonly _tag: "AccessUnknown"; readonly name: string; readonly message: string }
 
 /**
  * Every label of the organization, read from `budget` (100 pages by default). Fails rather than
  * return part of them, because columns and label writes depend on all of them.
  */
-const readOrgLabels = (token: AccessToken, org: string, budget?: PageBudget) =>
+export const readOrgLabels = (token: AccessToken, org: string, budget?: PageBudget) =>
   Effect.gen(function* () {
     const forgejo = yield* ForgejoClient
     const labels = yield* forgejo.orgLabels(token, org, budget)
@@ -300,36 +348,43 @@ const readOrgLabels = (token: AccessToken, org: string, budget?: PageBudget) =>
     return labels.items
   })
 
-/** The board layout from the organization's labels; see `readOrgLabels`. */
-export const loadLayout = (token: AccessToken, org: string, budget?: PageBudget) =>
-  Effect.gen(function* () {
-    const settings = yield* BoardConfig
-    return boardLayout(settings, yield* readOrgLabels(token, org, budget))
-  })
-
 /**
- * Reads the board as the user who owns `token`. A repository that fails to load is reported in
- * `failedRepos`; only an auth failure or a failure to read the organization's labels escapes.
+ * Forgejo must show the organization before an unknown board answers BoardNotFound, so a board id
+ * answers alike for every organization the user cannot see. Cards of hidden columns are ranked
+ * like the others, then left out.
  */
 export const loadBoard = (
   token: AccessToken,
   login: string,
-  query: { org: string; repos: ReadonlyArray<string> },
+  query: { readonly org: string; readonly board: BoardId | null },
 ) =>
   Effect.gen(function* () {
     const settings = yield* BoardConfig
     const forgejo = yield* ForgejoClient
-    const [layout, viewerCanArrange] = yield* Effect.all(
-      [loadLayout(token, query.org), isOrgMember(token, query.org)],
+    const id = query.board
+    const stored =
+      id === null ? undefined : yield* BoardStore.use((boards) => boards.find(query.org, id))
+    const unchanged = stored === undefined && id === DEFAULT_BOARD
+    const [, orgRepos, orgLabels, viewerCanArrange] = yield* Effect.all(
+      [
+        requireOrgVisible(token, query.org),
+        unchanged ? forgejo.orgRepos(token, query.org) : Effect.succeed([]),
+        readOrgLabels(token, query.org),
+        isOrgMember(token, query.org),
+      ],
       { concurrency: "unbounded" },
     )
+    const board =
+      stored ??
+      (unchanged ? unchangedDefault(settings.defaultColumns, orgRepos) : yield* new BoardNotFound())
+    const layout = boardLayout(settings.statusScope, orgLabels, board)
     const windowStart = (yield* Clock.currentTimeMillis) - settings.doneDays * DAY_MS
     const updatedSince = new Date(windowStart).toISOString()
     // `since` filters by update time; an issue closed long ago may have been updated since.
     const closedInWindow = (issue: ForgejoRepoIssue) =>
       issue.closed_at !== null && Date.parse(issue.closed_at) >= windowStart
 
-    const repoCards = (name: string): Effect.Effect<RepoCards, ForgejoUnauthorized> => {
+    const repoCards = (name: string): Effect.Effect<RepoRead, ForgejoUnauthorized> => {
       const ref = { owner: query.org, name }
       return Effect.all(
         [
@@ -337,43 +392,88 @@ export const loadBoard = (
           forgejo.repoIssues(token, ref, { state: "open" }),
           forgejo.repoIssues(token, ref, { state: "closed", updatedSince }),
         ],
-        { concurrency: "unbounded" },
+        { concurrency: "unbounded", mode: "result" },
       ).pipe(
-        Effect.map(
-          ([repo, open, closed]): RepoCards => ({
-            _tag: "Loaded",
-            repo: name,
-            cards: [...open.items, ...closed.items.filter(closedInWindow)].map((issue) =>
-              toBoardCard(layout, query.org, repo, issue),
-            ),
-            complete: open.complete && closed.complete,
-          }),
-        ),
-        Effect.catchTag(FORGEJO_READ_ERRORS, (error) =>
-          Effect.sync((): RepoCards => {
-            console.warn(`Board repository ${query.org}/${name} failed`, error)
-            return { _tag: "Failed", repo: name, message: describeForgejoError(error) }
-          }),
-        ),
+        Effect.flatMap(([repo, open, closed]): Effect.Effect<RepoRead, ForgejoUnauthorized> => {
+          // A refused token refreshes, whichever read failed first.
+          const outcomes: ReadonlyArray<Result.Result<unknown, ForgejoError>> = [repo, open, closed]
+          for (const read of outcomes) {
+            if (Result.isFailure(read) && read.failure._tag === "ForgejoUnauthorized") {
+              return Effect.fail(read.failure)
+            }
+          }
+          // Forgejo answers a renamed or transferred repository's old path with the repository it
+          // is now, which the stored name no longer names.
+          if (
+            Result.isSuccess(repo) &&
+            repo.success.full_name.toLowerCase() !== `${query.org}/${name}`
+          ) {
+            return Effect.succeed({ _tag: "Unreadable" })
+          }
+          const reads = Result.all([repo, open, closed])
+          if (Result.isSuccess(reads)) {
+            const [forgejoRepo, openIssues, closedIssues] = reads.success
+            return Effect.succeed({
+              _tag: "Loaded",
+              repo: forgejoRepo.name,
+              cards: [...openIssues.items, ...closedIssues.items.filter(closedInWindow)].map(
+                (issue) => toBoardCard(layout, query.org, forgejoRepo, issue),
+              ),
+              complete: openIssues.complete && closedIssues.complete,
+            })
+          }
+          const failure = reads.failure
+          // A 404 or 403 on the repository's own read means the user cannot read it. A listing
+          // refused after that read succeeded, as for a team without the issues unit, is a named
+          // failure.
+          if (
+            Result.isFailure(repo) &&
+            (repo.failure._tag === "ForgejoNotFound" || repo.failure._tag === "ForgejoForbidden")
+          ) {
+            return Effect.succeed({ _tag: "Unreadable" })
+          }
+          return Effect.sync((): RepoRead => {
+            console.warn(`Board repository ${query.org}/${name} failed`, failure)
+            const message = describeForgejoError(failure)
+            return Result.isSuccess(repo)
+              ? { _tag: "Failed", repo: repo.success.name, message }
+              : { _tag: "AccessUnknown", name, message }
+          })
+        }),
       )
     }
 
     const readStartedAt = yield* Clock.currentTimeMillis
-    const results = yield* Effect.forEach(query.repos, repoCards, {
+    const repoReads = yield* Effect.forEach(board.repos, repoCards, {
       concurrency: REPO_CONCURRENCY,
+    })
+    // The organization's listing shows only repositories the user can read. One listing serves
+    // every unknown repository. When it fails, the read fails: counting them unreadable would let
+    // a save drop a repository the user can read.
+    const visible = unchanged
+      ? orgRepos
+      : repoReads.some((read) => read._tag === "AccessUnknown")
+        ? yield* forgejo.orgRepos(token, query.org)
+        : []
+    const results = repoReads.map((read): RepoCards => {
+      if (read._tag !== "AccessUnknown") return read
+      const shown = visible.find((repo) => repo.name.toLowerCase() === read.name)
+      return shown === undefined
+        ? { _tag: "Unreadable" }
+        : { _tag: "Failed", repo: shown.name, message: read.message }
     })
     const loaded = results.flatMap((result) => (result._tag === "Loaded" ? [result] : []))
     const ranks = yield* CardRanks
-    const stored = yield* ranks.forOrg(query.org)
+    const storedRanks = yield* ranks.forOrg(query.org)
     const { kept, fresh } = rankCards(
-      stored,
+      storedRanks,
       loaded.flatMap((result) => result.cards),
     )
     const listed = new Set([...kept, ...fresh].map((card) => card.key))
     const fullyListedRepos = new Set(
-      loaded.flatMap((result) => (result.complete ? [result.repo] : [])),
+      loaded.flatMap((result) => (result.complete ? [result.repo.toLowerCase()] : [])),
     )
-    const removed = [...stored.keys()].filter(
+    const removed = [...storedRanks.keys()].filter(
       (key) => !listed.has(key) && fullyListedRepos.has(cardIssue(key)?.repo.name ?? ""),
     )
     yield* ranks.materialize(
@@ -385,10 +485,15 @@ export const loadBoard = (
     )
     return {
       org: query.org,
-      repos: query.repos,
+      board: toSavedBoard(
+        board,
+        results.flatMap((result) => (result._tag === "Unreadable" ? [] : [result.repo])),
+        results.filter((result) => result._tag === "Unreadable").length,
+      ),
       viewerCanArrange,
-      columns: layout.columns,
-      cards: [...kept, ...fresh],
+      columns: layout.columns.filter((column) => !layout.hidden.has(column.key)),
+      allColumns: layout.columns,
+      cards: [...kept, ...fresh].filter((card) => !layout.hidden.has(card.column)),
       failedRepos: results.flatMap((result) =>
         result._tag === "Failed" ? [{ repo: result.repo, message: result.message }] : [],
       ),
@@ -527,11 +632,7 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
     }
 
     const forgejo = yield* ForgejoClient
-    if (!(yield* isOrgMember(token, org))) {
-      return yield* new BoardWriteForbidden({
-        message: `Only members of ${org} can arrange its board`,
-      })
-    }
+    yield* requireMember(token, org, `Only members of ${org} can arrange its board`)
     const canRead = (key: string | null) => {
       const neighbour = key === null ? undefined : cardIssue(key)
       return neighbour === undefined
@@ -552,7 +653,7 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
       ],
       { concurrency: "unbounded" },
     )
-    const layout = boardLayout(yield* BoardConfig, orgLabels)
+    const layout = boardLayout((yield* BoardConfig).statusScope, orgLabels, UNORDERED)
     if (issue.pull_request != null) {
       return yield* new BoardRequestInvalid({ message: "Pull requests are not on the board" })
     }
@@ -642,11 +743,7 @@ export const createCard = (token: AccessToken, login: string, request: CreateCar
     const repoRef = { owner: org, name: yield* parseName("repository", request.repo) }
     const settings = yield* BoardConfig
     const forgejo = yield* ForgejoClient
-    if (!(yield* isOrgMember(token, org))) {
-      return yield* new BoardWriteForbidden({
-        message: `Only members of ${org} can add cards to its board`,
-      })
-    }
+    yield* requireMember(token, org, `Only members of ${org} can add cards to its board`)
     const [repo, orgLabels] = yield* Effect.all(
       [forgejo.repo(token, repoRef), readOrgLabels(token, org)],
       { concurrency: "unbounded" },
@@ -656,7 +753,7 @@ export const createCard = (token: AccessToken, login: string, request: CreateCar
         message: `${repo.full_name} is archived, so it takes no new issues`,
       })
     }
-    const layout = boardLayout(settings, orgLabels)
+    const layout = boardLayout(settings.statusScope, orgLabels, UNORDERED)
     if (request.column === DONE.key) {
       return yield* new BoardRequestInvalid({ message: "A new card cannot start in Done" })
     }
@@ -743,7 +840,7 @@ const editCard = <E>(
       [editableIssue(token, repoRef, request.number), readOrgLabels(token, org)],
       { concurrency: "unbounded" },
     )
-    const layout = boardLayout(settings, orgLabels)
+    const layout = boardLayout(settings.statusScope, orgLabels, UNORDERED)
     const edit = yield* plan({ repoRef, issue, layout, orgLabels })
     const updated = edit.isApplied(issue) ? issue : yield* edit.write(issue)
     if (!edit.isApplied(updated)) return yield* new ForgejoForbidden()
@@ -930,7 +1027,7 @@ export const issueOptions = (token: AccessToken, repo: RepoRef) =>
       ],
       { concurrency: "unbounded" },
     )
-    const layout = boardLayout(settings, orgLabels)
+    const layout = boardLayout(settings.statusScope, orgLabels, UNORDERED)
     return {
       labels: [...orgLabels, ...repoLabels]
         .filter((label) => label.is_archived !== true && !layout.isColumnLabel(label))

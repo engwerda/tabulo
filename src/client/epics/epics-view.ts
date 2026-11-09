@@ -1,17 +1,21 @@
 import type { Epic, Epics } from "../../shared/api.ts"
+import { boardHref } from "../scope/views.ts"
 
 /** A repository of the page's organization by its bare name, as the epic and the board name it. */
 export const shortRepo = (org: string, repo: string) =>
   repo.toLowerCase().startsWith(`${org.toLowerCase()}/`) ? repo.slice(org.length + 1) : repo
 
+/** A board as far as a link needs it: its id and the repositories it shows. */
+export type LinkedBoard = { readonly id: string; readonly repos: ReadonlyArray<string> }
+
 /**
- * The board address that opens an issue in the board's side panel, when the board of the same
- * repositories shows it: an open issue of a chosen repository. A closed issue may have left the
- * Done column and a pull request is never a card, so those have no board address.
+ * The address that opens an open issue of the organization in `board`'s side panel, when that
+ * board shows the issue's repository. A closed issue may have left the Done column and a pull
+ * request is never a card, so neither has one. Without one the item links to Forgejo.
  */
 export const boardCardHref = (
   org: string,
-  selected: ReadonlyArray<string>,
+  board: LinkedBoard | undefined,
   issue: {
     readonly repo: string
     readonly number: number
@@ -20,10 +24,9 @@ export const boardCardHref = (
   },
 ): string | null => {
   const repo = shortRepo(org, issue.repo)
-  if (issue.state !== "open" || issue.kind === "pull") return null
-  if (!selected.some((name) => name.toLowerCase() === repo.toLowerCase())) return null
-  const params = new URLSearchParams({ repos: selected.join(","), card: `${repo}#${issue.number}` })
-  return `/board/${encodeURIComponent(org)}?${params}`
+  if (issue.state !== "open" || issue.kind === "pull" || repo.includes("/")) return null
+  if (!board?.repos.some((shown) => shown.toLowerCase() === repo.toLowerCase())) return null
+  return boardHref(org, board.id, new URLSearchParams({ card: `${repo}#${issue.number}` }))
 }
 
 export const completion = ({ total, done }: Pick<Epic["progress"], "total" | "done">) =>

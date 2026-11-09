@@ -3,6 +3,7 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { App } from "./App.tsx"
 import { RequestFailed, Unauthenticated } from "./api.ts"
+import { syncBoardsWithWrites } from "./board/board-sync.ts"
 import { startTheme } from "./theme.ts"
 import "./styles.css"
 import { keepDataToSessionUser, SESSION_USER } from "./session.ts"
@@ -29,6 +30,7 @@ const queryClient = new QueryClient({
   },
 })
 keepDataToSessionUser(queryClient)
+syncBoardsWithWrites(queryClient)
 
 const root = document.getElementById("root")
 if (root === null) throw new Error("index.html is missing #root")

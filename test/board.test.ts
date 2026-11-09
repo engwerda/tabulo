@@ -20,7 +20,7 @@ import {
   retired,
   review,
 } from "./fixtures.ts"
-import { signIn, tabulo } from "./harness.ts"
+import { defaultBoardRepos, signIn, tabulo } from "./harness.ts"
 
 type Card = {
   key: string
@@ -41,6 +41,7 @@ beforeEach(async () => {
     env.DB.prepare("DELETE FROM sessions"),
     env.DB.prepare("DELETE FROM oauth_states"),
     env.DB.prepare("DELETE FROM card_ranks"),
+    env.DB.prepare("DELETE FROM boards"),
   ])
 })
 
@@ -104,7 +105,7 @@ describe("GET /api/board", () => {
     const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
     const cookie = await signIn(call, forgejo)
 
-    const response = await call("/api/board?org=acme&repos=api,web", { headers: { cookie } })
+    const response = await call("/api/board?org=acme", { headers: { cookie } })
 
     expect(response.status).toBe(200)
     const board = (await response.json()) as BoardBody
@@ -209,7 +210,7 @@ describe("GET /api/board", () => {
     const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
     const cookie = await signIn(call, forgejo)
 
-    const response = await call("/api/board?org=acme&repos=api", { headers: { cookie } })
+    const response = await call("/api/board?org=acme", { headers: { cookie } })
 
     const board = (await response.json()) as BoardBody
     expect(board.columns.map((column) => column.key)).toContain("Status/Review")
@@ -218,6 +219,7 @@ describe("GET /api/board", () => {
       "acme/api#2",
       "acme/api#3",
       "acme/api#6",
+      "acme/web#9",
     ])
   })
 
@@ -235,7 +237,7 @@ describe("GET /api/board", () => {
       error: "Too many Forgejo pages for one request; choose fewer repositories",
     }
 
-    const board = await call("/api/board?org=acme&repos=api", { headers: { cookie } })
+    const board = await call("/api/board?org=acme", { headers: { cookie } })
     expect(board.status).toBe(503)
     expect(await board.json()).toEqual(tooManyPages)
 
@@ -256,7 +258,7 @@ describe("GET /api/board", () => {
     })
     const cookie = await signIn(call, forgejo)
 
-    const response = await call("/api/board?org=acme&repos=api", { headers: { cookie } })
+    const response = await call("/api/board?org=acme", { headers: { cookie } })
 
     const board = (await response.json()) as BoardBody
     expect(board.columns.map((column) => column.key)).toEqual([
@@ -294,7 +296,7 @@ describe("GET /api/board", () => {
     const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
     const cookie = await signIn(call, forgejo)
 
-    const response = await call("/api/board?org=acme&repos=api", { headers: { cookie } })
+    const response = await call("/api/board?org=acme", { headers: { cookie } })
 
     const board = (await response.json()) as BoardBody
     expect(board.columns.map((column) => column.key)).toEqual([
@@ -324,8 +326,9 @@ describe("GET /api/board", () => {
     const forgejo = createFakeForgejo({ orgs: [org] })
     const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
     const cookie = await signIn(call, forgejo)
+    await defaultBoardRepos(call, "acme")(cookie, ["docs", "web"])
 
-    const response = await call("/api/board?org=acme&repos=docs,web", { headers: { cookie } })
+    const response = await call("/api/board?org=acme", { headers: { cookie } })
 
     expect(response.status).toBe(200)
     const board = (await response.json()) as BoardBody
@@ -335,22 +338,21 @@ describe("GET /api/board", () => {
     expect(board.cards.map((card) => card.key)).toEqual(["acme/web#9"])
   })
 
-  it("reads a repository named twice in different case once", async () => {
+  it("finds the organization whatever the case of its name", async () => {
     const forgejo = createFakeForgejo({ orgs: [boardOrg()] })
     const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
     const cookie = await signIn(call, forgejo)
 
-    const response = await call("/api/board?org=ACME&repos=web,WEB", { headers: { cookie } })
+    const response = await call("/api/board?org=ACME", { headers: { cookie } })
 
-    const board = (await response.json()) as BoardBody
-    expect(board.cards.map((card) => card.key)).toEqual(["acme/web#9"])
+    const board = (await response.json()) as BoardBody & { org: string }
+    expect(board.org).toBe("acme")
+    expect(board.cards.map((card) => card.key)).toContain("acme/web#9")
   })
 
   it.each([
-    ["no org", "/api/board?repos=api"],
-    ["no repositories", "/api/board?org=acme&repos="],
-    ["a path in a repository name", "/api/board?org=acme&repos=api,.."],
-    ["a slash in the org", "/api/board?org=acme%2Fapi&repos=api"],
+    ["no org", "/api/board"],
+    ["a slash in the org", "/api/board?org=acme%2Fapi"],
   ])("answers 400 to a board request with %s", async (_, path) => {
     const forgejo = createFakeForgejo({ orgs: [boardOrg()] })
     const call = tabulo(forgejo.fetch)
@@ -447,10 +449,17 @@ const boardSession = async (
         ...body,
       }),
     })
-  const board = async (as = cookie, repos = "api,web") =>
-    (await (
-      await call(`/api/board?org=acme&repos=${repos}`, { headers: { cookie: as } })
+  const setRepos = defaultBoardRepos(call, "acme")
+  let boardRepos: string | undefined
+  const board = async (as = cookie, repos?: string) => {
+    if (repos !== undefined && repos !== boardRepos) {
+      await setRepos(cookie, repos.split(","))
+      boardRepos = repos
+    }
+    return (await (
+      await call("/api/board?org=acme", { headers: { cookie: as } })
     ).json()) as BoardBody
+  }
   const post = (path: string, body: unknown, as = cookie) =>
     call(path, {
       method: "POST",
@@ -764,9 +773,7 @@ describe("POST /api/board/move", () => {
     forgejo.renameUser("linus", "linus-old")
     forgejo.renameUser("grace", "linus")
 
-    const shown = await call("/api/board?org=acme&repos=api,web", {
-      headers: { cookie: outsiderCookie },
-    })
+    const shown = await call("/api/board?org=acme", { headers: { cookie: outsiderCookie } })
     const before = await rankRows()
     const reorder = await move({ repo: "api", number: 1, toColumn: "todo" }, outsiderCookie)
 
@@ -782,11 +789,9 @@ describe("POST /api/board/move", () => {
     org.repos.push(
       boardRepo("old", { archived: true, issues: [boardIssue("old", 1, { labels: [review] })] }),
     )
-    const { forgejo, call, cookie, move } = await boardSession({ orgs: [org] })
+    const { forgejo, cookie, move, board } = await boardSession({ orgs: [org] })
 
-    const view = (await (
-      await call("/api/board?org=acme&repos=api,old", { headers: { cookie } })
-    ).json()) as BoardBody
+    const view = await board(cookie, "api,old")
     const before = await rankRows()
     const response = await move({
       repo: "old",
@@ -967,7 +972,10 @@ describe("card order", () => {
     const webRows = (rows: typeof after) =>
       rows.filter((row) => String(row.issue_key).startsWith("acme/web"))
     expect(webRows(after)).toEqual(webRows(before))
-    expect(columnOrder(await board(), "Status/In Progress")).toEqual(["acme/web#3", "acme/api#1"])
+    expect(columnOrder(await board(undefined, "api,web"), "Status/In Progress")).toEqual([
+      "acme/web#3",
+      "acme/api#1",
+    ])
   })
 
   it("keeps one order for boards of different repositories while their users interleave moves", async () => {

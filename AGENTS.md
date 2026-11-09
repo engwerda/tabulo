@@ -37,8 +37,15 @@ major version.
 - Time comes from Effect's `Clock`. Tests that depend on time or waiting pass the fake clock
   from `test/fake-clock.ts` to `tabulo()`, never real sleeps or timeouts.
 - `SessionStore` owns token encryption. Nothing else reads or writes token columns.
-- `boardLayout` in `src/worker/board.ts` is the one place that decides an issue's board column.
-  `CardRanks` in `src/worker/card-ranks.ts` owns the `card_ranks` table.
+- `boardLayout(statusScope, orgLabels, plan)` in `src/worker/board.ts` is the one place that
+  decides the columns and an issue's column. A board passes its column order and hidden keys as
+  the plan; moves, new issues, card edits, and issue options pass `UNORDERED`, and epics pass the
+  default board's order without hiding anything. `CardRanks` in `src/worker/card-ranks.ts` owns
+  the `card_ranks` table.
+- `BoardStore` in `src/worker/board-store.ts` owns the `boards` table. Its writes compare and
+  swap on the version the writer read, and its insert enforces the board limit. Board CRUD lives
+  in `src/worker/boards.ts`, which checks membership and repository access and does every Forgejo
+  read before the one D1 write. An answer never names a repository the user cannot read.
 - Board writes live in `src/worker/board.ts`. `moveCard` and `createCard` check organization
   membership before any Forgejo write; the card edits (`setAssignee`, `setLabel`,
   `setMilestone`, `addComment`) refuse archived repositories and let Forgejo decide the rest.
@@ -46,12 +53,22 @@ major version.
 - `src/shared/card-order.ts` holds the card order rules (sorting and the rank of a drop) that
   the server and the client's optimistic update share.
 - `src/client/board/board-view.ts` holds the client's pure board logic (column order, filters,
-  drop neighbours). The worker tsconfig includes it so tests can import it.
+  drop neighbours, the rollback of a failed move), and `board-settings.ts` the board settings
+  dialog's (the draft, its requests, and the rebase after a 409). The worker tsconfig includes
+  both so tests can import them.
+- A client write that changes what boards show (a card move, new issue, card edit, comment,
+  board settings, or board delete) runs under `boardWriteKey(org)`. `syncBoardsWithWrites` in
+  `src/client/board/board-sync.ts` then stops the organization's board reads when it starts,
+  and reads every board of the organization again once its last pending write ends. While
+  `writingBoards` is true a refresh of a loaded board does nothing, and the settings dialog's
+  409 reload reads past the cache.
 - `src/client/scope/` owns the organization scope of the org-level views: `ORG_VIEWS` in
-  `views.ts` lists them, `useRepoSelection` owns `?repos=` and the remembered selection, and
-  `ScopeBar` is the heading of insights and epics, and the board's header composes the same
-  `OrgSwitcher` and `RepoPicker`. A view added to `ORG_VIEWS` appears in the header,
-  and `ORG_VIEW_PAGES` in `src/client/App.tsx` then requires its page.
+  `views.ts` lists them with their routes, `orgViewHref` builds every link to a view,
+  `useRepoSelection` owns the `?repos=` of insights and epics, `remembered.ts` owns the remembered
+  repositories, last board, and last organization, and `ScopeBar` is the heading of insights and
+  epics. The board's header composes the same `OrgSwitcher` with `BoardSwitcher`. A view added to
+  `ORG_VIEWS` appears in the header, and `ORG_VIEW_PAGES` in `src/client/App.tsx` then requires
+  its page.
 - `src/client/theme.ts` owns the light, dark, and system theme. `public/theme-init.js` applies
   it before first paint with the same storage key. Chart colors are the `--chart-*` properties
   in `src/client/styles.css`.

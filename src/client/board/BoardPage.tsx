@@ -15,13 +15,22 @@ import {
   useState,
   useSyncExternalStore,
 } from "react"
-import { Link, useSearchParams } from "wouter"
-import type { Board, BoardCard, CardUpdateResult, MoveCardRequest } from "../../shared/api.ts"
+import { Link, useLocation, useSearchParams } from "wouter"
+import {
+  type Board,
+  type BoardCard,
+  type CardUpdateResult,
+  DEFAULT_BOARD_ID,
+  DEFAULT_BOARD_NAME,
+  MAX_BOARDS,
+  type MoveCardRequest,
+} from "../../shared/api.ts"
 import {
   createCard,
   fetchBoard,
   fetchOrgRepos,
   fetchOrgs,
+  isNotFound,
   moveCard,
   RequestFailed,
   setAssignee,
@@ -30,8 +39,14 @@ import { absoluteTime, relativeTime } from "../format.ts"
 import { ShortcutsDialog, usePageShortcuts } from "../palette/ShortcutsDialog.tsx"
 import { usePageCommands } from "../palette/use-palette-groups.ts"
 import { ORGS, OrgSwitcher } from "../scope/OrgPicker.tsx"
-import { RepoPicker } from "../scope/RepoPicker.tsx"
-import { useRepoSelection } from "../scope/use-repo-selection.ts"
+import { forgetBoard, rememberBoard } from "../scope/remembered.ts"
+import {
+  boardHref,
+  boardIdFromPath,
+  canonicalBoardHref,
+  type OrgViewParams,
+  orgViewHref,
+} from "../scope/views.ts"
 import { useViewer } from "../session.ts"
 import { ErrorNotice, sentence } from "../ui/ErrorNotice.tsx"
 import { IssueRef } from "../ui/IssueRef.tsx"
@@ -49,10 +64,15 @@ import { useToast } from "../ui/toast.tsx"
 import type { CardActions } from "./BoardCardView.tsx"
 import { BoardColumns } from "./BoardColumns.tsx"
 import { BoardFiltersBar } from "./BoardFiltersBar.tsx"
+import { BoardSettingsDialog, type SettingsMode } from "./BoardSettingsDialog.tsx"
+import { BoardSwitcher, useBoardList } from "./BoardSwitcher.tsx"
 import { boardCommands } from "./board-commands.ts"
+import { draftOf, toUpdateRequest } from "./board-settings.ts"
+import { writingBoards } from "./board-sync.ts"
 import {
   applyMove,
   boardQueryKey,
+  boardWriteKey,
   type CardMove,
   columnCards,
   FILTER_PARAMS,
@@ -61,15 +81,21 @@ import {
   matchesFilters,
   readFilters,
   replaceCard,
+  revertMove,
   withFilter,
 } from "./board-view.ts"
 import { CardComposer } from "./CardComposer.tsx"
 import { CardPanel } from "./CardPanel.tsx"
 import { drafts, titleDraftKey } from "./drafts.ts"
 import { BOARD_SHORTCUTS } from "./shortcuts.ts"
+import { useBoardWrites } from "./use-board-writes.ts"
 
 const REFRESH_MS = 60_000
 const NO_COMMANDS: ReturnType<typeof boardCommands> = []
+
+// The command menu gives focus back to where it was as it closes, after its command runs, so a
+// command that moves focus waits until the menu has closed.
+const afterPaletteCloses = (run: () => void) => () => void window.setTimeout(run)
 
 /**
  * A change to a card's assignees, labels, or milestone. `done` says what happened in the toast
@@ -105,12 +131,16 @@ const storage = {
   },
 }
 
-const collapsedKey = (org: string) => `tabulo.board.collapsed.${org.toLowerCase()}`
+const collapsedKeyBeforeBoards = (org: string) => `tabulo.board.collapsed.${org.toLowerCase()}`
+const collapsedKey = (org: string, board: string) =>
+  board === DEFAULT_BOARD_ID
+    ? collapsedKeyBeforeBoards(org)
+    : `${collapsedKeyBeforeBoards(org)}/${board}`
 const composerRepoKey = (org: string) => `tabulo.board.new-issue-repo.${org.toLowerCase()}`
 
-const readCollapsed = (org: string): ReadonlySet<string> => {
+const readCollapsed = (key: string): ReadonlySet<string> => {
   try {
-    const parsed: unknown = JSON.parse(storage.read(collapsedKey(org)) ?? "[]")
+    const parsed: unknown = JSON.parse(storage.read(key) ?? "[]")
     return new Set(Array.isArray(parsed) ? parsed.filter((key) => typeof key === "string") : [])
   } catch {
     return new Set()
@@ -174,7 +204,15 @@ const BoardSkeleton = () => (
   </div>
 )
 
-const EmptyBoard = ({ onChoose }: { onChoose: () => void }) => (
+const EmptyBoard = ({
+  title,
+  children,
+  action,
+}: {
+  title: string
+  children: ReactNode
+  action?: ReactNode
+}) => (
   <div className="grid flex-1 place-items-center px-6 pb-16">
     <div className="max-w-sm text-center">
       <div className="mx-auto flex h-20 w-28 items-end justify-center gap-1.5 rounded-xl bg-gradient-to-b from-indigo-50 to-white p-3 ring-1 ring-indigo-100 dark:from-indigo-500/10 dark:to-transparent dark:ring-indigo-500/20">
@@ -186,62 +224,82 @@ const EmptyBoard = ({ onChoose }: { onChoose: () => void }) => (
           />
         ))}
       </div>
-      <h2 className="mt-6 text-lg font-semibold tracking-tight">Build your board</h2>
-      <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">
-        Choose the repositories whose issues the board shows. Tabulo remembers your choice, and the
-        address keeps it for sharing.
-      </p>
-      <button type="button" onClick={onChoose} className={`${buttonClass.primary} mt-6`}>
-        Choose repositories
-      </button>
+      <h2 className="mt-6 text-lg font-semibold tracking-tight">{title}</h2>
+      <p className="mt-1.5 text-sm text-pretty text-zinc-600 dark:text-zinc-400">{children}</p>
+      {action}
+    </div>
+  </div>
+)
+
+const NotFound = ({ title, children }: { title: string; children: ReactNode }) => (
+  <div className="grid flex-1 place-items-center px-6 pb-16">
+    <div className="max-w-sm text-center">
+      <p className="text-sm font-semibold text-indigo-600 dark:text-indigo-400">404</p>
+      <h2 className="mt-2 text-lg font-semibold tracking-tight">{title}</h2>
+      {children}
     </div>
   </div>
 )
 
 const OrgNotFound = ({ org }: { org: string }) => (
-  <div className="grid flex-1 place-items-center px-6 pb-16">
-    <div className="max-w-sm text-center">
-      <p className="text-sm font-semibold text-indigo-600 dark:text-indigo-400">404</p>
-      <h2 className="mt-2 text-lg font-semibold tracking-tight">No organization named {org}</h2>
-      <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">
-        It does not exist, or your Forgejo account cannot see it.
-      </p>
-      <Link href="/board" className={`${buttonClass.primary} mt-6`}>
-        Choose an organization
-      </Link>
-    </div>
-  </div>
+  <NotFound title={`No organization named ${org}`}>
+    <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">
+      It does not exist, or your Forgejo account cannot see it.
+    </p>
+    <Link href={orgViewHref("board")} className={`${buttonClass.primary} mt-6`}>
+      Choose an organization
+    </Link>
+  </NotFound>
+)
+
+const BoardNotFound = ({ org, defaultName }: { org: string; defaultName: string }) => (
+  <NotFound title="There is no such board">
+    <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">
+      Someone may have deleted it, or the address is not quite right.
+    </p>
+    <Link href={boardHref(org, DEFAULT_BOARD_ID)} className={`${buttonClass.primary} mt-6`}>
+      Open {defaultName}
+    </Link>
+  </NotFound>
 )
 
 /** A text button inside a notice's sentence; on touch its hit area grows to 44px tall. */
 const inlineAction =
   "relative font-medium pointer-coarse:before:absolute pointer-coarse:before:inset-x-0 pointer-coarse:before:-inset-y-3 text-zinc-700 underline decoration-zinc-300 underline-offset-2 transition hover:text-zinc-900 hover:decoration-zinc-500 dark:text-zinc-300 dark:decoration-zinc-600 dark:hover:text-zinc-100"
 
-/**
- * Why repositories could not be loaded, with the action that takes them off the board. A title that
- * already names the one repository leaves only its reason here.
- */
 const FailedRepos = ({
   failures,
   named = false,
-  onRemove,
+  action,
   onDismiss,
 }: {
   failures: ReadonlyArray<{ readonly repo: string; readonly message: string }>
   named?: boolean
-  onRemove: () => void
+  action?:
+    | { readonly label: string; readonly run: () => void; readonly pending?: boolean }
+    | undefined
   onDismiss?: () => void
 }) => (
   <>
     {named
       ? sentence(failures[0]?.message ?? "")
-      : `${failures.map((failure) => `${failure.repo} (${failure.message})`).join(", ")}.`}{" "}
-    <button type="button" onClick={onRemove} className={inlineAction}>
-      Remove {failures.length === 1 ? "it" : "them"} from the board
-    </button>
+      : `${failures.map((failure) => `${failure.repo} (${failure.message})`).join(", ")}.`}
+    {action !== undefined && (
+      <>
+        {" "}
+        <button
+          type="button"
+          onClick={action.run}
+          aria-disabled={action.pending || undefined}
+          className={`${inlineAction} aria-disabled:opacity-60`}
+        >
+          {action.label}
+        </button>
+      </>
+    )}
     {onDismiss !== undefined && (
       <>
-        <span aria-hidden="true"> · </span>
+        {action === undefined ? " " : <span aria-hidden="true"> · </span>}
         <button type="button" onClick={onDismiss} className={inlineAction}>
           Hide this
         </button>
@@ -347,14 +405,24 @@ const BoardMenu = ({
   </Popover>
 )
 
-export const BoardPage = ({ org }: { org: string }) => {
+export const BoardPage = ({ org, board }: OrgViewParams) => {
+  const [params] = useSearchParams()
+  const [, navigate] = useLocation()
+  const canonical = canonicalBoardHref(org, board, params)
+  useEffect(() => {
+    if (canonical !== null) navigate(canonical, { replace: true })
+  }, [canonical, navigate])
+  const boardId = boardIdFromPath(board)
+  return <BoardView key={boardId} org={org} boardId={boardId} />
+}
+
+const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
   const queryClient = useQueryClient()
   const toast = useToast()
   const viewer = useViewer()
   const now = useNow()
+  const [, navigate] = useLocation()
   const [params, setParams] = useSearchParams()
-  const repoSelection = useRepoSelection(org)
-  const { selected, selection, setSelected } = repoSelection
   const filters = readFilters(params)
   // The search box updates at once; the board catches up without blocking the next keystroke.
   const searchText = useDeferredValue(filters.text)
@@ -362,9 +430,9 @@ export const BoardPage = ({ org }: { org: string }) => {
   const selectedRef = params.get(CARD_PARAM)
   const [dragging, setDragging] = useState(false)
   const [dismissedFailures, setDismissedFailures] = useState<string | null>(null)
-  const [pickerOpen, setPickerOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
-  const [collapsed, setCollapsed] = useState(() => readCollapsed(org))
+  const [settings, setSettings] = useState<SettingsMode | null>(null)
+  const [collapsed, setCollapsed] = useState(() => readCollapsed(collapsedKey(org, boardId)))
   const [composing, setComposing] = useState<string | null>(null)
   const [composerRepo, setComposerRepo] = useState(() => storage.read(composerRepoKey(org)))
   const searchInput = useRef<HTMLInputElement>(null)
@@ -382,20 +450,53 @@ export const BoardPage = ({ org }: { org: string }) => {
 
   const repos = useQuery({ queryKey: ["org-repos", org], queryFn: () => fetchOrgRepos(org) })
   const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
-  const hasSelection = selection !== ""
+  const boards = useBoardList(org)
+  const boardWrites = useBoardWrites(org)
 
-  const boardKey = boardQueryKey(org, selection)
-  const writeKey = ["board-write", org, selection] as const
+  const boardKey = boardQueryKey(org, boardId)
+  const writeKey = boardWriteKey(org)
   // A refetch that lands during a drag or before a write is stored would undo it on screen.
   const moving = useIsMutating({ mutationKey: writeKey }) > 0
+  // Any settings save of the organization, also one from a dialog that already closed.
+  const savingSettings = useIsMutating({ mutationKey: [...writeKey, "settings"] }) > 0
   const settled = !dragging && !moving
   const board = useQuery({
     queryKey: boardKey,
-    queryFn: () => fetchBoard(org, selected),
-    enabled: hasSelection,
+    queryFn: () => fetchBoard(org, boardId),
     refetchInterval: settled ? REFRESH_MS : false,
     refetchOnWindowFocus: settled,
+    refetchOnReconnect: settled,
+    refetchOnMount: settled,
   })
+  // While a write is pending its end reads the boards again; an answer read now predates the
+  // write and would put a moved card back. With no board loaded there is nothing to put back.
+  const refresh = () => {
+    if (board.data === undefined || !writingBoards(queryClient, org)) void board.refetch()
+  }
+  const boardMissing =
+    board.error instanceof RequestFailed && board.error.code === "board_not_found"
+  const orgMissing =
+    board.error instanceof RequestFailed &&
+    board.error.status === 404 &&
+    board.error.code === undefined
+
+  const loaded = board.isSuccess
+  useEffect(() => {
+    if (loaded) rememberBoard(org, boardId)
+  }, [loaded, org, boardId])
+  // A board deleted while on screen says so in place instead of opening the default board.
+  const loadedBefore = board.data !== undefined
+  useEffect(() => {
+    if (!boardMissing) return
+    const wasLast = forgetBoard(org, boardId)
+    if (!wasLast || loadedBefore) return
+    toast({
+      tone: "info",
+      title: "The board you used last is gone",
+      detail: "Someone deleted it, so Tabulo opened the default board.",
+    })
+    navigate(boardHref(org, DEFAULT_BOARD_ID), { replace: true })
+  }, [boardMissing, org, boardId, loadedBefore, toast, navigate])
 
   const setCardParam = (value: string | null, replace: boolean) =>
     setParams(
@@ -411,8 +512,6 @@ export const BoardPage = ({ org }: { org: string }) => {
   const columnTitle = (key: string) =>
     board.data?.columns.find((column) => column.key === key)?.title ?? key
 
-  // The last write to finish reads the board again; an earlier one would read it while a later
-  // write is still on its way and show that card back in its old place for a moment.
   // Writes wait while the browser is offline; one notice says so and goes away once it is back.
   const online = useOnline()
   const dismissOffline = useRef<(() => void) | null>(null)
@@ -435,16 +534,6 @@ export const BoardPage = ({ org }: { org: string }) => {
     }),
   )
 
-  // Not returned: React Query would keep the write pending, and its card "Saving", until the
-  // board reload finished.
-  const refetchAfterWrites = () => {
-    if (queryClient.isMutating({ mutationKey: writeKey }) > 1) return
-    void queryClient.invalidateQueries({ queryKey: boardKey })
-  }
-
-  /** Stops board reads in flight, whose answers predate a write and would undo it on screen. */
-  const holdReads = () => queryClient.cancelQueries({ queryKey: boardKey }, { revert: false })
-
   const move = useMutation({
     mutationKey: [...writeKey, "move"],
     mutationFn: ({
@@ -452,7 +541,7 @@ export const BoardPage = ({ org }: { org: string }) => {
     }: {
       request: MoveCardRequest
       cardMove: CardMove
-      previous: Board
+      before: BoardCard
       undo: CardMove | null
     }) => moveCard(request),
     onSuccess: ({ card, orderSaved }, { request, undo }) => {
@@ -482,9 +571,9 @@ export const BoardPage = ({ org }: { org: string }) => {
         ...(undo === null ? {} : { action: { label: "Undo", run: () => startMove(undo, null) } }),
       })
     },
-    onError: (error, { previous, request, cardMove, undo }) => {
-      // A partly applied move changed Forgejo, so the refetch below shows the truth; restoring
-      // the board from before the move would show a state that no longer exists.
+    onError: (error, { before, request, cardMove, undo }) => {
+      // A partly applied move changed Forgejo, so the read after the organization's writes end
+      // shows the truth; putting the card back would show a state that no longer exists.
       if (error instanceof RequestFailed && error.code === "move_partly_applied") {
         toast({
           tone: "error",
@@ -494,7 +583,9 @@ export const BoardPage = ({ org }: { org: string }) => {
         })
         return
       }
-      queryClient.setQueryData(boardKey, previous)
+      queryClient.setQueryData<Board>(boardKey, (current) =>
+        current === undefined ? current : revertMove(current, before),
+      )
       if (error instanceof RequestFailed && error.code === "board_changed") {
         toast({
           tone: "warning",
@@ -516,7 +607,6 @@ export const BoardPage = ({ org }: { org: string }) => {
         action: { label: "Retry", run: () => startMove(cardMove, undo) },
       })
     },
-    onSettled: refetchAfterWrites,
   })
 
   /** Moves a card and offers to put it back where it was, unless `undo` is null. */
@@ -537,14 +627,13 @@ export const BoardPage = ({ org }: { org: string }) => {
     }
     // The board shows the move in the same render that ends the drag, so the dropped card's
     // overlay settles into its new place rather than flying back to the old one.
-    void holdReads()
     queryClient.setQueryData<Board>(
       boardKey,
       applyMove(current, cardMove, new Date().toISOString()),
     )
     move.mutate({
       cardMove,
-      previous: current,
+      before: card,
       undo: undo === undefined ? back : undo,
       request: {
         org: current.org,
@@ -579,8 +668,6 @@ export const BoardPage = ({ org }: { org: string }) => {
   const create = useMutation({
     mutationKey: [...writeKey, "create"],
     mutationFn: createCard,
-    onMutate: holdReads,
-    onSettled: refetchAfterWrites,
     onSuccess: ({ card, orderSaved }) => {
       putCard(card)
       toast({
@@ -604,8 +691,6 @@ export const BoardPage = ({ org }: { org: string }) => {
   const update = useMutation({
     mutationKey: [...writeKey, "update"],
     mutationFn: ({ run }: CardUpdate) => run(),
-    onMutate: holdReads,
-    onSettled: refetchAfterWrites,
     onSuccess: ({ card }, { done, issue, undo }) => {
       putCard(card)
       toast({
@@ -651,7 +736,7 @@ export const BoardPage = ({ org }: { org: string }) => {
       const next = new Set(current)
       if (next.has(column)) next.delete(column)
       else next.add(column)
-      storage.write(collapsedKey(org), JSON.stringify([...next]))
+      storage.write(collapsedKey(org, boardId), JSON.stringify([...next]))
       return next
     })
 
@@ -666,12 +751,13 @@ export const BoardPage = ({ org }: { org: string }) => {
   )
 
   const visible = (card: BoardCard) => matchesFilters(card, boardFilters, viewer.login)
-  const data = board.data
+  // A board that answered 404 keeps its last answer in the cache, which nothing may act on.
+  const data = isNotFound(board.error) ? undefined : board.data
   const archived = new Set(
     (repos.data ?? []).filter((repo) => repo.archived).map((repo) => repo.name),
   )
   const failed = new Set((data?.failedRepos ?? []).map((failure) => failure.repo))
-  const creatableRepos = (data?.repos ?? []).filter(
+  const creatableRepos = (data?.board.repos ?? []).filter(
     (repo) => !archived.has(repo) && !failed.has(repo),
   )
   const canCreate = data?.viewerCanArrange === true && creatableRepos.length > 0
@@ -752,7 +838,7 @@ export const BoardPage = ({ org }: { org: string }) => {
     toast({
       tone: "warning",
       title: `${selectedRef} is not on this board`,
-      detail: "It may be closed, in another repository, or moved elsewhere.",
+      detail: "It may be closed, in a repository the board does not show, or in a hidden column.",
     })
     setCardParam(null, true)
   })
@@ -791,7 +877,7 @@ export const BoardPage = ({ org }: { org: string }) => {
     const key = event.key
     if (key === "?") openShortcuts()
     else if (key === "/") searchInput.current?.focus()
-    else if (key === "r" || key === "R") void board.refetch()
+    else if (key === "r" || key === "R") refresh()
     else if (key === "m" || key === "M") toggleMine()
     else if ((key === "n" || key === "N") && canCreate && firstCreatable !== undefined) {
       openComposer(firstCreatable.key)
@@ -833,8 +919,8 @@ export const BoardPage = ({ org }: { org: string }) => {
     }),
     [],
   )
-  // A card's link keeps the board's repositories and filters, but not the search text, so typing
-  // does not re-render every card.
+  // A card's link keeps the board's filters, but not the search text, so typing does not re-render
+  // every card.
   const hrefBase = (() => {
     const next = new URLSearchParams(params)
     next.delete(CARD_PARAM)
@@ -842,17 +928,46 @@ export const BoardPage = ({ org }: { org: string }) => {
     return next.toString()
   })()
 
-  const orgMissing = repos.error instanceof RequestFailed && repos.error.status === 404
   const allFailed =
     data !== undefined &&
     data.failedRepos.length > 0 &&
-    data.failedRepos.length === data.repos.length
+    data.failedRepos.length === data.board.repos.length
   const orgTitle =
     orgs.data?.find((candidate) => candidate.name.toLowerCase() === org.toLowerCase())?.fullName ||
     org
+  const canChangeBoards =
+    data?.viewerCanArrange ??
+    orgs.data?.some((candidate) => candidate.name.toLowerCase() === org.toLowerCase()) === true
+  const canEditBoard = data?.viewerCanArrange === true
+  const editBoard = (focus?: "repos" | "columns") => {
+    if (data !== undefined) setSettings({ _tag: "Edit", board: data, ...(focus ? { focus } : {}) })
+  }
   const removeFailed = () => {
+    // A second update would go against the version the first one replaced and answer 409.
+    if (data === undefined || savingSettings) return
     const failed = new Set(failures.map((failure) => failure.repo.toLowerCase()))
-    setSelected(selected.filter((repo) => !failed.has(repo.toLowerCase())))
+    const loading = data.board.repos.filter((repo) => !failed.has(repo.toLowerCase()))
+    boardWrites.update.mutate(
+      { request: toUpdateRequest(org, data, { ...draftOf(data), repos: loading }) },
+      {
+        onSuccess: (saved) =>
+          toast({
+            tone: "success",
+            title: `Removed ${failures.length === 1 ? failures[0]?.repo : `${failures.length} repositories`} from ${saved.name}`,
+          }),
+        onError: (error) => {
+          if (error instanceof RequestFailed && error.code === "board_changed") {
+            toast({
+              tone: "warning",
+              title: "Someone changed the board meanwhile",
+              detail: "Nothing was removed. The board has been reloaded; try again.",
+            })
+          } else {
+            toast({ tone: "error", title: "Could not change the board", detail: error.message })
+          }
+        },
+      },
+    )
   }
   const clearFilters = () =>
     setParams(
@@ -868,7 +983,7 @@ export const BoardPage = ({ org }: { org: string }) => {
   const failureId = failures.map((failure) => `${failure.repo}:${failure.message}`).join("|")
   const filtered = isFiltered(boardFilters)
   const shownCount = data === undefined ? 0 : data.cards.filter(visible).length
-  const onlyDefaultColumns = data?.columns.every((column) => column._tag !== "Status")
+  const onlyDefaultColumns = data?.allColumns.every((column) => column._tag !== "Status")
   const composerTarget =
     composerRepo !== null && creatableRepos.includes(composerRepo)
       ? composerRepo
@@ -885,12 +1000,15 @@ export const BoardPage = ({ org }: { org: string }) => {
           ? `Refresh failed, last loaded ${relativeTime(loadedAt, now)}`
           : `Updated ${relativeTime(loadedAt, now)}`
   // On a phone the board's options sit beside Filters, which leaves the organization's name room.
-  const filtersShown = data !== undefined && !allFailed
+  const filtersShown =
+    data !== undefined && !allFailed && data.board.repos.length > 0 && data.columns.length > 0
 
+  const atBoardLimit = (boards.data?.boards.length ?? 0) >= MAX_BOARDS
   usePageCommands(
-    data === undefined || allFailed
+    data === undefined
       ? NO_COMMANDS
       : boardCommands({
+          filtersShown,
           cards: data.cards,
           filters,
           newIssueColumn:
@@ -902,15 +1020,20 @@ export const BoardPage = ({ org }: { org: string }) => {
           setFilter: (filter, values) =>
             setParams((current) => withFilter(current, filter, values), { replace: true }),
           clearFilters,
-          // The command menu gives focus back to where it was as it closes, after this runs.
-          focusSearch: () => window.setTimeout(() => searchInput.current?.focus()),
-          refresh: () => void board.refetch(),
+          focusSearch: afterPaletteCloses(() => searchInput.current?.focus()),
+          refresh,
           updated: updated ?? "",
+          boardName: data.board.name,
+          editBoard: canEditBoard ? afterPaletteCloses(() => editBoard()) : null,
+          newBoard:
+            canChangeBoards && !atBoardLimit
+              ? afterPaletteCloses(() => setSettings({ _tag: "Create" }))
+              : null,
         }),
   )
 
   return (
-    <RepoPaletteProvider repos={data?.repos ?? selected}>
+    <RepoPaletteProvider repos={data?.board.repos ?? []}>
       <main className="flex h-[calc(100dvh-3.5rem-1px-var(--tab-bar-height))] min-h-0 flex-col">
         <h1 className="sr-only">Board for {orgTitle}</h1>
         {/*
@@ -927,19 +1050,19 @@ export const BoardPage = ({ org }: { org: string }) => {
         >
           <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-1.5">
             <OrgSwitcher org={org} view="board" />
-            {repos.data !== undefined && (
-              <span aria-hidden="true" className="text-zinc-300 max-sm:hidden dark:text-zinc-700">
-                /
-              </span>
-            )}
-            {repos.data !== undefined && (
-              <RepoPicker
-                repos={repos.data}
-                selected={selected}
-                onChange={setSelected}
-                open={pickerOpen}
-                onOpenChange={setPickerOpen}
-              />
+            {!orgMissing && (
+              <>
+                <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-700">
+                  /
+                </span>
+                <BoardSwitcher
+                  org={org}
+                  boardId={boardId}
+                  name={boardMissing ? "No such board" : data?.board.name}
+                  onEdit={canEditBoard ? () => editBoard() : undefined}
+                  onCreate={canChangeBoards ? () => setSettings({ _tag: "Create" }) : undefined}
+                />
+              </>
             )}
           </div>
           {filtersShown && (
@@ -956,7 +1079,7 @@ export const BoardPage = ({ org }: { org: string }) => {
               <BoardMenu
                 updated={updated}
                 refreshing={board.isFetching}
-                onRefresh={() => void board.refetch()}
+                onRefresh={refresh}
                 onShortcuts={openShortcuts}
                 className="col-start-2 row-start-2 self-start sm:row-start-1 sm:self-center min-[84rem]:col-start-3"
               />
@@ -973,11 +1096,11 @@ export const BoardPage = ({ org }: { org: string }) => {
                 Offline
               </span>
             )}
-            {hasSelection && !filtersShown && (
+            {!filtersShown && !boardMissing && !orgMissing && (
               <BoardMenu
                 updated={updated}
                 refreshing={board.isFetching}
-                onRefresh={() => void board.refetch()}
+                onRefresh={refresh}
                 onShortcuts={openShortcuts}
               />
             )}
@@ -998,24 +1121,11 @@ export const BoardPage = ({ org }: { org: string }) => {
           </p>
         </div>
 
-        {repos.isError && !orgMissing && (
-          <ErrorNotice
-            tone={filtersShown ? "warning" : "error"}
-            title={`Could not load the repositories of ${orgTitle}`}
-            onRetry={() => void repos.refetch()}
-            retrying={repos.isFetching}
-            className="mx-4 mb-3 sm:mx-6"
-          >
-            {filtersShown
-              ? `${sentence(repos.error.message)} The board still shows its cards; choosing repositories waits until they load.`
-              : repos.error.message}
-          </ErrorNotice>
-        )}
         {refreshFailed && (
           <ErrorNotice
             tone="warning"
             title="Could not refresh the board"
-            onRetry={() => void board.refetch()}
+            onRetry={refresh}
             retrying={board.isFetching}
             className="mx-4 mb-3 sm:mx-6"
           >
@@ -1027,25 +1137,36 @@ export const BoardPage = ({ org }: { org: string }) => {
           </ErrorNotice>
         )}
         {failures.length > 0 &&
-          failures.length < (data?.repos.length ?? 0) &&
+          failures.length < (data?.board.repos.length ?? 0) &&
           dismissedFailures !== failureId && (
             <ErrorNotice
               tone="warning"
               title="Could not load some repositories"
-              onRetry={() => void board.refetch()}
+              onRetry={refresh}
               retrying={board.isFetching}
               className="mx-4 mb-3 sm:mx-6"
             >
               <FailedRepos
                 failures={failures}
-                onRemove={removeFailed}
+                action={
+                  canChangeBoards
+                    ? {
+                        label: boardWrites.update.isPending
+                          ? "Removing…"
+                          : `Remove ${failures.length === 1 ? "it" : "them"} from the board`,
+                        run: removeFailed,
+                        pending: savingSettings,
+                      }
+                    : undefined
+                }
                 onDismiss={() => setDismissedFailures(failureId)}
               />
             </ErrorNotice>
           )}
         {data !== undefined && !data.viewerCanArrange && (
           <Notice>
-            You can view this board. Only members of {data.org} can move cards and add issues.
+            You can view this board. Only members of {data.org} can move cards, add issues, and
+            change boards.
           </Notice>
         )}
         {onlyDefaultColumns && (
@@ -1063,19 +1184,19 @@ export const BoardPage = ({ org }: { org: string }) => {
         <div className="relative flex min-h-0 flex-1 flex-col">
           {orgMissing ? (
             <OrgNotFound org={org} />
-          ) : !hasSelection ? (
-            repos.isPending ? (
-              <div className="min-h-0 flex-1">
-                <BoardSkeleton />
-              </div>
-            ) : repos.isError ? null : (
-              <EmptyBoard onChoose={() => setPickerOpen(true)} />
-            )
+          ) : boardMissing ? (
+            <BoardNotFound
+              org={org}
+              defaultName={
+                boards.data?.boards.find((listed) => listed.id === DEFAULT_BOARD_ID)?.name ??
+                DEFAULT_BOARD_NAME
+              }
+            />
           ) : data === undefined ? (
             board.isError ? (
               <ErrorNotice
                 title="Could not load the board"
-                onRetry={() => void board.refetch()}
+                onRetry={refresh}
                 retrying={board.isFetching}
                 className="mx-4 sm:mx-6"
               >
@@ -1093,16 +1214,81 @@ export const BoardPage = ({ org }: { org: string }) => {
                   ? `Could not load ${data.failedRepos[0]?.repo}`
                   : "Could not load any of the repositories"
               }
-              onRetry={() => void board.refetch()}
+              onRetry={refresh}
               retrying={board.isFetching}
               className="mx-4 sm:mx-6"
             >
               <FailedRepos
                 failures={data.failedRepos}
                 named={data.failedRepos.length === 1}
-                onRemove={removeFailed}
+                action={
+                  canChangeBoards
+                    ? { label: "Choose other repositories", run: () => editBoard("repos") }
+                    : undefined
+                }
               />
             </ErrorNotice>
+          ) : data.board.repos.length === 0 ? (
+            data.board.unreadableRepos > 0 ? (
+              <EmptyBoard
+                title="You cannot read this board's repositories"
+                action={
+                  canChangeBoards && (
+                    <button
+                      type="button"
+                      onClick={() => editBoard("repos")}
+                      className={`${buttonClass.secondary} mt-6`}
+                    >
+                      Edit board
+                    </button>
+                  )
+                }
+              >
+                {data.board.name} shows{" "}
+                {data.board.unreadableRepos === 1
+                  ? "1 repository"
+                  : `${data.board.unreadableRepos} repositories`}{" "}
+                that your Forgejo account cannot read.
+              </EmptyBoard>
+            ) : (
+              <EmptyBoard
+                title="This board has no repositories yet"
+                action={
+                  canChangeBoards && (
+                    <button
+                      type="button"
+                      onClick={() => editBoard("repos")}
+                      className={`${buttonClass.primary} mt-6`}
+                    >
+                      Choose repositories
+                    </button>
+                  )
+                }
+              >
+                {canChangeBoards
+                  ? `Choose the repositories of ${data.board.name}. Everyone who opens it sees their issues.`
+                  : `A member of ${orgTitle} can choose its repositories.`}
+              </EmptyBoard>
+            )
+          ) : data.columns.length === 0 ? (
+            <EmptyBoard
+              title="Every column of this board is hidden"
+              action={
+                canChangeBoards && (
+                  <button
+                    type="button"
+                    onClick={() => editBoard("columns")}
+                    className={`${buttonClass.primary} mt-6`}
+                  >
+                    Edit board
+                  </button>
+                )
+              }
+            >
+              {canChangeBoards
+                ? "Show at least one column in the board's settings."
+                : `A member of ${orgTitle} can show them again.`}
+            </EmptyBoard>
           ) : filtered && shownCount === 0 && data.cards.length > 0 ? (
             <NoMatches query={boardFilters.text.trim()} onClear={clearFilters} />
           ) : (
@@ -1186,13 +1372,15 @@ export const BoardPage = ({ org }: { org: string }) => {
               onToggleAssigned={() => toggleAssigned(selectedCard)}
               onUpdate={(change) => update.mutate(change)}
               onCommented={putCard}
-              holdReads={holdReads}
               updating={update.isPending}
               onCopyLink={() => copyLink(selectedCard)}
               onClose={closePanel}
             />
           )}
         </div>
+        {settings !== null && (
+          <BoardSettingsDialog org={org} mode={settings} onClose={() => setSettings(null)} />
+        )}
         <ShortcutsDialog
           open={shortcutsOpen}
           onClose={() => setShortcutsOpen(false)}

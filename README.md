@@ -4,15 +4,17 @@ Tabulo is a planning companion for [Forgejo](https://forgejo.org). It shows each
 with their review requests, the open issues and pull requests assigned to them, their mentions,
 the items they created, and their unread notifications, across every repository they can access.
 
-For a team lead it adds a kanban board across chosen repositories of one organization. Moving
-a card changes the issue's status label, or closes or reopens it, in Forgejo. An insights page
-charts the throughput, backlog, CI health, and repository health of the same repositories.
+For a team it adds shared kanban boards across repositories of one organization, each with its
+own repositories and column order. Moving a card changes the issue's status label, or closes or
+reopens it, in Forgejo. An insights page charts the throughput, backlog, CI health, and
+repository health of chosen repositories.
 
 Forgejo stays the source of truth. Tabulo signs you in with Forgejo, acts with your own OAuth
 token, and links back to Forgejo for every issue and pull request. It needs no Forgejo plugin,
-no admin rights, and no shared service account. The only thing it stores besides sessions is
-the order of cards within a board column. The epics view tracks larger pieces of work through
-their child issues and pull requests. [docs/spec.md](docs/spec.md) describes the contract.
+no admin rights, and no shared service account. Besides sessions it stores only the order of
+cards within a column and the boards, which are saved views; it never creates labels. The epics
+view tracks larger pieces of work through their child issues and pull requests.
+[docs/spec.md](docs/spec.md) describes the contract.
 
 Tabulo is one Cloudflare Worker that serves both the API and the React app, with sessions in D1.
 
@@ -183,7 +185,7 @@ A deployment sets its vars in `wrangler.deploy.jsonc` and its secrets with
 | `FORGEJO_CLIENT_SECRET` | secret | OAuth2 application client secret. |
 | `SESSION_ENCRYPTION_KEY` | secret | 32 random bytes, base64. Encrypts the Forgejo tokens stored in D1. |
 | `BOARD_STATUS_SCOPE` | var | Prefix of the status labels, ending in `/`. Default `Status/`. The board's columns are the organization's exclusive labels whose name starts with it. |
-| `BOARD_COLUMNS` | var | Optional column order, comma-separated: full status label names such as `Status/In Progress`, and the reserved words `Todo` and `Done`. Status labels not listed come before Done in name order. Default: Todo, every status label by name, Done. |
+| `BOARD_COLUMNS` | var | Optional column order of a default board that no member has changed, comma-separated: full status label names such as `Status/In Progress`, and the reserved words `Todo` and `Done`. Status labels not listed come before Done in name order. Default: Todo, every status label by name, Done. |
 | `BOARD_DONE_DAYS` | var | Issues closed within this many days appear in Done. A whole number from 1 to 365. Default `14`. |
 | `EPIC_LABEL` | var | Full label name that marks an epic. Default `Type/Epic`. |
 
@@ -199,16 +201,33 @@ Changing `SESSION_ENCRYPTION_KEY` signs everyone out, because existing tokens no
 The board's columns come from the organization's exclusive labels in the status scope, which is
 `Status/` unless `BOARD_STATUS_SCOPE` says otherwise. To set them up, open the organization's
 **Settings > Labels** in Forgejo and create labels such as `Status/In Progress` and
-`Status/Review` with **Exclusive** turned on.
+`Status/Review` with **Exclusive** turned on. Tabulo never creates or changes labels, so the
+organization keeps exactly the labels its owners make.
 
 - **Todo** holds open issues without a status label.
 - Each status label is a column with its open issues.
 - **Done** holds issues closed within the last 14 days (`BOARD_DONE_DAYS`).
 
-Open **Board** in the header, choose an organization, and choose its repositories. The address
-is `/board/<org>?repos=<repo>,<repo>`, so a board can be bookmarked or shared, filters included.
-An organization you open for the first time, with at most 20 repositories that are not
-archived, starts with all of them.
+Open **Board** in the header and choose an organization. Every organization has a default
+board. One with at most 20 repositories that are not archived starts with all of them; a member
+chooses the repositories of a larger one. The board's name beside the organization's opens the
+board menu, which lists the organization's boards. Members can add more boards there with
+**New board…**, up to 50 per organization. Each board has a name, its own repositories, and its
+own column order, and can hide columns, so a design team's board can show only the columns it
+works in. Every board shares the same status labels, so a card moved on one board is in its new
+column on every board. **Board** in the header opens the board you used last. The address is
+`/board/<org>` for the default board and `/board/<org>/<id>` for another, so a board can be
+bookmarked or shared, filters included.
+
+**Edit board…** in the board menu changes the board's name, repositories, and columns for
+everyone who opens it. Drag a column by its handle to move it. With the keyboard, focus the
+handle, press Space, move the column with the arrow keys, and press Space again; Escape cancels.
+Clear a column's box to hide it. The board then leaves out that column's cards, and nothing
+changes in Forgejo. If someone else saves the board while you edit it, Tabulo keeps your changes
+on top of theirs, names what they changed, and waits for you to save again. A board can hold
+repositories you cannot read. Tabulo counts them without naming them and keeps them when you
+save, unless you ask it to remove them, which frees the place of a repository that was deleted.
+**Delete board…** deletes any board but the default one; its cards and their order stay.
 
 Drag a card with the mouse, or press and hold it on a touch screen. The column under it opens a
 gap where the card will land. With the keyboard, Tab moves from column to column and the arrow
@@ -233,18 +252,20 @@ The filters narrow the board by text or `#number`, assignee, label, and mileston
 label take several values, and a card shows when it matches any of them. **Assigned to me** puts
 `assignee=@me` in the address, so a shared link shows each person their own cards.
 `@none` stands for no assignee or no milestone. Collapse a column with the button in its header;
-Tabulo remembers it in your browser. Press `?` on the board for the keyboard shortcuts, such as
-`/` to search, `N` for a new issue, and `J` and `K` to browse cards in the details panel.
+Tabulo remembers it for each board in your browser. Press `?` on the board for the keyboard
+shortcuts, such as `/` to search, `N` for a new issue, and `J` and `K` to browse cards in the
+details panel.
 
-The order of cards within a column is shared by everyone who opens the organization's board,
-whichever repositories they chose. Only members of the organization can move, reorder, and add
-cards; others see the board read-only. Cards of archived repositories cannot be changed.
+The order of cards within a column is shared by everyone, on every board of the organization.
+Only members of the organization can move, reorder, and add cards and change boards; others see
+the boards read-only. Cards of archived repositories cannot be changed. A board shows each person
+only the repositories they can read in Forgejo.
 
 ## Use the insights
 
-Open **Insights** in the header, choose an organization, and choose its repositories, as for
-the board. Pick a period of 24 hours, 7 days (the default), 30 days, 90 days, 6 months, or a
-year. The address is `/insights/<org>?repos=<repo>,<repo>&days=<days>`, so a view can be
+Open **Insights** in the header, choose an organization, and choose its repositories. Pick a
+period of 24 hours, 7 days (the default), 30 days, 90 days, 6 months, or a year. The address
+is `/insights/<org>?repos=<repo>,<repo>&days=<days>`, so a view can be
 bookmarked or shared. The page counts 24 hours per hour, 7 days per day, and longer periods per week. Weeks
 start on Monday, and hours, days, and weeks are read in your browser's time zone. A period
 starts at the beginning of its first hour, day, or week, so the page shows whole ones; the
@@ -316,11 +337,11 @@ The page refreshes every minute.
 ## Search and shortcuts
 
 Press `Cmd+K` (`Ctrl+K` on Windows and Linux), or choose **Search…** in the header, to open the
-command menu. Type to find a view of an organization, a repository of the organization you used
-last (or your first organization), an item on your dashboard, or an action such as switching the
-theme. From two characters on, it also searches the issues and pull requests of every repository
-you can access, open ones first. Press `Enter` to run the highlighted result and `Esc` to close
-the menu. It lists the commands you used last when the query is empty.
+command menu. Type to find a view of an organization, a board or repository of the organization
+you used last (or your first organization), an item on your dashboard, or an action such as
+switching the theme. From two characters on, it also searches the issues and pull requests of
+every repository you can access, open ones first. Press `Enter` to run the highlighted result and
+`Esc` to close the menu. It lists the commands you used last when the query is empty.
 
 Your avatar in the header opens a menu with the theme (System, Light, or Dark) and **Sign
 out**. The theme is remembered in your browser and follows the system setting by default.
@@ -330,7 +351,7 @@ out**. The theme is remembered in your browser and follows the system setting by
 | `Cmd/Ctrl+K` | Open the command menu |
 | `?` | Show the keyboard shortcuts; on the board, the board's own too |
 | `g` then `d` | Go to the dashboard |
-| `g` then `b`, `i`, or `e` | Go to the board, insights, or epics of the organization you used last |
+| `g` then `b`, `i`, or `e` | Go to the board you used last, or the insights or epics of the organization you used last |
 
 Keys without `Cmd` or `Ctrl` are ignored while you type in a field.
 

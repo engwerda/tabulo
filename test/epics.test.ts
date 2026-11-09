@@ -15,13 +15,14 @@ import {
   repoLabel,
   review,
 } from "./fixtures.ts"
-import { signIn, tabulo } from "./harness.ts"
+import { postJson, signIn, tabulo } from "./harness.ts"
 
 beforeEach(async () => {
   await env.DB.batch([
     env.DB.prepare("DELETE FROM sessions"),
     env.DB.prepare("DELETE FROM oauth_states"),
     env.DB.prepare("DELETE FROM card_ranks"),
+    env.DB.prepare("DELETE FROM boards"),
   ])
 })
 
@@ -202,6 +203,45 @@ describe("GET /api/epics", () => {
     ).toHaveLength(0)
     const rows = await env.DB.prepare("SELECT * FROM card_ranks").all()
     expect(rows.results).toHaveLength(0)
+  })
+
+  it("orders columns as the stored default board does and counts its hidden columns", async () => {
+    const forgejo = createFakeForgejo({ ...fixtures(), maxPageSize: 2 })
+    const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
+    const cookie = await signIn(call, forgejo)
+    const stored = await postJson(call, cookie, "/api/boards/update", {
+      org: "acme",
+      board: "default",
+      version: 0,
+      name: "Board",
+      repos: ["api"],
+      columns: ["done", review.name, "todo"],
+      hidden: [inProgress.name, "todo"],
+      dropUnreadable: false,
+    })
+    expect(stored.status).toBe(200)
+
+    const response = await call("/api/epics?org=acme&repos=api,web", { headers: { cookie } })
+
+    const data = Schema.decodeUnknownSync(Epics)(await response.json())
+    expect(data.columns.map(({ key }) => key)).toEqual([
+      "Status/Backlog",
+      inProgress.name,
+      "done",
+      review.name,
+      "todo",
+    ])
+    expect(data.epics[0]?.progress).toEqual({
+      total: 7,
+      done: 1,
+      byColumn: {
+        "Status/Backlog": 0,
+        "Status/In Progress": 1,
+        done: 1,
+        "Status/Review": 1,
+        todo: 2,
+      },
+    })
   })
 
   it("reuses children already listed in another chosen repository and across epics", async () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { firstVisitChoice, MAX_REPOS } from "../src/client/scope/first-visit.ts"
+import { firstVisitChoice } from "../src/client/scope/first-visit.ts"
+import { MAX_REPOS } from "../src/shared/api.ts"
 
 const repo = (name: string, archived = false) => ({ name, archived })
 

@@ -16,6 +16,7 @@ type SearchFieldProps = {
   /** Runs first; Escape then clears a field with text unless this handler prevented it. */
   readonly onKeyDown?: (event: KeyboardEvent<HTMLInputElement>) => void
   readonly title?: string
+  readonly describedBy?: string | undefined
   /** Classes of the wrapper, for its width. */
   readonly className?: string
 }
@@ -34,6 +35,7 @@ export const SearchField = ({
   inputRef,
   onKeyDown,
   title,
+  describedBy,
   className = "",
 }: SearchFieldProps) => (
   <label className={`relative block ${className}`}>
@@ -54,6 +56,7 @@ export const SearchField = ({
       placeholder={placeholder}
       title={title}
       aria-keyshortcuts={shortcut}
+      aria-describedby={describedBy}
       // Named outright: the clear button sits inside the label and would join the name.
       aria-label={label}
       className={`${inputClass} pr-8 pl-8 [&::-webkit-search-cancel-button]:appearance-none ${
