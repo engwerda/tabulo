@@ -20,7 +20,7 @@ export const parseBoardId = (value: string): BoardId | null =>
   Option.getOrNull(Schema.decodeUnknownOption(BoardIdText)(value.toLowerCase()))
 
 const ID_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"
-const ID_BYTE_LIMIT = 252
+const ID_BYTE_LIMIT = Math.floor(256 / ID_ALPHABET.length) * ID_ALPHABET.length
 
 const newBoardId = (): BoardId => {
   let id = ""
