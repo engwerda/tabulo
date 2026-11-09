@@ -141,6 +141,10 @@ export const boardCommands = (input: BoardCommandsInput): ReadonlyArray<GroupSpe
           } satisfies PaletteItem,
         ]
       : []),
+    // The empty palette cuts the list after `emptyLimit` items, so it drops Refresh and Search, which
+    // have keys on the board, before the settings.
+    ...settings,
+    refresh,
     {
       id: "board:search",
       title: "Search cards",
@@ -150,8 +154,6 @@ export const boardCommands = (input: BoardCommandsInput): ReadonlyArray<GroupSpe
       remember: false,
       run: input.focusSearch,
     },
-    refresh,
-    ...settings,
   ]
 
   const toggle = (filter: "assignee" | "label", value: string) => () =>

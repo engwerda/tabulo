@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { type BoardCommandsInput, boardCommands } from "../src/client/board/board-commands.ts"
+import { rankSections } from "../src/client/palette/rank.ts"
 
 const input = (overrides: Partial<BoardCommandsInput> = {}): BoardCommandsInput => ({
   filtersShown: true,
@@ -24,6 +25,12 @@ const boardIds = (overrides: Partial<BoardCommandsInput>) =>
     .find((group) => group.id === "board")
     ?.items.map((item) => item.id) ?? []
 
+/** The board's commands that the palette shows before anything is typed. */
+const emptyPalette = (overrides: Partial<BoardCommandsInput>) =>
+  rankSections("", boardCommands(input(overrides)), [])
+    .find((section) => section.id === "board")
+    ?.rows.map((row) => row.item.id) ?? []
+
 describe("the board's commands", () => {
   it("offers only Refresh and the board's settings while the board shows no filters", () => {
     const groups = boardCommands(input({ filtersShown: false }))
@@ -39,5 +46,13 @@ describe("the board's commands", () => {
     expect(boardIds({})).toEqual(expect.arrayContaining(["board:edit", "board:new"]))
     expect(boardIds({ newBoard: null })).toContain("board:edit")
     expect(boardIds({ newBoard: null })).not.toContain("board:new")
+  })
+
+  it("lists Edit board and New board in the empty palette when every command is offered", () => {
+    const filtered = { filters: { assignee: [], milestone: null, label: ["Kind/Bug"], text: "" } }
+    expect(boardIds(filtered)).toHaveLength(10)
+    expect(emptyPalette(filtered)).toEqual(
+      expect.arrayContaining(["board:new-issue", "board:edit", "board:new"]),
+    )
   })
 })
