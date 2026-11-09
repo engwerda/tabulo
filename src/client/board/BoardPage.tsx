@@ -475,6 +475,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
   useEffect(() => {
     if (loaded) rememberBoard(org, boardId)
   }, [loaded, org, boardId])
+  // A board deleted while on screen says so in place instead of opening the default board.
   const loadedBefore = board.data !== undefined
   useEffect(() => {
     if (!boardMissing) return
