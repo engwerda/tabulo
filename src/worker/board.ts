@@ -343,12 +343,13 @@ type RepoCards =
   /** A repository the user cannot read, which an answer never names. */
   | { readonly _tag: "Unreadable" }
 
-/**
- * A repository whose own read failed for another reason than access, so whether the user can
- * read it, and may see its name, is not known yet. `name` is the stored, lowercased name.
- */
+/** One repository's reads, before the organization's listing settles an `AccessUnknown`. */
 type RepoRead =
   | RepoCards
+  /**
+   * The repository's own read failed for another reason than access, so whether the user can
+   * read it, and may see its stored, lowercased `name`, is not known yet.
+   */
   | { readonly _tag: "AccessUnknown"; readonly name: string; readonly message: string }
 
 /**
@@ -440,8 +441,9 @@ export const loadBoard = (
             })
           }
           const failure = reads.failure
-          // The repository's own read decides whether the user can read it. A listing refused
-          // after that read succeeded, as for a team without the issues unit, is a named failure.
+          // A 404 or 403 on the repository's own read means the user cannot read it. A listing
+          // refused after that read succeeded, as for a team without the issues unit, is a named
+          // failure.
           if (
             Result.isFailure(repo) &&
             (repo.failure._tag === "ForgejoNotFound" || repo.failure._tag === "ForgejoForbidden")
@@ -460,17 +462,17 @@ export const loadBoard = (
     }
 
     const readStartedAt = yield* Clock.currentTimeMillis
-    const reads = yield* Effect.forEach(board.repos, repoCards, {
+    const repoReads = yield* Effect.forEach(board.repos, repoCards, {
       concurrency: REPO_CONCURRENCY,
     })
     // The organization's listing shows only repositories the user can read. One listing serves
     // every repository, and one that fails leaves them all unnamed.
-    const visible = reads.some((read) => read._tag === "AccessUnknown")
+    const visible = repoReads.some((read) => read._tag === "AccessUnknown")
       ? yield* (unchanged ? Effect.succeed(orgRepos) : forgejo.orgRepos(token, query.org)).pipe(
           Effect.catchTag(FORGEJO_READ_ERRORS, () => Effect.succeed([])),
         )
       : []
-    const results = reads.map((read): RepoCards => {
+    const results = repoReads.map((read): RepoCards => {
       if (read._tag !== "AccessUnknown") return read
       const shown = visible.find((repo) => repo.name.toLowerCase() === read.name)
       return shown === undefined
