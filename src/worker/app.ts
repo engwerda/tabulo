@@ -28,6 +28,7 @@ import {
   listOrgs,
   loadBoard,
   moveCard,
+  parseBoardQuery,
   parseCardQuery,
   parseName,
   parseRepoQuery,
@@ -369,7 +370,7 @@ export const createApp = (dependencies: Dependencies) => {
   app.get("/api/board", (c) =>
     run(
       c,
-      Effect.flatMap(parseReposQuery(c.req.query("org"), c.req.query("repos")), (query) =>
+      Effect.flatMap(parseBoardQuery(c.req.query("org"), c.req.query("board")), (query) =>
         withAccessToken(getCookie(c, SESSION_COOKIE), (token, session) =>
           loadBoard(token, session.user.login, query).pipe(Effect.map((board) => c.json(board))),
         ),

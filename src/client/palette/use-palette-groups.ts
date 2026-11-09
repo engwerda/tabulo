@@ -186,7 +186,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
   // The board's own query; the palette only reads what the board has loaded.
   const board = useQuery({
     queryKey: boardQueryKey(onBoard ? (viewOrg ?? "") : "", parseRepos(selection).join(",")),
-    queryFn: () => fetchBoard(viewOrg ?? "", parseRepos(selection)),
+    queryFn: () => fetchBoard(viewOrg ?? ""),
     enabled: false,
   })
   const boardData = onBoard ? board.data : undefined

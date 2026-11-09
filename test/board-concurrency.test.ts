@@ -12,6 +12,7 @@ beforeEach(async () => {
     env.DB.prepare("DELETE FROM sessions"),
     env.DB.prepare("DELETE FROM oauth_states"),
     env.DB.prepare("DELETE FROM card_ranks"),
+    env.DB.prepare("DELETE FROM boards"),
   ])
 })
 
@@ -95,7 +96,7 @@ it("keeps the column and rank a move stored while a board read was in flight", a
   const ada = await signIn(plain, forgejo)
   const graceCookie = await signIn(plain, forgejo, "grace")
   // Seed every row.
-  await plain("/api/board?org=acme&repos=api,web", { headers: { cookie: ada } })
+  await plain("/api/board?org=acme", { headers: { cookie: ada } })
 
   const graceMoves = async () => {
     const response = await plain("/api/board/move", {
@@ -122,7 +123,7 @@ it("keeps the column and rank a move stored while a board read was in flight", a
     vars: { DB: hookRankReads(env.DB, graceMoves) },
   })
   stale = true
-  const response = await reader("/api/board?org=acme&repos=api,web", { headers: { cookie: ada } })
+  const response = await reader("/api/board?org=acme", { headers: { cookie: ada } })
   stale = false
   expect(response.status).toBe(200)
 
@@ -175,7 +176,7 @@ it("keeps the row a move stored for an issue that a board read in flight had not
     vars: { DB: hookRankReads(env.DB, graceMoves) },
   })
   stale = true
-  const response = await reader("/api/board?org=acme&repos=api,web", { headers: { cookie: ada } })
+  const response = await reader("/api/board?org=acme", { headers: { cookie: ada } })
   stale = false
   expect(response.status).toBe(200)
 
@@ -188,7 +189,7 @@ it("answers 409 without writing when the card left the column the client saw", a
   const clock = createFakeClock()
   const plain = tabulo(forgejo.fetch, { clock: clock.clock })
   const ada = await signIn(plain, forgejo)
-  await plain("/api/board?org=acme&repos=api,web", { headers: { cookie: ada } })
+  await plain("/api/board?org=acme", { headers: { cookie: ada } })
   // Grace moves api#1 to In Progress in Forgejo itself (or any client) after ada's board loaded.
   const issue = forgejo.issue("acme", "api", 1)
   if (issue === undefined) throw new Error("no api#1")

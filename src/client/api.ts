@@ -9,6 +9,7 @@ import {
   type CreateCardRequest,
   CreateCardResult,
   Dashboard,
+  DEFAULT_BOARD_ID,
   Epics,
   type InsightDays,
   Insights,
@@ -97,10 +98,8 @@ export const fetchOrgs = async (): Promise<ReadonlyArray<Org>> =>
 export const fetchOrgRepos = async (org: string): Promise<ReadonlyArray<OrgRepo>> =>
   decodeOrgRepos(await requestJson(`/api/orgs/${encodeURIComponent(org)}/repos`))
 
-export const fetchBoard = async (org: string, repos: ReadonlyArray<string>): Promise<Board> =>
-  decodeBoard(
-    await requestJson(`/api/board?${new URLSearchParams({ org, repos: repos.join(",") })}`),
-  )
+export const fetchBoard = async (org: string, board = DEFAULT_BOARD_ID): Promise<Board> =>
+  decodeBoard(await requestJson(`/api/board?${new URLSearchParams({ org, board })}`))
 
 const postJson = (path: string, body: unknown) =>
   requestJson(path, {

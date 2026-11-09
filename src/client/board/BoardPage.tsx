@@ -391,7 +391,7 @@ export const BoardPage = ({ org }: { org: string }) => {
   const settled = !dragging && !moving
   const board = useQuery({
     queryKey: boardKey,
-    queryFn: () => fetchBoard(org, selected),
+    queryFn: () => fetchBoard(org),
     enabled: hasSelection,
     refetchInterval: settled ? REFRESH_MS : false,
     refetchOnWindowFocus: settled,
@@ -671,7 +671,7 @@ export const BoardPage = ({ org }: { org: string }) => {
     (repos.data ?? []).filter((repo) => repo.archived).map((repo) => repo.name),
   )
   const failed = new Set((data?.failedRepos ?? []).map((failure) => failure.repo))
-  const creatableRepos = (data?.repos ?? []).filter(
+  const creatableRepos = (data?.board.repos ?? []).filter(
     (repo) => !archived.has(repo) && !failed.has(repo),
   )
   const canCreate = data?.viewerCanArrange === true && creatableRepos.length > 0
@@ -846,7 +846,7 @@ export const BoardPage = ({ org }: { org: string }) => {
   const allFailed =
     data !== undefined &&
     data.failedRepos.length > 0 &&
-    data.failedRepos.length === data.repos.length
+    data.failedRepos.length === data.board.repos.length
   const orgTitle =
     orgs.data?.find((candidate) => candidate.name.toLowerCase() === org.toLowerCase())?.fullName ||
     org
@@ -910,7 +910,7 @@ export const BoardPage = ({ org }: { org: string }) => {
   )
 
   return (
-    <RepoPaletteProvider repos={data?.repos ?? selected}>
+    <RepoPaletteProvider repos={data?.board.repos ?? selected}>
       <main className="flex h-[calc(100dvh-3.5rem-1px-var(--tab-bar-height))] min-h-0 flex-col">
         <h1 className="sr-only">Board for {orgTitle}</h1>
         {/*
@@ -1027,7 +1027,7 @@ export const BoardPage = ({ org }: { org: string }) => {
           </ErrorNotice>
         )}
         {failures.length > 0 &&
-          failures.length < (data?.repos.length ?? 0) &&
+          failures.length < (data?.board.repos.length ?? 0) &&
           dismissedFailures !== failureId && (
             <ErrorNotice
               tone="warning"

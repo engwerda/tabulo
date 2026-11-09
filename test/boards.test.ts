@@ -46,7 +46,8 @@ const session = async (
     otherUsers: [grace, outsider],
     ...overrides,
   })
-  const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock, vars })
+  const clock = createFakeClock()
+  const call = tabulo(forgejo.fetch, { clock: clock.clock, vars })
   const ada = await signIn(call, forgejo)
   const graceCookie = await signIn(call, forgejo, "grace")
   const linus = await signIn(call, forgejo, "linus")
@@ -57,7 +58,7 @@ const session = async (
     expect(response.status).toBe(200)
     return ((await response.json()) as { board: SavedBoard }).board
   }
-  return { forgejo, call, ada, grace: graceCookie, linus, get, post, create }
+  return { forgejo, clock, call, ada, grace: graceCookie, linus, get, post, create }
 }
 
 /** An update of `board` from `version` that changes only what `fields` names. */
@@ -533,7 +534,7 @@ describe("POST /api/boards/delete", () => {
   it("deletes a board and keeps the card order", async () => {
     const { get, post, create } = await session()
     const board = await create("Design")
-    await get(`/api/board?org=acme&repos=api,web`)
+    await get(`/api/board?org=acme`)
     const ranks = async () =>
       (await env.DB.prepare("SELECT * FROM card_ranks ORDER BY issue_key").all()).results
     const before = await ranks()
@@ -589,5 +590,395 @@ describe("POST /api/boards/delete", () => {
 
     expect(response.status).toBe(403)
     expect(await storedBoards()).toHaveLength(1)
+  })
+})
+
+type BoardAnswer = {
+  org: string
+  board: SavedBoard
+  viewerCanArrange: boolean
+  columns: Array<{ key: string }>
+  allColumns: Array<{ key: string }>
+  cards: Array<{ key: string; column: string; rank: string }>
+  failedRepos: Array<{ repo: string; message: string }>
+}
+
+const answer = async (response: Response) => {
+  expect(response.status).toBe(200)
+  return (await response.json()) as BoardAnswer
+}
+
+const keys = (columns: ReadonlyArray<{ key: string }>) => columns.map((column) => column.key)
+
+/** The cards of `column` in the order everyone sees them. */
+const order = (board: BoardAnswer, column: string) =>
+  board.cards
+    .filter((card) => card.column === column)
+    .sort((a, b) => (a.rank < b.rank ? -1 : a.rank > b.rank ? 1 : a.key < b.key ? -1 : 1))
+    .map((card) => card.key)
+
+const rankRows = async () =>
+  (
+    await env.DB.prepare(
+      "SELECT issue_key, column_key, rank FROM card_ranks ORDER BY issue_key",
+    ).all()
+  ).results
+
+const moveBody = (
+  repo: string,
+  number: number,
+  fromColumn: string,
+  toColumn: string,
+  afterKey: string | null = null,
+) => ({ org: "acme", repo, number, fromColumn, toColumn, afterKey, beforeKey: null })
+
+describe("GET /api/board", () => {
+  it("opens the default board with the organization's repositories that are not archived", async () => {
+    const org = boardsOrg()
+    org.repos.push(
+      boardRepo("old", { archived: true, issues: [boardIssue("old", 9, { title: "Archived" })] }),
+    )
+    const { get } = await session({ orgs: [org] })
+
+    const board = await answer(await get("/api/board?org=acme"))
+
+    expect(board.board).toEqual({
+      id: "default",
+      name: "Board",
+      repos: ["api", "secret", "Web"],
+      unreadableRepos: 0,
+      columns: [],
+      hidden: [],
+      version: 0,
+    })
+    expect(board.cards.map((card) => card.key).sort()).toEqual([
+      "acme/api#1",
+      "acme/api#2",
+      "acme/secret#4",
+      "acme/web#3",
+    ])
+    expect(await storedBoards()).toEqual([])
+  })
+
+  it("derives an unchanged default board's repositories for each viewer", async () => {
+    const { get, grace } = await session()
+
+    const response = await get("/api/board?org=acme", grace)
+
+    const text = await response.text()
+    expect(text).not.toMatch(/secret|Acquisition/i)
+    expect((JSON.parse(text) as BoardAnswer).board).toMatchObject({
+      repos: ["api", "Web"],
+      unreadableRepos: 0,
+    })
+  })
+
+  it("opens the default board without repositories when the organization has more than 20", async () => {
+    const repos = Array.from({ length: 21 }, (_, i) =>
+      boardRepo(`r${i}`, { issues: [boardIssue(`r${i}`, 1)] }),
+    )
+    const { get } = await session({ orgs: [acme(repos)] })
+
+    const board = await answer(await get("/api/board?org=acme"))
+
+    expect(board.board.repos).toEqual([])
+    expect(board.cards).toEqual([])
+  })
+
+  it("orders an unchanged default board's columns as BOARD_COLUMNS says and hides none", async () => {
+    const { get } = await session({}, { BOARD_COLUMNS: "Status/In Progress, Todo" })
+
+    const board = await answer(await get("/api/board?org=acme"))
+
+    expect(board.board).toMatchObject({ columns: ["Status/In Progress", "todo"], hidden: [] })
+    const laidOut = ["Status/In Progress", "todo", "Status/Backlog", "Status/Review", "done"]
+    expect(keys(board.allColumns)).toEqual(laidOut)
+    expect(keys(board.columns)).toEqual(laidOut)
+  })
+
+  it("opens another board by its id, whatever its case, with its own repositories", async () => {
+    const { get, create } = await session()
+    const design = await create("Design", ["web"])
+
+    const board = await answer(await get(`/api/board?org=acme&board=${design.id.toUpperCase()}`))
+
+    expect(board.board).toMatchObject({ id: design.id, name: "Design", repos: ["Web"] })
+    expect(board.cards.map((card) => card.key)).toEqual(["acme/web#3"])
+  })
+
+  it("ignores the old repos parameter", async () => {
+    const { get } = await session()
+
+    const board = await answer(await get("/api/board?org=acme&repos=api"))
+
+    expect(board.board.repos).toEqual(["api", "secret", "Web"])
+    expect(board.cards.map((card) => card.key)).toContain("acme/web#3")
+  })
+
+  it.each([
+    ["an unknown board", "abcd1234"],
+    ["text that cannot be a board id", "no/such board"],
+    ["an empty board id", ""],
+  ])("answers 404 board_not_found to %s once Forgejo shows the organization", async (_, id) => {
+    const { forgejo, get } = await session()
+
+    const response = await get(`/api/board?org=acme&board=${encodeURIComponent(id)}`)
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toEqual({
+      error: "There is no such board",
+      code: "board_not_found",
+    })
+    expect(forgejo.requests.some((r) => r.path === "/api/v1/orgs/acme")).toBe(true)
+  })
+
+  it.each([
+    ["the default board", "default"],
+    ["a stored board", "stored"],
+    ["an unknown board", "abcd1234"],
+    ["text that cannot be a board id", "no/such board"],
+  ])(
+    "answers 404 without board_not_found for %s of an organization Forgejo does not show",
+    async (_, which) => {
+      const { get, create, linus } = await session({
+        orgs: [{ ...boardsOrg(), hiddenFrom: ["linus"] }],
+      })
+      const id = which === "stored" ? (await create("Design")).id : which
+
+      const response = await get(`/api/board?org=acme&board=${encodeURIComponent(id)}`, linus)
+
+      expect(response.status).toBe(404)
+      expect(await response.json()).toEqual({ error: "Not found in Forgejo, or you cannot see it" })
+    },
+  )
+
+  it("leaves the cards of hidden columns off the board and keeps their ranks", async () => {
+    const { clock, get, post } = await session()
+    await get("/api/board?org=acme")
+    const before = await rankRows()
+    clock.advance(60_000)
+    await post(
+      "/api/boards/update",
+      update("default", 0, {
+        repos: ["api", "web"],
+        hidden: ["Status/In Progress", "Status/Nope"],
+      }),
+    )
+
+    const board = await answer(await get("/api/board?org=acme"))
+
+    expect(board.board.hidden).toEqual(["Status/In Progress", "Status/Nope"])
+    expect(keys(board.allColumns)).toEqual([
+      "todo",
+      "Status/Backlog",
+      "Status/In Progress",
+      "Status/Review",
+      "done",
+    ])
+    expect(keys(board.columns)).toEqual(["todo", "Status/Backlog", "Status/Review", "done"])
+    expect(board.cards.map((card) => card.key).sort()).toEqual(["acme/api#1", "acme/web#3"])
+    expect(before).toContainEqual(expect.objectContaining({ issue_key: "acme/api#2" }))
+    expect(await rankRows()).toEqual(before)
+  })
+
+  it("ranks a card that reaches a hidden column, so it keeps its place once shown", async () => {
+    const { forgejo, clock, get, post } = await session()
+    await post(
+      "/api/boards/update",
+      update("default", 0, { repos: ["api", "web"], hidden: ["Status/In Progress"] }),
+    )
+    await get("/api/board?org=acme")
+    clock.advance(60_000)
+    const issue = forgejo.issue("acme", "api", 1)
+    if (issue === undefined) throw new Error("fixture has no acme/api#1")
+    issue.labels = [inProgress]
+
+    const hidden = await answer(await get("/api/board?org=acme"))
+    const ranked = (await rankRows()).find((row) => row.issue_key === "acme/api#1")
+    await post("/api/boards/update", update("default", 1, { repos: ["api", "web"] }))
+    const shown = await answer(await get("/api/board?org=acme"))
+
+    expect(hidden.cards.map((card) => card.key)).toEqual(["acme/web#3"])
+    expect(ranked).toMatchObject({ column_key: "Status/In Progress" })
+    expect(shown.cards.find((card) => card.key === "acme/api#1")).toMatchObject({
+      column: "Status/In Progress",
+      rank: ranked?.rank,
+    })
+  })
+
+  it("moves a card into a hidden column, which leaves it off the board", async () => {
+    const { forgejo, get, post } = await session()
+    await post("/api/boards/update", update("default", 0, { repos: ["api"], hidden: ["done"] }))
+    await get("/api/board?org=acme")
+
+    const moved = await post("/api/board/move", moveBody("api", 1, "todo", "done"))
+
+    expect(moved.status).toBe(200)
+    expect(forgejo.issue("acme", "api", 1)?.state).toBe("closed")
+    const board = await answer(await get("/api/board?org=acme"))
+    expect(board.cards.map((card) => card.key)).toEqual(["acme/api#2"])
+    expect((await rankRows()).find((row) => row.issue_key === "acme/api#1")).toMatchObject({
+      column_key: "done",
+    })
+  })
+
+  it("skips a stored key without a column and places it once the organization has the label", async () => {
+    const { get, post } = await session()
+    await post(
+      "/api/boards/update",
+      update("default", 0, { columns: ["Status/Shipped", "done", "Status/Review", "todo"] }),
+    )
+
+    const before = await answer(await get("/api/board?org=acme"))
+    const withLabel = boardsOrg()
+    withLabel.labels = [...withLabel.labels, { ...backlog, id: 40, name: "Status/Shipped" }]
+    const later = createFakeForgejo({ orgs: [withLabel] })
+    const laterCall = tabulo(later.fetch, { clock: createFakeClock().clock })
+    const after = await answer(
+      await laterCall("/api/board?org=acme", {
+        headers: { cookie: await signIn(laterCall, later) },
+      }),
+    )
+
+    expect(before.board.columns).toEqual(["Status/Shipped", "done", "Status/Review", "todo"])
+    // Status labels the order does not list come before Done.
+    expect(keys(before.allColumns)).toEqual([
+      "Status/Backlog",
+      "Status/In Progress",
+      "done",
+      "Status/Review",
+      "todo",
+    ])
+    expect(keys(after.allColumns)).toEqual([
+      "Status/Shipped",
+      "Status/Backlog",
+      "Status/In Progress",
+      "done",
+      "Status/Review",
+      "todo",
+    ])
+  })
+})
+
+describe("repositories a member cannot read", () => {
+  const storeAllThree = async (post: (path: string, body: unknown) => Promise<Response>) => {
+    const stored = await post(
+      "/api/boards/update",
+      update("default", 0, { repos: ["api", "secret", "web"] }),
+    )
+    expect(stored.status).toBe(200)
+  }
+
+  it("are left out of every answer unnamed, counted, and kept by another member's change", async () => {
+    const { get, post, grace } = await session()
+    await storeAllThree(post)
+    const unnamed = async (response: Response) => {
+      expect(response.status).toBe(200)
+      const text = await response.text()
+      expect(text).not.toMatch(/secret|Acquisition/i)
+      return JSON.parse(text) as { board: SavedBoard }
+    }
+
+    const graceBoard = (await unnamed(await get("/api/board?org=acme", grace))) as BoardAnswer
+    await unnamed(await get("/api/boards?org=acme", grace))
+    const graceUpdate = await unnamed(
+      await post("/api/boards/update", update("default", 1, { repos: ["web"] }), grace),
+    )
+    const adaBoard = await answer(await get("/api/board?org=acme"))
+
+    expect(graceBoard.board).toMatchObject({ repos: ["api", "Web"], unreadableRepos: 1 })
+    expect(graceBoard.failedRepos).toEqual([])
+    expect(graceBoard.cards.map((card) => card.key).sort()).toEqual([
+      "acme/api#1",
+      "acme/api#2",
+      "acme/web#3",
+    ])
+    expect(graceUpdate.board).toMatchObject({ repos: ["Web"], unreadableRepos: 1, version: 2 })
+    expect(adaBoard.board).toMatchObject({ repos: ["Web", "secret"], unreadableRepos: 0 })
+    expect(adaBoard.cards.map((card) => card.key).sort()).toEqual(["acme/secret#4", "acme/web#3"])
+  })
+
+  it("keep their rank rows when a member who cannot read them loads the board", async () => {
+    const { get, post, grace } = await session()
+    await storeAllThree(post)
+    await get("/api/board?org=acme")
+    const before = await rankRows()
+
+    await answer(await get("/api/board?org=acme", grace))
+
+    expect(before).toContainEqual(expect.objectContaining({ issue_key: "acme/secret#4" }))
+    expect(await rankRows()).toEqual(before)
+  })
+
+  it("count toward the 20 repositories until a member drops them", async () => {
+    const names = Array.from({ length: 20 }, (_, i) => `r${i}`)
+    const repos = [
+      ...names.map((name) => boardRepo(name)),
+      boardRepo("secret", { hiddenFrom: ["grace"] }),
+    ]
+    const { post, grace } = await session({ orgs: [acme(repos)] })
+    const stored = await post(
+      "/api/boards/update",
+      update("default", 0, { repos: [...names.slice(0, 19), "secret"] }),
+    )
+    expect(stored.status).toBe(200)
+
+    const tooMany = await post("/api/boards/update", update("default", 1, { repos: names }), grace)
+    const tooManyText = await tooMany.text()
+    const kept = await post(
+      "/api/boards/update",
+      update("default", 1, { repos: names.slice(0, 19) }),
+      grace,
+    )
+    const dropped = await post(
+      "/api/boards/update",
+      update("default", 2, { repos: names, dropUnreadable: true }),
+      grace,
+    )
+
+    expect(tooMany.status).toBe(400)
+    expect(tooManyText).toContain("1 repositories you cannot read")
+    expect(tooManyText).not.toContain("secret")
+    expect(await kept.json()).toMatchObject({ board: { unreadableRepos: 1, version: 2 } })
+    expect(await dropped.json()).toMatchObject({
+      board: { repos: names, unreadableRepos: 0, version: 3 },
+    })
+    expect(await storedBoards()).toEqual([
+      expect.objectContaining({ repos: JSON.stringify(names) }),
+    ])
+  })
+
+  it("are removed when a member asks to drop them", async () => {
+    const { get, post, grace } = await session()
+    await storeAllThree(post)
+
+    const response = await post(
+      "/api/boards/update",
+      update("default", 1, { repos: ["web"], dropUnreadable: true }),
+      grace,
+    )
+    const adaBoard = await answer(await get("/api/board?org=acme"))
+
+    expect(await response.json()).toMatchObject({ board: { repos: ["Web"], unreadableRepos: 0 } })
+    expect(adaBoard.board.repos).toEqual(["Web"])
+  })
+})
+
+describe("across boards", () => {
+  it("shows a move made from one board on every board, in one order", async () => {
+    const { get, post, create } = await session()
+    const apiOnly = await create("API", ["api"])
+    await get(`/api/board?org=acme&board=${apiOnly.id}`)
+
+    const moved = await post(
+      "/api/board/move",
+      moveBody("api", 1, "todo", "Status/In Progress", "acme/api#2"),
+    )
+
+    expect(moved.status).toBe(200)
+    const onApiBoard = await answer(await get(`/api/board?org=acme&board=${apiOnly.id}`))
+    const onDefault = await answer(await get("/api/board?org=acme"))
+    expect(order(onApiBoard, "Status/In Progress")).toEqual(["acme/api#2", "acme/api#1"])
+    expect(order(onDefault, "Status/In Progress")).toEqual(["acme/api#2", "acme/api#1"])
   })
 })

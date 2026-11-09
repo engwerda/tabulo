@@ -206,13 +206,17 @@ export type DeleteBoardRequest = typeof DeleteBoardRequest.Type
 
 export const Board = Schema.Struct({
   org: Schema.String,
-  repos: Schema.Array(Schema.String),
+  board: SavedBoard,
   /**
    * Whether the viewer may move and reorder cards: card order is Tabulo's data, so only
    * members of the organization arrange it. Forgejo still decides each issue write.
    */
   viewerCanArrange: Schema.Boolean,
+  /** The columns the board shows, in its order. */
   columns: Schema.Array(BoardColumn),
+  /** Every column in the board's order, hidden ones included. */
+  allColumns: Schema.Array(BoardColumn),
+  /** The cards of the shown columns. */
   cards: Schema.Array(BoardCard),
   failedRepos: Schema.Array(Schema.Struct({ repo: Schema.String, message: Schema.String })),
 })
