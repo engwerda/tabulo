@@ -25,6 +25,7 @@ export const useBoardWrites = (org: string) => {
     },
   })
   const remove = useMutation({
+    mutationKey: [...boardWriteKey(org), "delete"],
     mutationFn: deleteBoard,
     onSuccess: (_, { board }) => {
       forgetBoard(org, board)

@@ -56,12 +56,12 @@ major version.
   drop neighbours, the rollback of a failed move), and `board-settings.ts` the board settings
   dialog's (the draft, its requests, and the rebase after a 409). The worker tsconfig includes
   both so tests can import them.
-- A client write that changes what boards show (a card move, new issue, card edit, comment, or
-  board settings) runs under `boardWriteKey(org)`. `syncBoardsWithWrites` in
+- A client write that changes what boards show (a card move, new issue, card edit, comment,
+  board settings, or board delete) runs under `boardWriteKey(org)`. `syncBoardsWithWrites` in
   `src/client/board/board-sync.ts` then stops the organization's board reads when it starts,
-  and reads every board of the organization again once its last pending write ends. A refresh
-  does nothing while `writingBoards` is true, and the settings dialog's 409 reload reads past
-  the cache.
+  and reads every board of the organization again once its last pending write ends. While
+  `writingBoards` is true a refresh of a loaded board does nothing, and the settings dialog's
+  409 reload reads past the cache.
 - `src/client/scope/` owns the organization scope of the org-level views: `ORG_VIEWS` in
   `views.ts` lists them with their routes, `orgViewHref` builds every link to a view,
   `useRepoSelection` owns the `?repos=` of insights and epics, `remembered.ts` owns the remembered

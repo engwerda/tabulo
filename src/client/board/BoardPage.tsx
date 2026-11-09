@@ -463,11 +463,13 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
     queryFn: () => fetchBoard(org, boardId),
     refetchInterval: settled ? REFRESH_MS : false,
     refetchOnWindowFocus: settled,
+    refetchOnReconnect: settled,
+    refetchOnMount: settled,
   })
   // While a write is pending its end reads the boards again; an answer read now predates the
-  // write and would put a moved card back.
+  // write and would put a moved card back. With no board loaded there is nothing to put back.
   const refresh = () => {
-    if (!writingBoards(queryClient, org)) void board.refetch()
+    if (board.data === undefined || !writingBoards(queryClient, org)) void board.refetch()
   }
   const boardMissing =
     board.error instanceof RequestFailed && board.error.code === "board_not_found"
@@ -568,8 +570,8 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
       })
     },
     onError: (error, { before, request, cardMove, undo }) => {
-      // A partly applied move changed Forgejo, so the refetch below shows the truth; putting the
-      // card back would show a state that no longer exists.
+      // A partly applied move changed Forgejo, so the read after the organization's writes end
+      // shows the truth; putting the card back would show a state that no longer exists.
       if (error instanceof RequestFailed && error.code === "move_partly_applied") {
         toast({
           tone: "error",
