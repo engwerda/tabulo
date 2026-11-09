@@ -14,6 +14,7 @@ import {
   setColumnHidden,
   toCreateRequest,
   toUpdateRequest,
+  withColumnOrder,
 } from "../src/client/board/board-settings.ts"
 import type { Board, BoardCard, BoardColumn, SavedBoard } from "../src/shared/api.ts"
 
@@ -375,5 +376,52 @@ describe("applySavedBoard", () => {
     }
     const shown = applySavedBoard(hiding, saved({ hidden: [], version: 5 }))
     expect(keys(shown.columns)).toEqual(["todo", "Status/In Progress", "Status/Review", "done"])
+  })
+})
+
+describe("withColumnOrder", () => {
+  const board: Board = {
+    org: "acme",
+    board: saved({ hidden: ["Status/Review"] }),
+    viewerCanArrange: true,
+    columns: [TODO, PROGRESS, DONE],
+    allColumns: [TODO, PROGRESS, REVIEW, DONE],
+    cards: [],
+    failedRepos: [],
+  }
+
+  it("orders every column and keeps showing the same ones", () => {
+    const arranged = withColumnOrder(board, ["done", "Status/Review", "todo", "Status/In Progress"])
+    expect(keys(arranged.allColumns)).toEqual([
+      "done",
+      "Status/Review",
+      "todo",
+      "Status/In Progress",
+    ])
+    expect(keys(arranged.columns)).toEqual(["done", "todo", "Status/In Progress"])
+    expect(arranged.board).toBe(board.board)
+  })
+
+  it("keeps a column that appeared since after the column it follows and drops a gone one", () => {
+    const grown = {
+      ...board,
+      columns: [TODO, BLOCKED, PROGRESS, DONE],
+      allColumns: [TODO, BLOCKED, PROGRESS, REVIEW, DONE],
+    }
+    const arranged = withColumnOrder(grown, [
+      "Status/Gone",
+      "done",
+      "todo",
+      "Status/In Progress",
+      "Status/Review",
+    ])
+    expect(keys(arranged.allColumns)).toEqual([
+      "done",
+      "todo",
+      "Status/Blocked",
+      "Status/In Progress",
+      "Status/Review",
+    ])
+    expect(keys(arranged.columns)).toEqual(["done", "todo", "Status/Blocked", "Status/In Progress"])
   })
 })

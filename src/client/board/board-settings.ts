@@ -201,15 +201,21 @@ export const describeFields = (fields: ReadonlyArray<DraftField>) => {
     : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`
 }
 
+export const withColumnOrder = (board: Board, order: ReadonlyArray<string>): Board => {
+  const byKey = new Map(board.allColumns.map((column) => [column.key, column]))
+  const shown = new Set(board.columns.map((column) => column.key))
+  const allColumns = withCurrentColumns(order, [...byKey.keys()]).flatMap(
+    (key) => byKey.get(key) ?? [],
+  )
+  return { ...board, allColumns, columns: allColumns.filter((column) => shown.has(column.key)) }
+}
+
 export const applySavedBoard = (
   board: Board,
   saved: SavedBoard,
   order: ReadonlyArray<string> = board.allColumns.map((column) => column.key),
 ): Board => {
-  const byKey = new Map(board.allColumns.map((column) => [column.key, column]))
-  const allColumns = withCurrentColumns(order, [...byKey.keys()]).flatMap(
-    (key) => byKey.get(key) ?? [],
-  )
+  const { allColumns } = withColumnOrder(board, order)
   const hidden = new Set(saved.hidden)
   const repos = new Set(saved.repos.map((name) => name.toLowerCase()))
   return {
