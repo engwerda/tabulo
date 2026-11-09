@@ -784,6 +784,22 @@ describe("GET /api/board", () => {
     },
   )
 
+  it("deletes the rank row of an issue gone from a repository whose name Forgejo capitalizes", async () => {
+    const { forgejo, clock, get } = await session()
+    await get("/api/board?org=acme")
+    const before = await rankRows()
+    const closedLongAgo = forgejo.issue("acme", "Web", 3)
+    if (closedLongAgo === undefined) throw new Error("fixture has no acme/Web#3")
+    closedLongAgo.state = "closed"
+    closedLongAgo.closed_at = "2026-09-01T00:00:00Z"
+    clock.advance(60_000)
+
+    await answer(await get("/api/board?org=acme"))
+
+    expect(before).toContainEqual(expect.objectContaining({ issue_key: "acme/web#3" }))
+    expect(await rankRows()).toEqual(before.filter((row) => row.issue_key !== "acme/web#3"))
+  })
+
   it("leaves the cards of hidden columns off the board and keeps their ranks", async () => {
     const { clock, get, post } = await session()
     await get("/api/board?org=acme")
