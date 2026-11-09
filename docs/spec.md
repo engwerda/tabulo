@@ -461,41 +461,41 @@ epics closed within `BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
   column. Every closed child is Done, however old. Pull request children are marked as pull
   requests. Progress reports `total`, `done`, and `byColumn` keyed by the board's column keys.
   Unavailable references stay in `total` but do not enter any column or count as Done.
-- **Reads.** The endpoint reads organization labels, each repository's metadata, its open
-  issues, its closed issues updated since the Done window, and each epic's timeline. Epic bodies
-  and timeline issues use their own Forgejo schemas; the board's decoder and payload are
-  unchanged. On the timeline, Forgejo's `X-Total-Count` counts only that page, and Forgejo drops
+- **Reads.** The endpoint reads organization labels, each repository's metadata, its open issues,
+  its closed issues updated since the Done window, and each epic's timeline. Epic bodies and
+  timeline issues use their own Forgejo schemas; the board's decoder and payload are unchanged. On
+  the timeline, Forgejo's `X-Total-Count` counts only that page, and Forgejo drops
   cross-repository references the user cannot read after it cuts the page. So Tabulo ignores the
   header and reads a timeline, 50 events a page, at most four timelines at a time, until a page
   comes back empty. A page whose 50 events are all references the user cannot read comes back
   empty too, so 50 such references in a row can end that timeline's read early, and Tabulo does
-  not report it. Listed and timeline issues resolve children where possible, so a linked child never
-  needs a lookup. Missing listed children, including older closed issues and pull requests, are
-  read individually with at most four concurrent requests and 200 unique lookups per endpoint
-  call. Duplicate references across epics share that lookup. A 403, 404, or lookup beyond that
-  cap or the page budget becomes `{ _tag: "Unavailable", ref }`. A timeline that fails for any
-  reason but an authentication failure leaves that epic's timeline unread, because the timeline
-  is read for every epic on every refresh. Other child failures fail the request. Failed
-  repositories enter `failedRepos`; an authentication failure still ends the request. This
-  endpoint writes no Forgejo data or card ranks.
-- **Page budget.** The organization labels, repository listings, epic timelines, and child
-  lookups of one request share the 800-page budget that Insights uses, in that order. As on
-  Insights, a retry after a token refresh reads only the pages the first attempt left, and it
-  reads the labels again first. The columns depend on every label, so when the labels do not
-  fit in the pages left, the request fails with HTTP 503 and
-  `{ error: "Too many Forgejo pages for one request; choose fewer repositories" }`. A
-  repository takes an equal share of the pages left when it starts and gives back what it does
-  not use. Then one page is set aside for each listed child reference that the listings did not
-  resolve, up to 200, so the lookups keep the pages they had before timelines were read. The
-  timelines take one page each from the rest as they read it, until their empty page, their
-  20th page (1,000 events), or until no pages are left. The set-aside pages then go back, and
-  each child lookup takes one page when it starts. A listing that runs out of pages is named in
-  `incomplete.listings`, and epics in its unread part are missing. An epic whose timeline Tabulo
-  did not read to its empty page, because the pages ran out, it reached 20 pages, or the
-  timeline failed, is named in `incomplete.backlinks`; children that name it as their parent may
-  be missing. `incomplete.children` counts the listed child references that
-  were not looked up. With at most 20 repositories read on each of two attempts and one token
-  refresh, a request makes at most 842 Forgejo requests.
+  not report it. Listed and timeline issues resolve children where possible, so a linked child
+  never needs a lookup. Missing listed children, including older closed issues and pull requests,
+  are read individually with at most four concurrent requests and 200 unique lookups per endpoint
+  call. Duplicate references across epics share that lookup. A 403, 404, or lookup beyond that cap
+  or the page budget becomes `{ _tag: "Unavailable", ref }`. A timeline that fails for any reason
+  but an authentication failure leaves that epic's timeline unread, because the timeline is read
+  for every epic on every refresh. Other child failures fail the request. Failed repositories
+  enter `failedRepos`; an authentication failure still ends the request. This endpoint writes no
+  Forgejo data or card ranks.
+- **Page budget.** The organization labels, repository listings, epic timelines, and child lookups
+  of one request share the 800-page budget that Insights uses, in that order. As on Insights, a
+  retry after a token refresh reads only the pages the first attempt left, and it reads the labels
+  again first. The columns depend on every label, so when the labels do not fit in the pages left,
+  the request fails with HTTP 503 and
+  `{ error: "Too many Forgejo pages for one request; choose fewer repositories" }`. A repository
+  takes an equal share of the pages left when it starts and gives back what it does not use. Then
+  one page is set aside for each listed child reference that the listings did not resolve, up to
+  200, so the lookups keep the pages they had before timelines were read. The timelines take one
+  page each from the rest as they read it, until their empty page, their 20th page (1,000 events),
+  or until no pages are left. The set-aside pages then go back, and each child lookup takes one
+  page when it starts. A listing that runs out of pages is named in `incomplete.listings`, and
+  epics in its unread part are missing. An epic whose timeline Tabulo did not read to its empty
+  page, because the pages ran out, it reached 20 pages, or the timeline failed, is named in
+  `incomplete.backlinks`; children that name it as their parent may be missing.
+  `incomplete.children` counts the listed child references that were not looked up. With at most
+  20 repositories read on each of two attempts and one token refresh, a request makes at most 842
+  Forgejo requests.
 - **Display.** Each epic exposes its issue details and board column, progress segments and
   legend, completion percentage, and an expandable child list. The response is
   `{ org, repos, columns, epics, failedRepos, incomplete }`, with `incomplete` as

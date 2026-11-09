@@ -326,14 +326,14 @@ not make a child.
 
 A bare number belongs to the repository of the issue that writes it; `web#34` belongs to the
 same organization. In the epic's description, only the first reference of a list item counts,
-and pull request references count too. Every list counts, so write related or blocking issues
-as sentences, not as items that start with the reference. The one exception is a sub-epic's own
-parent: the issue a `## Parent` heading or a `Parent:` line names is not its child. Write a checkbox plainly, as Forgejo
-shows a checkbox only then: `\[ ]` and `**[ ]**` are text, so their items list nothing. Tabulo
-reads descriptions as CommonMark, as Forgejo renders them, so code, HTML comments, and Forgejo
-dependencies do not create links. An HTML comment that starts a line and is never closed hides
-the rest of the body. Tabulo keeps 200 unique children: the listed ones in body order first,
-then the others oldest first.
+and pull request references count too. Every list counts, so write related or blocking issues as
+sentences, not as items that start with the reference. The one exception is a sub-epic's own
+parent: the issue a `## Parent` heading or a `Parent:` line names is not its child. Write a
+checkbox plainly, as Forgejo shows a checkbox only then: `\[ ]` and `**[ ]**` are text, so their
+items list nothing. Tabulo reads descriptions as CommonMark, as Forgejo renders them, so code,
+HTML comments, and Forgejo dependencies do not create links. An HTML comment that starts a line
+and is never closed hides the rest of the body. Tabulo keeps 200 unique children: the listed
+ones in body order first, then the others oldest first.
 
 Open **Epics**, choose an organization and repositories, then expand a card to see its children.
 The address `/epics/<org>?repos=<repo>,<repo>` keeps your selection, filters, and sort order,
