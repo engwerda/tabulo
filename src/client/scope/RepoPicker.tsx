@@ -64,6 +64,8 @@ type RepoChecklistProps = {
   /** What the boxes choose, for assistive technology. */
   readonly legend: string
   readonly searchRef?: Ref<HTMLInputElement>
+  /** The id of the text that says what is wrong with the choice, once it is shown. */
+  readonly searchDescribedBy?: string | undefined
 }
 
 /**
@@ -76,6 +78,7 @@ export const RepoChecklist = ({
   onChange,
   legend,
   searchRef,
+  searchDescribedBy,
 }: RepoChecklistProps) => {
   const [search, setSearch] = useState("")
   const selectAll = useRef<HTMLInputElement>(null)
@@ -112,6 +115,7 @@ export const RepoChecklist = ({
         value={search}
         onChange={setSearch}
         inputRef={searchRef ?? null}
+        describedBy={searchDescribedBy}
         inMenu
       />
       {visible.length > 0 && (

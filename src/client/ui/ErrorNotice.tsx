@@ -16,6 +16,7 @@ export const ErrorNotice = ({
   retrying = false,
   tone = "error",
   bare = false,
+  announce = true,
   className = "",
 }: {
   title: ReactNode
@@ -26,10 +27,12 @@ export const ErrorNotice = ({
   /** "warning" for a partial result, such as some repositories that could not be read. */
   tone?: "error" | "warning"
   bare?: boolean
+  /** False when a live region that is already on the page announces it instead. */
+  announce?: boolean
   className?: string
 }) => (
   <div
-    role={tone === "error" ? "alert" : "status"}
+    role={announce ? (tone === "error" ? "alert" : "status") : undefined}
     className={`flex flex-wrap items-center gap-x-4 gap-y-3 ${bare ? "" : `${cardClass} px-4 py-4 sm:px-5`} ${className}`}
   >
     <div className="flex min-w-0 flex-1 basis-60 items-start gap-3">

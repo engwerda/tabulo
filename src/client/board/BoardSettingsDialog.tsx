@@ -50,6 +50,7 @@ const dangerButton =
 const quietDangerButton =
   "inline-flex h-8 pointer-coarse:h-11 items-center justify-center whitespace-nowrap rounded-lg px-2.5 text-sm font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
 const sectionHint = "mt-0.5 text-xs text-zinc-500 dark:text-zinc-400"
+const CLASH_TITLE = "Someone else saved this board while you edited it"
 
 /**
  * A board's settings, or a new board's, with one Save: the update replaces every field under one
@@ -95,6 +96,15 @@ export const BoardSettingsDialog = ({
   } | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   const [problemShown, setProblemShown] = useState(false)
+  // Focus moves to the field after it says what is wrong with it, so a screen reader reads that.
+  const [focusRequest, setFocusRequest] = useState<{ readonly field: "name" | "repos" } | null>(
+    null,
+  )
+  useEffect(() => {
+    if (focusRequest === null) return
+    if (focusRequest.field === "name") nameInput.current?.focus()
+    else (repoSearch.current ?? reposSection.current)?.focus()
+  }, [focusRequest])
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   // The confirmation takes focus on its safe choice, and gives it back when it goes away.
   const confirmShown = useRef(false)
@@ -224,17 +234,12 @@ export const BoardSettingsDialog = ({
       )
   }
 
-  const focusField = (field: "name" | "repos") => {
-    if (field === "name") nameInput.current?.focus()
-    else (repoSearch.current ?? reposSection.current)?.focus()
-  }
-
   const save = (event: FormEvent) => {
     event.preventDefault()
     if (pending) return
     if (problem !== null) {
       setProblemShown(true)
-      focusField(problem.field)
+      setFocusRequest({ field: problem.field })
       return
     }
     setFailure(null)
@@ -267,6 +272,20 @@ export const BoardSettingsDialog = ({
       )
   }
 
+  const reposProblem = problemShown && problem?.field === "repos" ? `${id}-problem` : undefined
+  const clashDetail =
+    clash === null
+      ? ""
+      : [
+          clash.theirChanges.length === 0
+            ? ""
+            : `They changed ${describeFields(clash.theirChanges)}.`,
+          clash.during === "save"
+            ? "Your changes are kept; check them and save again."
+            : "Check the board, and delete it again if you still want to.",
+        ]
+          .filter((part) => part !== "")
+          .join(" ")
   const chosen = draft.repos.length + kept
   const rows = base === null ? [] : columnRows(base.allColumns, draft)
   const shown = rows.filter((row) => !row.hidden).length
@@ -333,19 +352,14 @@ export const BoardSettingsDialog = ({
           </button>
         </div>
 
+        {/* Mounted from the start, so a screen reader announces the notice when its text comes. */}
+        <p role="status" className="sr-only">
+          {clash === null ? "" : `${CLASH_TITLE}. ${clashDetail}`}
+        </p>
         <div ref={body} className="scroll-thin min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-4">
           {clash !== null && (
-            <ErrorNotice tone="warning" title="Someone else saved this board while you edited it">
-              {[
-                clash.theirChanges.length === 0
-                  ? ""
-                  : `They changed ${describeFields(clash.theirChanges)}.`,
-                clash.during === "save"
-                  ? "Your changes are kept; check them and save again."
-                  : "Check the board, and delete it again if you still want to.",
-              ]
-                .filter((part) => part !== "")
-                .join(" ")}
+            <ErrorNotice tone="warning" title={CLASH_TITLE} announce={false}>
+              {clashDetail}
             </ErrorNotice>
           )}
 
@@ -375,6 +389,7 @@ export const BoardSettingsDialog = ({
             ref={reposSection}
             tabIndex={-1}
             aria-labelledby={`${id}-repos`}
+            aria-describedby={reposProblem}
             className="focus:outline-none"
           >
             <div className="flex items-baseline justify-between gap-3">
@@ -424,6 +439,7 @@ export const BoardSettingsDialog = ({
                   onChange={(repos) => setDraft((current) => ({ ...current, repos }))}
                   legend="Repositories of the board"
                   searchRef={repoSearch}
+                  searchDescribedBy={reposProblem}
                 />
               )}
             </div>
