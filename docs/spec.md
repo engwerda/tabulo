@@ -193,8 +193,8 @@ column for is kept and skipped when the board is read. The server:
    name that its author could not see, and to a 51st board of the organization.
 5. Keeps, in an update, the stored repositories the user cannot read, in addition to `repos`,
    and answers 400 when the two together are more than 20. With `dropUnreadable: true` it
-   stores only `repos`. A repository that was deleted or transferred is unreadable to
-   everyone, so this is the way to free its place.
+   stores only `repos`. A repository that was deleted, renamed, or transferred is unreadable
+   to everyone under its stored name, so this is the way to free its place.
 
 `GET /api/boards` and `GET /api/board` answer 404 when Forgejo does not show the organization
 to the user, and `GET /api/board` also, with the code `board_not_found`, when Forgejo shows the

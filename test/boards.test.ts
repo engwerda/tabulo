@@ -981,6 +981,29 @@ describe("repositories a member cannot read", () => {
     })
   })
 
+  it("include a renamed repository's old name, whose path Forgejo redirects to the new one", async () => {
+    const { forgejo, get, post } = await session()
+    const stored = await post("/api/boards/update", update("default", 0, { repos: ["api", "web"] }))
+    expect(stored.status).toBe(200)
+    forgejo.renameRepo("acme", "Web", "site")
+
+    const renamed = await answer(await get("/api/board?org=acme"))
+    const saved = await post("/api/boards/update", update("default", 1, { repos: ["api", "site"] }))
+    const both = await answer(await get("/api/board?org=acme"))
+
+    expect(renamed.board).toMatchObject({ repos: ["api"], unreadableRepos: 1 })
+    expect(renamed.cards.map((card) => card.key).sort()).toEqual(["acme/api#1", "acme/api#2"])
+    expect(await saved.json()).toMatchObject({
+      board: { repos: ["api", "site"], unreadableRepos: 1 },
+    })
+    expect(both.board).toMatchObject({ repos: ["api", "site"], unreadableRepos: 1 })
+    expect(both.cards.map((card) => card.key).sort()).toEqual([
+      "acme/api#1",
+      "acme/api#2",
+      "acme/site#3",
+    ])
+  })
+
   it("keep their rank rows when a member who cannot read them loads the board", async () => {
     const { get, post, grace } = await session()
     await storeAllThree(post)

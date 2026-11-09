@@ -419,6 +419,14 @@ export const loadBoard = (
               return Effect.fail(read.failure)
             }
           }
+          // Forgejo answers a renamed or transferred repository's old path with the repository it
+          // is now, which the stored name no longer names.
+          if (
+            Result.isSuccess(repo) &&
+            repo.success.full_name.toLowerCase() !== `${query.org}/${name}`
+          ) {
+            return Effect.succeed({ _tag: "Unreadable" })
+          }
           const reads = Result.all([repo, open, closed])
           if (Result.isSuccess(reads)) {
             const [forgejoRepo, openIssues, closedIssues] = reads.success

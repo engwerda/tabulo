@@ -347,6 +347,8 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     orgs.find((org) => org.name.toLowerCase() === name.toLowerCase())
   const findRepo = (owner: string, name: string) =>
     findOrg(owner)?.repos.find((repo) => repo.name.toLowerCase() === name.toLowerCase())
+  /** `owner/old-name`, lowercased, to the repository's new name. */
+  const repoRedirects = new Map<string, string>()
   const shownOrg = (name: string, login: string) => {
     const org = findOrg(name)
     return org?.hiddenFrom?.includes(login) === true ? undefined : org
@@ -769,6 +771,17 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
       const [, owner = "", name = "", rest = ""] = repoPath
       const org = shownOrg(owner, login)
       const repo = findRepo(owner, name)
+      const renamedTo = repoRedirects.get(`${owner}/${name}`.toLowerCase())
+      if (org !== undefined && repo === undefined && renamedTo !== undefined) {
+        // Forgejo's repoAssignment redirects a renamed repository's old path to the new one.
+        const search = query.size > 0 ? `?${query}` : ""
+        return new Response(null, {
+          status: 307,
+          headers: {
+            location: `${FORGEJO_URL}/api/v1/repos/${owner}/${renamedTo}${rest}${search}`,
+          },
+        })
+      }
       if (org === undefined || repo === undefined) return notFound()
       if (repo.hiddenFrom?.includes(login)) return notFound()
       if (rest.startsWith("/issues") && repo.issuesHiddenFrom?.includes(login)) return notFound()
@@ -878,6 +891,13 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     issue: (owner: string, repo: string, number: number) =>
       findRepo(owner, repo)?.issues.find((issue) => issue.number === number),
     revokeAccessTokens: () => validAccessTokens.clear(),
+    /** Renames a repository, as Forgejo does: its old path keeps answering, by redirect. */
+    renameRepo: (owner: string, from: string, to: string) => {
+      const repo = findRepo(owner, from)
+      if (repo === undefined) throw new Error(`no repository ${owner}/${from}`)
+      repo.name = to
+      repoRedirects.set(`${owner}/${from}`.toLowerCase(), to)
+    },
     renameUser: (from: string, to: string) => {
       const index = users.findIndex((user) => user.login === from)
       const user = users[index]
