@@ -138,9 +138,10 @@ the board.
   archived repositories cannot be moved, added, edited, or commented on.
 - **Repository access.** Forgejo decides which of a board's repositories each user can read. A
   repository the user cannot read is left out of the board without being named, so a board
-  does not reveal the names of private repositories. A change to a board keeps the stored
-  repositories the user cannot read, so members with different access can share one board.
-  Only users who can see the organization in Forgejo can list or read its boards.
+  does not reveal the names of private repositories, only how many it leaves out. A change to
+  a board keeps the stored repositories the user cannot read, so members with different access
+  can share one board, unless the member asks to drop them. Only users who can see the
+  organization in Forgejo can list or read its boards.
 - **Address.** `/board/<org>` opens the default board and `/board/<org>/<id>` another board.
   An address with the old `repos` parameter opens the board and ignores it. Both take the
   client-side filters `q` (title words, or `#number` for one issue number), `assignee` (a
@@ -158,7 +159,7 @@ the board.
 | `POST /api/boards` | Adds a board and answers with `{ board }`. |
 | `POST /api/boards/update` | Changes a board and answers with `{ board }`. |
 | `POST /api/boards/delete` | Deletes a board and answers with `{}`. |
-| `GET /api/board?org=&board=` | The board, its columns, cards, `viewerCanArrange`, and `failedRepos`. `board` is a board id and defaults to `default`. |
+| `GET /api/board?org=&board=` | The board, `columns` (the shown columns), `allColumns` (every column in the board's order), cards, `viewerCanArrange`, and `failedRepos`. `board` is a board id and defaults to `default`. |
 | `POST /api/board/move` | Moves one card and answers with `{ card, orderSaved }`. |
 | `POST /api/board/issues` | Creates an issue in a column and answers with `{ card, orderSaved }`. |
 | `POST /api/board/assignees` | Adds or removes one assignee and answers with `{ card }`. |
@@ -169,29 +170,35 @@ the board.
 | `GET /api/board/issue-options?org=&repo=` | The labels, open milestones, and assignable users a card of the repository can take, `{ labels, milestones, assignees }`. |
 | `GET /api/epics?org=&repos=a,b` | Epic cards, children, progress, board columns, `failedRepos`, and `incomplete`. At most 20 repositories. |
 
-A board in an answer is `{ id, name, repos, columns, hidden, version }`. `repos` holds only the
-repositories the user can read. `columns` is the full column order as column keys, and `hidden`
-the keys of the hidden columns. Board ids are compared without regard to case.
+A board in an answer is `{ id, name, repos, unreadableRepos, columns, hidden, version }`.
+`repos` holds only the repositories the user can read, and `unreadableRepos` counts the others
+without naming them. `columns` is the stored column order as column keys, and `hidden` the
+keys of the hidden columns. Board ids are compared without regard to case; text that cannot be
+a board id names no board.
 
 `POST /api/boards` takes `{ org, name, repos }`. `POST /api/boards/update` takes
-`{ org, board, version, name, repos, columns, hidden }` and replaces those fields. `POST
-/api/boards/delete` takes `{ org, board, version }`. `repos` is 1 to 20 repository names
-without duplicates. `columns` and `hidden` are column keys without duplicates, at most 200
-characters each; a key the organization has no column for is kept and skipped when the board is
-read. The server:
+`{ org, board, version, name, repos, columns, hidden, dropUnreadable }` and replaces those
+fields. `POST /api/boards/delete` takes `{ org, board, version }`. `repos` is 1 to 20
+repository names without duplicates, compared without regard to case. `columns` and `hidden`
+are column keys without duplicates, at most 200 characters each; a key the organization has no
+column for is kept and skipped when the board is read. The server:
 
-1. Answers 400 to an invalid name, repository name, or key, to a 51st board of the
-   organization, and to deleting the default board.
-2. Answers 403 unless the user is a member of the organization, and 404 when the organization
-   has no such board.
+1. Answers 400 to an invalid name, repository name, or key, and to deleting the default board.
+2. Answers 403 unless the user is a member of the organization, and 404 with the code
+   `board_not_found` when the organization has no such board.
 3. Answers 409 and changes nothing when `version` is not the board's current version, because
    someone changed the board since the user loaded it. The default board's version is 0 until
-   it is first stored. Every change adds 1.
-4. Keeps, in an update, the stored repositories the user cannot read, in addition to `repos`,
-   and answers 400 when the two together are more than 20.
+   it is first stored. A new board starts at 1, and every change adds 1.
+4. Answers 400 when `repos` names a repository the user cannot read, so a board never stores a
+   name that its author could not see, and to a 51st board of the organization.
+5. Keeps, in an update, the stored repositories the user cannot read, in addition to `repos`,
+   and answers 400 when the two together are more than 20. With `dropUnreadable: true` it
+   stores only `repos`. A repository that was deleted or transferred is unreadable to
+   everyone, so this is the way to free its place.
 
 `GET /api/boards` and `GET /api/board` answer 404 when Forgejo does not show the organization
-to the user, and `GET /api/board` also when the organization has no such board. It reads the
+to the user, and `GET /api/board` also, with the code `board_not_found`, when Forgejo shows the
+organization but it has no such board. It reads the
 board, the organization's labels, and whether the user is a member, then for each of the
 board's repositories the repository, its open issues, and the issues closed since the start of
 the Done window. A repository the user cannot read is left out, unnamed. Another repository
