@@ -6,6 +6,7 @@ import { importTokenKey } from "./token-crypto.ts"
 export type BoardSettings = {
   /** Exclusive labels whose name starts with this are status labels, for example `Status/`. */
   readonly statusScope: string
+  /** BOARD_COLUMNS as column keys: the column order of a default board no member has changed. */
   readonly defaultColumns: ReadonlyArray<string>
   /** Issues closed within this many days are in Done. */
   readonly doneDays: number

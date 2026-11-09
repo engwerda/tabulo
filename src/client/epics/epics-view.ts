@@ -5,6 +5,10 @@ import { boardHref } from "../scope/views.ts"
 export const shortRepo = (org: string, repo: string) =>
   repo.toLowerCase().startsWith(`${org.toLowerCase()}/`) ? repo.slice(org.length + 1) : repo
 
+/**
+ * The address that opens an open issue of the organization in `board`'s side panel. A closed
+ * issue may have left the Done column and a pull request is never a card, so neither has one.
+ */
 export const boardCardHref = (
   org: string,
   board: string,

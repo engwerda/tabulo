@@ -13,6 +13,8 @@ import { boardListQueryKey } from "./board-view.ts"
 export const useBoardList = (org: string) =>
   useQuery({ queryKey: boardListQueryKey(org), queryFn: () => fetchBoards(org) })
 
+// Opening another board replaces the page, and with it the control that had focus, so the next
+// page's switcher takes focus.
 let refocusAfterSwitch = false
 
 export const focusNextBoardSwitcher = () => {

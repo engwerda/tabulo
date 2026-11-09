@@ -562,6 +562,8 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
       })
     },
     onError: (error, { before, request, cardMove, undo }) => {
+      // A partly applied move changed Forgejo, so the refetch below shows the truth; putting the
+      // card back would show a state that no longer exists.
       if (error instanceof RequestFailed && error.code === "move_partly_applied") {
         toast({
           tone: "error",
@@ -913,6 +915,8 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
     }),
     [],
   )
+  // A card's link keeps the board's filters, but not the search text, so typing does not re-render
+  // every card.
   const hrefBase = (() => {
     const next = new URLSearchParams(params)
     next.delete(CARD_PARAM)
@@ -935,6 +939,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
     if (data !== undefined) setSettings({ _tag: "Edit", board: data, ...(focus ? { focus } : {}) })
   }
   const removeFailed = () => {
+    // A second update would go against the version the first one replaced and answer 409.
     if (data === undefined || boardWrites.update.isPending) return
     const failed = new Set(failures.map((failure) => failure.repo.toLowerCase()))
     const loading = data.board.repos.filter((repo) => !failed.has(repo.toLowerCase()))

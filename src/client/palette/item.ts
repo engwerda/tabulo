@@ -1,6 +1,7 @@
 import type { DashboardItem } from "../../shared/api.ts"
 import type { Searchable } from "./rank.ts"
 
+/** The glyphs `icons.tsx` draws. Named here, without JSX, so tests can import page commands. */
 export type GlyphName =
   | "dashboard"
   | "board"

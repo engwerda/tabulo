@@ -61,6 +61,7 @@ export const canonicalBoardHref = (
   params: URLSearchParams,
 ): string | null => {
   const board = boardIdFromPath(segment)
+  // `repos` chose the board's repositories before there were boards; the board drops it.
   if (segment === (board === DEFAULT_BOARD_ID ? undefined : board) && !params.has("repos")) {
     return null
   }

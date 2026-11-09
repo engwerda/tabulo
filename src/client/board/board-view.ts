@@ -186,6 +186,10 @@ export const applyMove = (board: Board, move: CardMove, now: string): Board => {
   }))
 }
 
+/**
+ * Only what `applyMove` changed goes back, so whatever else changed meanwhile stays, such as
+ * saved settings, another card's move, or this card's assignees.
+ */
 export const revertMove = (board: Board, before: BoardCard): Board => {
   const shown = board.columns.some((column) => column.key === before.column)
   return {

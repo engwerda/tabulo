@@ -118,6 +118,11 @@ export const toCreateRequest = (org: string, draft: BoardDraft): CreateBoardRequ
   repos: draft.repos,
 })
 
+/**
+ * A column list the user left alone is sent as stored, so a label added in Forgejo later still
+ * takes its place by name. A changed one keeps the stored keys that have no column, so a label
+ * that comes back gets its old place.
+ */
 export const toUpdateRequest = (
   org: string,
   base: SettingsBase,

@@ -88,6 +88,7 @@ export const BoardSettingsDialog = ({
   } | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   const [problemShown, setProblemShown] = useState(false)
+  // Focus moves to the field after it says what is wrong with it, so a screen reader reads that.
   const [focusRequest, setFocusRequest] = useState<Pick<DraftProblem, "field"> | null>(null)
   useEffect(() => {
     if (focusRequest === null) return
@@ -135,7 +136,8 @@ export const BoardSettingsDialog = ({
     if (!pending) close()
   }
   // A write's answer comes from its `mutateAsync` promise, which settles after the dialog is gone
-  // too, where callbacks given to `mutate` would not run.
+  // too, where callbacks given to `mutate` would not run. Back or Forward can take the dialog away
+  // while a write is in flight; its answer then shows as a toast and opens no board.
   const isOpen = () => dialog.current?.open === true
 
   const fail = (title: string, message: string) => {
@@ -303,6 +305,8 @@ export const BoardSettingsDialog = ({
     >
       <form
         onSubmit={save}
+        // Enter saves from the name only; in the repository search or on a box it would save the
+        // form before the user is done with it.
         onKeyDown={(event) => {
           if (
             event.key === "Enter" &&

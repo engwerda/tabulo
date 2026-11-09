@@ -1,3 +1,5 @@
+// Runs Tabulo's dashboard composition and its organization read against a real Forgejo instance,
+// read-only.
 // Usage: FORGEJO_URL=https://forgejo.example FORGEJO_TOKEN=<token> npm run check:forgejo
 import { Cause, Effect, Exit, Redacted } from "effect"
 import { loadDashboardSections } from "../src/worker/dashboard.ts"

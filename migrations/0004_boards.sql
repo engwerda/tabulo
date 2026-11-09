@@ -1,3 +1,5 @@
+-- Saved views of one organization. The default board has a row only after a member first changes
+-- it. Every write names the version it read, so concurrent writers compare and swap.
 CREATE TABLE boards (
   org TEXT NOT NULL,
   id TEXT NOT NULL,

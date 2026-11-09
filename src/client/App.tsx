@@ -107,6 +107,7 @@ const useRouteTitle = () => {
   const orgName =
     orgs.data?.find((candidate) => candidate.name.toLowerCase() === org?.toLowerCase())?.fullName ||
     org
+  // The board page loads its organization's boards; the title only reads them.
   const boards = useQuery({
     queryKey: boardListQueryKey(org ?? ""),
     queryFn: () => fetchBoards(org ?? ""),

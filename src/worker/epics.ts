@@ -148,6 +148,7 @@ export const loadEpics = Effect.fn("loadEpics")(function* (
     [readOrgLabels(token, query.org, pool), defaultPlan(query.org)],
     { concurrency: "unbounded" },
   )
+  // Hidden columns count too, so progress includes every child.
   const layout = boardLayout(settings.statusScope, orgLabels, { columns: plan.columns, hidden: [] })
   const windowStart = (yield* Clock.currentTimeMillis) - settings.doneDays * 86_400_000
   const updatedSince = new Date(windowStart).toISOString()
