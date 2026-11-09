@@ -451,7 +451,6 @@ const boardSession = async (
     })
   const setRepos = defaultBoardRepos(call, "acme")
   let boardRepos: string | undefined
-  /** The default board as `as` sees it, after ada gives it `repos` when they are named. */
   const board = async (as = cookie, repos?: string) => {
     if (repos !== undefined && repos !== boardRepos) {
       await setRepos(cookie, repos.split(","))

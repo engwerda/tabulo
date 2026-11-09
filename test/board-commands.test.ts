@@ -25,7 +25,6 @@ const boardIds = (overrides: Partial<BoardCommandsInput>) =>
     .find((group) => group.id === "board")
     ?.items.map((item) => item.id) ?? []
 
-/** The board's commands that the palette shows before anything is typed. */
 const emptyPalette = (overrides: Partial<BoardCommandsInput>) =>
   rankSections("", boardCommands(input(overrides)), [])
     .find((section) => section.id === "board")

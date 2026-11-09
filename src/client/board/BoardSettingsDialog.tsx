@@ -36,9 +36,7 @@ export type SettingsMode =
   | { readonly _tag: "Create" }
   | {
       readonly _tag: "Edit"
-      /** The board as it was on screen when the dialog opened. */
       readonly board: Board
-      /** The section to start at, as an empty board asks for its repositories. */
       readonly focus?: "repos" | "columns"
     }
 
@@ -53,11 +51,6 @@ const quietDangerButton =
 const sectionHint = "mt-0.5 text-xs text-zinc-500 dark:text-zinc-400"
 const CLASH_TITLE = "Someone else saved this board while you edited it"
 
-/**
- * A board's settings, or a new board's, with one Save: the update replaces every field under one
- * version, so the form saves them together. When someone else saved first, the dialog keeps the
- * user's changes on top of theirs and says what they changed.
- */
 export const BoardSettingsDialog = ({
   org,
   mode,
@@ -76,7 +69,6 @@ export const BoardSettingsDialog = ({
   const firstColumnBox = useRef<HTMLInputElement>(null)
   const deleteButton = useRef<HTMLButtonElement>(null)
   const keepButton = useRef<HTMLButtonElement>(null)
-  // A drag that Escape cancels must not close the dialog too.
   const dragging = useRef(false)
   const [announcer, setAnnouncer] = useState<HTMLDialogElement | null>(null)
   const startAt = useRef(mode._tag === "Edit" ? mode.focus : undefined)
@@ -90,14 +82,12 @@ export const BoardSettingsDialog = ({
   const [draft, setDraft] = useState<BoardDraft>(() =>
     base === null ? NEW_BOARD_DRAFT : draftOf(base),
   )
-  /** What someone else changed when their save beat the user's save or delete. */
   const [clash, setClash] = useState<{
     readonly theirChanges: ReadonlyArray<DraftField>
     readonly during: "save" | "delete"
   } | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   const [problemShown, setProblemShown] = useState(false)
-  // Focus moves to the field after it says what is wrong with it, so a screen reader reads that.
   const [focusRequest, setFocusRequest] = useState<Pick<DraftProblem, "field"> | null>(null)
   useEffect(() => {
     if (focusRequest === null) return
@@ -105,7 +95,6 @@ export const BoardSettingsDialog = ({
     else (repoSearch.current ?? reposSection.current)?.focus()
   }, [focusRequest])
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  // The confirmation takes focus on its safe choice, and gives it back when it goes away.
   const confirmShown = useRef(false)
   useEffect(() => {
     if (confirmingDelete) keepButton.current?.focus()
@@ -116,8 +105,6 @@ export const BoardSettingsDialog = ({
   const unreadable = base?.board.unreadableRepos ?? 0
   const kept = draft.dropUnreadable ? 0 : unreadable
   const problem = draftProblem(draft, unreadable)
-  // A write in flight keeps the dialog open: its answer opens the new board, leaves a deleted one,
-  // or shows why it was refused.
   const busy = writes.create.isPending
     ? "Wait until the board is created"
     : writes.update.isPending
@@ -148,17 +135,14 @@ export const BoardSettingsDialog = ({
     if (!pending) close()
   }
   // A write's answer comes from its `mutateAsync` promise, which settles after the dialog is gone
-  // too, where callbacks given to `mutate` would not run. Back or Forward can take the dialog away
-  // while a write is in flight; its answer then shows as a toast and opens no board.
+  // too, where callbacks given to `mutate` would not run.
   const isOpen = () => dialog.current?.open === true
 
-  /** Why a write failed: in the dialog, or in a toast once the dialog is gone. */
   const fail = (title: string, message: string) => {
     if (isOpen()) setFailure(sentence(message))
     else toast({ tone: "error", title, detail: sentence(message) })
   }
 
-  /** Closes the dialog for another board, whose switcher then takes focus. */
   const openBoard = (board: string, replace: boolean) => {
     if (!isOpen()) return
     focusNextBoardSwitcher()
@@ -177,7 +161,6 @@ export const BoardSettingsDialog = ({
     openBoard(DEFAULT_BOARD_ID, true)
   }
 
-  /** Loads the board as someone else saved it and moves the user's changes onto it. */
   const rebase = async (current: SettingsBase, during: "save" | "delete") => {
     if (!isOpen()) {
       fail(`Could not ${during} ${current.board.name}`, "Someone else changed it meanwhile")
@@ -299,7 +282,6 @@ export const BoardSettingsDialog = ({
       }}
       onCancel={(event) => {
         if (dragging.current || pending) event.preventDefault()
-        // Escape backs out of the confirmation before it closes the dialog.
         else if (confirmingDelete) {
           event.preventDefault()
           setConfirmingDelete(false)
@@ -321,8 +303,6 @@ export const BoardSettingsDialog = ({
     >
       <form
         onSubmit={save}
-        // Enter submits from the name only; in the repository search or on a box it would save
-        // the form before the user is done with it.
         onKeyDown={(event) => {
           if (
             event.key === "Enter" &&

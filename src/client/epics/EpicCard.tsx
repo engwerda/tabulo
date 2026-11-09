@@ -215,7 +215,6 @@ export const EpicCard = ({
   onExpandedChange,
 }: {
   org: string
-  /** The organization's last board, whose details panel opens an open issue. */
   board: string
   epic: Epic
   columns: ReadonlyArray<BoardColumn>

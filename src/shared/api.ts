@@ -148,7 +148,6 @@ const BoardRepos = Schema.Array(Schema.String).check(
 /** The version the client loaded; another answers 409 and changes nothing. */
 const BoardVersion = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 
-/** An entry of GET /api/boards. */
 export const BoardSummary = Schema.Struct({ id: Schema.String, name: Schema.String })
 export type BoardSummary = typeof BoardSummary.Type
 
@@ -156,7 +155,6 @@ export type BoardSummary = typeof BoardSummary.Type
 export const BoardList = Schema.Struct({ boards: Schema.Array(BoardSummary) })
 export type BoardList = typeof BoardList.Type
 
-/** A board as one user may see it. */
 export const SavedBoard = Schema.Struct({
   id: Schema.String,
   name: Schema.String,

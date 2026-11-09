@@ -98,10 +98,6 @@ const decodePathSegment = (segment: string) => {
   }
 }
 
-/**
- * Names the browser tab after the view, or the board, and the organization, so tabs and history
- * stay apart.
- */
 const useRouteTitle = () => {
   const [path] = useLocation()
   const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
@@ -111,7 +107,6 @@ const useRouteTitle = () => {
   const orgName =
     orgs.data?.find((candidate) => candidate.name.toLowerCase() === org?.toLowerCase())?.fullName ||
     org
-  // The board page loads its organization's boards; the title only reads them.
   const boards = useQuery({
     queryKey: boardsQueryKey(org ?? ""),
     queryFn: () => fetchBoards(org ?? ""),
@@ -234,10 +229,6 @@ type NavItem = {
   readonly active: boolean
 }
 
-/**
- * The header's links; an organization view returns to the last organization, its last board, and
- * its repositories.
- */
 const useNav = (): ReadonlyArray<NavItem> => {
   const [path] = useLocation()
   const lastScope = useLastScope()

@@ -5,7 +5,6 @@ import { type BoardFilters, filterChoices, ME, NONE, toggled } from "./board-vie
 
 /** What the board's commands in the command menu read and do; the N, M, R, and / keys do the same. */
 export type BoardCommandsInput = {
-  /** False while the board shows no filters, as when none of its repositories loaded. */
   readonly filtersShown: boolean
   readonly cards: ReadonlyArray<BoardCard>
   readonly filters: BoardFilters
@@ -22,11 +21,8 @@ export type BoardCommandsInput = {
   readonly refresh: () => void
   /** When the board was last read, in words. */
   readonly updated: string
-  /** The board on screen, by name. */
   readonly boardName: string
-  /** Opens the board's settings; null when the viewer cannot change boards. */
   readonly editBoard: (() => void) | null
-  /** Opens a new board's settings; null when the viewer cannot add one. */
   readonly newBoard: (() => void) | null
 }
 
@@ -141,8 +137,6 @@ export const boardCommands = (input: BoardCommandsInput): ReadonlyArray<GroupSpe
           } satisfies PaletteItem,
         ]
       : []),
-    // The empty palette cuts the list after `emptyLimit` items, so it drops Refresh and Search, which
-    // have keys on the board, before the settings.
     ...settings,
     refresh,
     {

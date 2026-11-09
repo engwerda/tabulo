@@ -23,7 +23,6 @@ import type { ForgejoRepo } from "./forgejo/schemas.ts"
 
 const byName = new Intl.Collator("en").compare
 
-/** Lowercased repository names of a board request; a name twice in any case answers 400. */
 const parseRepoNames = (names: ReadonlyArray<string>) =>
   Effect.gen(function* () {
     const parsed = yield* Effect.forEach(names, (name) => parseName("repository", name))
@@ -33,10 +32,6 @@ const parseRepoNames = (names: ReadonlyArray<string>) =>
     return parsed
   })
 
-/**
- * The requested repositories as Forgejo spells them. A name the user cannot read answers 400,
- * so a board never stores a name its author could not see.
- */
 const readableNames = (
   org: string,
   requested: ReadonlyArray<string>,
@@ -51,16 +46,11 @@ const readableNames = (
       )
 }
 
-/** The stored repositories of `board` the user cannot read, in their stored order. */
 const unreadableRepos = (board: BoardRecord, visible: ReadonlyArray<ForgejoRepo>) => {
   const readable = new Set(visible.map((repo) => repo.name.toLowerCase()))
   return board.repos.filter((name) => !readable.has(name))
 }
 
-/**
- * The organization's boards, the default board first, then the others by name. Only users who
- * can see the organization in Forgejo may list them.
- */
 export const listBoards = (token: AccessToken, org: string) =>
   Effect.gen(function* () {
     const [, stored] = yield* Effect.all(
@@ -79,7 +69,6 @@ export const listBoards = (token: AccessToken, org: string) =>
     } satisfies BoardList
   })
 
-/** Adds a board with the default board's column order and hidden columns. */
 export const createBoard = (token: AccessToken, login: string, request: CreateBoardRequest) =>
   Effect.gen(function* () {
     const org = yield* parseName("org", request.org)
@@ -100,11 +89,6 @@ export const createBoard = (token: AccessToken, login: string, request: CreateBo
     return { board: toSavedBoard(board, names, 0) } satisfies SavedBoardResult
   })
 
-/**
- * Replaces a board's name, repositories, and columns if it is still at `request.version`. The
- * stored repositories the user cannot read stay unless the request drops them. Every Forgejo
- * read comes before the one D1 write, so a rerun after a token refresh cannot write twice.
- */
 export const updateBoard = (token: AccessToken, login: string, request: UpdateBoardRequest) =>
   Effect.gen(function* () {
     const org = yield* parseName("org", request.org)
@@ -147,7 +131,6 @@ export const updateBoard = (token: AccessToken, login: string, request: UpdateBo
     return { board: toSavedBoard(board, names, kept.length) } satisfies SavedBoardResult
   })
 
-/** Deletes a board if it is still at `request.version`. Its cards keep their order. */
 export const deleteBoard = (token: AccessToken, _login: string, request: DeleteBoardRequest) =>
   Effect.gen(function* () {
     const org = yield* parseName("org", request.org)

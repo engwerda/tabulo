@@ -5,18 +5,11 @@ import { forgetBoard } from "../scope/remembered.ts"
 import { applySavedBoard } from "./board-settings.ts"
 import { boardQueryKey, boardsQueryKey, boardWriteKey, orgBoardsKey } from "./board-view.ts"
 
-/** A board update, and the column order the user arranged, which the board shows at once. */
 export type BoardUpdate = {
   readonly request: UpdateBoardRequest
   readonly order?: ReadonlyArray<string> | undefined
 }
 
-/**
- * Keeps the reads of an organization's boards from undoing its board writes on screen. A write
- * stops the reads in flight as it starts, whose answers predate it, and the last write to finish
- * reads the boards again: an earlier one would read them while a later write is still on its way
- * and show its card back in its old place for a moment.
- */
 export const useBoardReads = (org: string) => {
   const queryClient = useQueryClient()
   return {
@@ -30,7 +23,6 @@ export const useBoardReads = (org: string) => {
   }
 }
 
-/** The board writes of an organization, each with what it changes in the loaded boards. */
 export const useBoardWrites = (org: string) => {
   const queryClient = useQueryClient()
   const { holdReads, refetchAfterWrites } = useBoardReads(org)

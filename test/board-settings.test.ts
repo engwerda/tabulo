@@ -132,7 +132,6 @@ describe("saving a draft", () => {
   })
 
   it("sends the stored columns as they are when the user left them alone", () => {
-    // An unchanged default board stores BOARD_COLUMNS, here nothing, and lays out every label.
     const loaded = base({ id: "default", columns: [], version: 0 })
     const renamed = { ...draftOf(loaded), name: "Everything" }
     expect(toUpdateRequest("acme", loaded, renamed)).toMatchObject({ columns: [], hidden: [] })
@@ -355,7 +354,6 @@ describe("applySavedBoard", () => {
   })
 
   it("keeps a column that appeared after the order was arranged, after the column it follows", () => {
-    // The dialog's order is from when it opened; Blocked has come to the board since.
     const grown = { ...loaded, columns: [TODO, BLOCKED, PROGRESS, REVIEW, DONE] }
     const now = { ...grown, allColumns: grown.columns }
     const shown = applySavedBoard(now, saved({ version: 5 }), [

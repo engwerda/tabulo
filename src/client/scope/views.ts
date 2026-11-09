@@ -5,7 +5,6 @@ export const ORG_VIEWS = [
   {
     id: "board",
     path: "/board",
-    /** The page's address after `path`, as a wouter pattern: the default board has no id. */
     route: "/:org/:board?",
     label: "Board",
     /** A glyph name from `src/client/palette/icons.tsx`. */
@@ -33,7 +32,6 @@ export const ORG_VIEWS = [
 export type OrgView = (typeof ORG_VIEWS)[number]
 export type OrgViewId = OrgView["id"]
 
-/** What a view's route can name; each page takes the parameters its route has. */
 export type OrgViewParams = { readonly org: string; readonly board?: string | undefined }
 
 export const orgView = (id: OrgViewId): OrgView => {
@@ -45,11 +43,9 @@ export const orgView = (id: OrgViewId): OrgView => {
 export const isOrgViewPath = (view: OrgView, path: string) =>
   path === view.path || path.startsWith(`${view.path}/`)
 
-/** The board an address names: its id segment lowercased, the default board without one. */
 export const boardIdFromPath = (segment: string | undefined): string =>
   segment === undefined || segment === "" ? DEFAULT_BOARD_ID : segment.toLowerCase()
 
-/** `/board/<org>` for the default board, `/board/<org>/<id>` for another, then `params`. */
 export const boardHref = (org: string, board: string, params?: URLSearchParams): string => {
   const id = board.toLowerCase()
   const path = `${orgView("board").path}/${encodeURIComponent(org)}${
@@ -59,11 +55,6 @@ export const boardHref = (org: string, board: string, params?: URLSearchParams):
   return query === "" ? path : `${path}?${query}`
 }
 
-/**
- * The board's own address for an address that names it another way: the default board by its id,
- * an id in upper case, or the `repos` parameter of the time before boards. Null when `segment`
- * and `params` already are the board's own; other parameters stay as they are.
- */
 export const canonicalBoardHref = (
   org: string,
   segment: string | undefined,
@@ -78,18 +69,12 @@ export const canonicalBoardHref = (
   return boardHref(org, board, kept)
 }
 
-/** What a view's address keeps of an organization: its board, or its chosen repositories. */
 export type OrgScope = {
   readonly org: string
   readonly repos?: ReadonlyArray<string>
   readonly board?: string
 }
 
-/**
- * The address of a view: its organization picker without a scope, the board of the scope, or the
- * organization's page with the chosen repositories, if any. Every link to a view comes from here,
- * so each opens the organization's last board.
- */
 export const orgViewHref = (view: OrgViewId, scope?: OrgScope): string => {
   const { path } = orgView(view)
   if (scope === undefined) return path

@@ -61,17 +61,11 @@ type RepoChecklistProps = {
   readonly repos: ReadonlyArray<OrgRepo>
   readonly selected: ReadonlyArray<string>
   readonly onChange: (selected: ReadonlyArray<string>) => void
-  /** What the boxes choose, for assistive technology. */
   readonly legend: string
   readonly searchRef?: Ref<HTMLInputElement>
-  /** The id of the text that says what is wrong with the choice, once it is shown. */
   readonly searchDescribedBy?: string | undefined
 }
 
-/**
- * The organization's repositories as checkboxes, with a search and a box that chooses every match.
- * Up and down arrows move between the boxes, as in the app's menus.
- */
 export const RepoChecklist = ({
   repos,
   selected,

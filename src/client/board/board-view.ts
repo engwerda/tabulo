@@ -1,21 +1,12 @@
 import type { Board, BoardCard } from "../../shared/api.ts"
 import { compareCardOrder, rankForDrop } from "../../shared/card-order.ts"
 
-/** Every board query of an organization: a card's move changes what each of its boards shows. */
 export const orgBoardsKey = (org: string) => ["board", org] as const
 
-/**
- * One board's query, by its id as `boardIdFromPath` gives it. The command palette reads the same
- * entry to open cards in the board's panel.
- */
 export const boardQueryKey = (org: string, board: string) => [...orgBoardsKey(org), board] as const
 
 export const boardsQueryKey = (org: string) => ["boards", org] as const
 
-/**
- * The writes that change what an organization's boards show: card moves, new issues, card edits,
- * and board settings. The boards' reads hold off while any of them is in flight.
- */
 export const boardWriteKey = (org: string) => ["board-write", org] as const
 
 /** Every card of a column in board order. */
@@ -194,12 +185,6 @@ export const applyMove = (board: Board, move: CardMove, now: string): Board => {
   }))
 }
 
-/**
- * `board` with the card back where it was before a move that failed: `before` is the card as it
- * was then. Only what `applyMove` changed goes back, so whatever else changed meanwhile stays,
- * such as saved settings, another card's move, or this card's assignees. A card whose column the
- * board no longer shows leaves the board, and one that is no longer on it stays off.
- */
 export const revertMove = (board: Board, before: BoardCard): Board => {
   const shown = board.columns.some((column) => column.key === before.column)
   return {

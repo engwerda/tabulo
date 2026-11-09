@@ -74,10 +74,6 @@ const VIEW_SHORTCUTS: Record<OrgViewId, ShortcutId> = {
 
 const openExternal = (url: string) => window.open(url, "_blank", "noopener,noreferrer")
 
-/**
- * Where the page opens an issue: on an org view, the side panel of the board on screen when it is
- * one of its cards, or of the organization's last board; null for Forgejo.
- */
 type IssueBoardHref = (item: DashboardItem) => string | null
 
 /**
@@ -155,7 +151,6 @@ export const usePaletteGroups = (query: string, active: boolean) => {
     staleTime: Number.POSITIVE_INFINITY,
   })
 
-  // On an org view, an open issue opens in a board's side panel, as an epic's child does.
   const boardView = orgView("board")
   const [onBoard, boardRoute] = useRoute<OrgViewParams>(`${boardView.path}${boardView.route}`)
   const [onOrgPage, route] = useRoute("/:view/:org")

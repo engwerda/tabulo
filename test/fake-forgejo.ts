@@ -132,10 +132,6 @@ export type FakeOrg = {
   full_name: string
   avatar_url: string
   members: ReadonlyArray<string>
-  /**
-   * Logins Forgejo does not show the organization to, as with a private organization they are
-   * not a member of: the organization, its labels, its repositories, and their listing answer 404.
-   */
   hiddenFrom?: ReadonlyArray<string>
   publicMembers?: ReadonlyArray<string>
   labels: ReadonlyArray<FakeLabel>
@@ -347,7 +343,6 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     orgs.find((org) => org.name.toLowerCase() === name.toLowerCase())
   const findRepo = (owner: string, name: string) =>
     findOrg(owner)?.repos.find((repo) => repo.name.toLowerCase() === name.toLowerCase())
-  /** `owner/old-name`, lowercased, to the repository's new name. */
   const repoRedirects = new Map<string, string>()
   const shownOrg = (name: string, login: string) => {
     const org = findOrg(name)
@@ -891,7 +886,6 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     issue: (owner: string, repo: string, number: number) =>
       findRepo(owner, repo)?.issues.find((issue) => issue.number === number),
     revokeAccessTokens: () => validAccessTokens.clear(),
-    /** Renames a repository, as Forgejo does: its old path keeps answering, by redirect. */
     renameRepo: (owner: string, from: string, to: string) => {
       const repo = findRepo(owner, from)
       if (repo === undefined) throw new Error(`no repository ${owner}/${from}`)

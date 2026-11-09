@@ -10,15 +10,11 @@ import { CheckIcon, PlusIcon, SlidersIcon } from "../ui/icons.tsx"
 import { Popover } from "../ui/primitives.tsx"
 import { boardsQueryKey } from "./board-view.ts"
 
-/** The organization's boards, the default board first. */
 export const useBoardList = (org: string) =>
   useQuery({ queryKey: boardsQueryKey(org), queryFn: () => fetchBoards(org) })
 
-// Opening another board replaces the page, and with it the control that had focus, so the next
-// page's switcher takes focus.
 let refocusAfterSwitch = false
 
-/** Gives focus to the switcher of the board that opens next, as after adding a board. */
 export const focusNextBoardSwitcher = () => {
   refocusAfterSwitch = true
 }
@@ -26,7 +22,6 @@ export const focusNextBoardSwitcher = () => {
 const menuItem =
   "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm text-zinc-700 transition pointer-coarse:min-h-11 hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none aria-disabled:cursor-default aria-disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800 dark:aria-disabled:hover:bg-transparent"
 
-// A menu item answers Space as well as Enter, as the app's other menus do.
 const clickOnSpace = (event: KeyboardEvent<HTMLElement>) => {
   if (event.key !== " ") return
   event.preventDefault()
@@ -42,7 +37,6 @@ const ActionItem = ({
 }: {
   icon: ReactNode
   children: ReactNode
-  /** A second line, such as why the item is unavailable. */
   hint?: string | undefined
   disabled?: boolean
   onSelect: () => void
@@ -66,10 +60,6 @@ const ActionItem = ({
   </button>
 )
 
-/**
- * The board on screen, as a menu of the organization's boards that switches to another, and for
- * members the board's settings and a new board.
- */
 export const BoardSwitcher = ({
   org,
   boardId,
@@ -79,9 +69,7 @@ export const BoardSwitcher = ({
 }: {
   readonly org: string
   readonly boardId: string
-  /** The board's name once it has loaded. */
   readonly name: string | undefined
-  /** Members' actions; without them the menu only switches boards. */
   readonly onEdit?: (() => void) | undefined
   readonly onCreate?: (() => void) | undefined
 }) => {
@@ -102,7 +90,6 @@ export const BoardSwitcher = ({
   const actions = onEdit !== undefined || onCreate !== undefined
 
   return (
-    // The board on screen keeps its name when the row is short; the organization truncates first.
     <div ref={wrapper} className="flex max-w-[60%] min-w-0 shrink-0">
       <Popover
         containerClass="relative min-w-0"
@@ -121,8 +108,6 @@ export const BoardSwitcher = ({
             </>
           )
         }
-        // Below the header and the board's row, so the panel opens under its button; the boards
-        // scroll inside it, and the actions stay in sight under them.
         panelClass="flex max-h-[calc(100dvh-8rem-var(--tab-bar-height))] w-72 flex-col p-1.5"
         focusFirstItem
       >

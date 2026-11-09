@@ -16,7 +16,6 @@ type SearchFieldProps = {
   /** Runs first; Escape then clears a field with text unless this handler prevented it. */
   readonly onKeyDown?: (event: KeyboardEvent<HTMLInputElement>) => void
   readonly title?: string
-  /** The id of the text that describes the field, such as what is wrong with the form. */
   readonly describedBy?: string | undefined
   /** Classes of the wrapper, for its width. */
   readonly className?: string

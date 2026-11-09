@@ -73,23 +73,16 @@ const toBoardLabel = ({ id, name, color }: ForgejoLabel): BoardLabel => ({
   color: labelHexColor(color),
 })
 
-/** What a board decides about its columns, as column keys: their order and the ones it hides. */
 export type ColumnPlan = {
   readonly columns: ReadonlyArray<string>
   readonly hidden: ReadonlyArray<string>
 }
 
-/**
- * The plan of moves, new issues, card edits, and issue options. They name no board: they need
- * which columns exist and where an issue is, never a board's order or what it hides.
- */
 export const UNORDERED: ColumnPlan = { columns: [], hidden: [] }
 
 /** The columns of a board and the one rule that puts an issue in a column. */
 export type BoardLayout = {
-  /** Every column, in the plan's order, hidden ones included. */
   readonly columns: ReadonlyArray<BoardColumn>
-  /** The keys of the plan's hidden columns that exist. */
   readonly hidden: ReadonlySet<string>
   readonly column: (key: string) => BoardColumn | undefined
   /**
@@ -97,10 +90,7 @@ export type BoardLayout = {
    * can define their own label with an organization status label's name.
    */
   readonly isColumnLabel: (label: ForgejoLabel) => boolean
-  /**
-   * The column an issue belongs in, ignoring the Done window: every closed issue is Done. A
-   * hidden column is still the issue's column, so its card keeps its rank.
-   */
+  /** The column an issue belongs in, ignoring the Done window: every closed issue is Done. */
   readonly columnOf: (issue: ForgejoRepoIssue) => string
   /** The open column the issue's labels name, Todo when none does, whatever its state. */
   readonly labelColumnOf: (issue: ForgejoRepoIssue) => string
@@ -124,8 +114,6 @@ export const boardLayout = (
     | { readonly _tag: "Todo" }
     | { readonly _tag: "Done" }
     | { readonly _tag: "Status"; readonly label: ForgejoLabel }
-  // A key the organization has no column for is skipped, so a label removed in Forgejo leaves
-  // the board without breaking it.
   const slots: Array<Slot> = plan.columns.flatMap((key): Array<Slot> => {
     if (key === TODO.key) return [{ _tag: "Todo" }]
     if (key === DONE.key) return [{ _tag: "Done" }]
@@ -261,16 +249,12 @@ export const parseCardQuery = (
     return { repo: ref, number: Number(number) }
   })
 
-/** The board a GET /api/board request names: `default` when it names none. */
 export const parseBoardQuery = (org: string | undefined, board: string | undefined) =>
   Effect.map(parseName("org", org), (name) => ({
     org: name,
-    // Text that cannot be a board id names no board; it answers BoardNotFound once Forgejo has
-    // shown the organization.
     board: board === undefined ? DEFAULT_BOARD : parseBoardId(board),
   }))
 
-/** The organization and 1 to MAX_REPOS repositories of an insights or epics request. */
 export const parseReposQuery = (org: string | undefined, repos: string | undefined) =>
   Effect.gen(function* () {
     const parsed = yield* Effect.forEach(
@@ -294,13 +278,11 @@ const isOrgMember = (token: AccessToken, org: string) =>
     Effect.map((orgs) => orgs.some(({ name }) => name.toLowerCase() === org)),
   )
 
-/** BoardWriteForbidden with `message` unless `/user/orgs` lists the organization for `token`. */
 export const requireMember = (token: AccessToken, org: string, message: string) =>
   Effect.flatMap(isOrgMember(token, org), (member) =>
     member ? Effect.void : Effect.fail(new BoardWriteForbidden({ message })),
   )
 
-/** The default board's column order and hidden columns: as stored, else BOARD_COLUMNS. */
 export const defaultPlan = (org: string) =>
   Effect.gen(function* () {
     const stored = yield* BoardStore.use((boards) => boards.find(org, DEFAULT_BOARD))
@@ -340,16 +322,10 @@ type RepoCards =
       readonly complete: boolean
     }
   | { readonly _tag: "Failed"; readonly repo: string; readonly message: string }
-  /** A repository the user cannot read, which an answer never names. */
   | { readonly _tag: "Unreadable" }
 
-/** One repository's reads, before the organization's listing settles an `AccessUnknown`. */
 type RepoRead =
   | RepoCards
-  /**
-   * The repository's own read failed for another reason than access, so whether the user can
-   * read it, and may see its stored, lowercased `name`, is not known yet.
-   */
   | { readonly _tag: "AccessUnknown"; readonly name: string; readonly message: string }
 
 /**
@@ -364,13 +340,6 @@ export const readOrgLabels = (token: AccessToken, org: string, budget?: PageBudg
     return labels.items
   })
 
-/**
- * Reads the board `query.board` as the user who owns `token`. Forgejo must show the organization
- * before an unknown board answers BoardNotFound, so a board id answers alike for every
- * organization the user cannot see. A repository the user cannot read is left out unnamed;
- * another that fails to load is reported in `failedRepos`. Cards of hidden columns are ranked
- * like the others, then left out.
- */
 export const loadBoard = (
   token: AccessToken,
   login: string,
@@ -413,7 +382,6 @@ export const loadBoard = (
         { concurrency: "unbounded", mode: "result" },
       ).pipe(
         Effect.flatMap(([repo, open, closed]): Effect.Effect<RepoRead, ForgejoUnauthorized> => {
-          // A refused token refreshes, whichever read failed first.
           const outcomes: ReadonlyArray<Result.Result<unknown, ForgejoError>> = [repo, open, closed]
           for (const read of outcomes) {
             if (Result.isFailure(read) && read.failure._tag === "ForgejoUnauthorized") {
@@ -465,8 +433,7 @@ export const loadBoard = (
     const repoReads = yield* Effect.forEach(board.repos, repoCards, {
       concurrency: REPO_CONCURRENCY,
     })
-    // The organization's listing shows only repositories the user can read. One listing serves
-    // every repository, and one that fails leaves them all unnamed.
+    // The organization's listing shows only repositories the user can read.
     const visible = repoReads.some((read) => read._tag === "AccessUnknown")
       ? yield* (unchanged ? Effect.succeed(orgRepos) : forgejo.orgRepos(token, query.org)).pipe(
           Effect.catchTag(FORGEJO_READ_ERRORS, () => Effect.succeed([])),

@@ -89,10 +89,6 @@ const Row = ({
   )
 }
 
-/**
- * The board's columns in order, each with a handle that drags it, by pointer or with Space and
- * the arrow keys, and a box that shows or hides it. Announcements name the column's position.
- */
 export const ColumnSettings = ({
   rows,
   onMove,
@@ -102,7 +98,6 @@ export const ColumnSettings = ({
   firstCheckboxRef,
 }: {
   rows: ReadonlyArray<ColumnRow>
-  /** Moves the column `key` to `index` of the order. */
   onMove: (key: string, index: number) => void
   onHiddenChange: (key: string, hidden: boolean) => void
   onDraggingChange: (dragging: boolean) => void

@@ -51,7 +51,6 @@ export class RequestFailed extends Error {
   }
 }
 
-/** Whether a read answered 404, as for a deleted board or an organization the user cannot see. */
 export const isNotFound = (error: unknown) => error instanceof RequestFailed && error.status === 404
 
 const decodeUser = Schema.decodeUnknownPromise(User)
@@ -125,7 +124,6 @@ const postJson = (path: string, body: unknown) =>
 export const createBoard = async (request: CreateBoardRequest): Promise<SavedBoard> =>
   (await decodeSavedBoardResult(await postJson("/api/boards", request))).board
 
-/** Fails with `board_changed` when the board is no longer at `request.version`. */
 export const updateBoard = async (request: UpdateBoardRequest): Promise<SavedBoard> =>
   (await decodeSavedBoardResult(await postJson("/api/boards/update", request))).board
 

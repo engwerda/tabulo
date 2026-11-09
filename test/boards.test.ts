@@ -24,7 +24,6 @@ beforeEach(async () => {
   ])
 })
 
-/** acme with `secret`, which grace cannot read, and `Web`, which Forgejo spells capitalized. */
 const boardsOrg = (): FakeOrg =>
   acme([
     boardRepo("api", {
@@ -61,7 +60,6 @@ const session = async (
   return { forgejo, clock, call, ada, grace: graceCookie, linus, get, post, create }
 }
 
-/** An update of `board` from `version` that changes only what `fields` names. */
 const update = (board: string, version: number, fields: Record<string, unknown> = {}) => ({
   org: "acme",
   board,
@@ -84,7 +82,6 @@ const storedBoards = async () =>
 const listed = async (response: Response) =>
   ((await response.json()) as { boards: Array<{ id: string; name: string }> }).boards
 
-/** A D1 whose statements matching `sql` wait for `before` before they run. */
 const holdStatements = (db: D1Database, sql: string, before: () => Promise<void>): D1Database => {
   const held = (bound: D1PreparedStatement) =>
     new Proxy(bound, {
@@ -118,7 +115,6 @@ const holdStatements = (db: D1Database, sql: string, before: () => Promise<void>
   })
 }
 
-/** Resolves for everyone once `parties` callers are waiting, so they go on together. */
 const barrier = (parties: number) => {
   let arrived = 0
   let release = () => {}
@@ -320,7 +316,6 @@ describe("POST /api/boards", () => {
     for (let i = 0; i < 48; i++) {
       await postJson(plain, ada, "/api/boards", { org: "acme", name: `Board ${i}`, repos: ["api"] })
     }
-    // Both requests pass every check before either inserts.
     const racing = tabulo(forgejo.fetch, {
       clock,
       vars: { DB: holdStatements(env.DB, "INSERT INTO boards", barrier(2)) },
@@ -409,7 +404,6 @@ describe("POST /api/boards/update", () => {
     const plain = tabulo(forgejo.fetch, { clock })
     const ada = await signIn(plain, forgejo)
     const graceCookie = await signIn(plain, forgejo, "grace")
-    // Both requests read version 0 before either writes.
     const racing = tabulo(forgejo.fetch, {
       clock,
       vars: { DB: holdStatements(env.DB, "INSERT INTO boards", barrier(2)) },
@@ -437,7 +431,6 @@ describe("POST /api/boards/update", () => {
     const graceCookie = await signIn(plain, forgejo, "grace")
     const stored = await postJson(plain, ada, "/api/boards/update", update("default", 0))
     expect(stored.status).toBe(200)
-    // Both requests read version 1 before either writes.
     const racing = tabulo(forgejo.fetch, {
       clock,
       vars: { DB: holdStatements(env.DB, "UPDATE boards", barrier(2)) },
@@ -638,7 +631,6 @@ const answer = async (response: Response) => {
 
 const keys = (columns: ReadonlyArray<{ key: string }>) => columns.map((column) => column.key)
 
-/** The cards of `column` in the order everyone sees them. */
 const order = (board: BoardAnswer, column: string) =>
   board.cards
     .filter((card) => card.column === column)
@@ -917,7 +909,6 @@ describe("GET /api/board", () => {
     )
 
     expect(before.board.columns).toEqual(["Status/Shipped", "done", "Status/Review", "todo"])
-    // Status labels the order does not list come before Done.
     expect(keys(before.allColumns)).toEqual([
       "Status/Backlog",
       "Status/In Progress",

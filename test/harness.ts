@@ -67,7 +67,6 @@ export const signIn = async (
   return `${SESSION_COOKIE}=${session.value}`
 }
 
-/** POSTs `body` as JSON from Tabulo's own origin, as every write must. */
 export const postJson = (call: Call, cookie: string, path: string, body: unknown) =>
   call(path, {
     method: "POST",
@@ -75,11 +74,6 @@ export const postJson = (call: Call, cookie: string, path: string, body: unknown
     body: JSON.stringify(body),
   })
 
-/**
- * Sets the repositories of `org`'s default board through the API, as the member whose cookie it
- * is given, and keeps the board's version between calls. It stores no column order and hides
- * nothing, so the columns are Todo, the status labels by name, and Done.
- */
 export const defaultBoardRepos = (call: Call, org: string) => {
   let version = 0
   return async (cookie: string, repos: ReadonlyArray<string>) => {

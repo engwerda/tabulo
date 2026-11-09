@@ -27,7 +27,6 @@ export const ErrorNotice = ({
   /** "warning" for a partial result, such as some repositories that could not be read. */
   tone?: "error" | "warning"
   bare?: boolean
-  /** False when a live region that is already on the page announces it instead. */
   announce?: boolean
   className?: string
 }) => (

@@ -2,14 +2,9 @@ import { useSyncExternalStore } from "react"
 import { DEFAULT_BOARD_ID } from "../../shared/api.ts"
 import type { KeyValueStorage } from "../stored-data.ts"
 
-/**
- * The organization last opened in an org-level view, with its remembered repositories and the
- * board last opened in it.
- */
 export type LastScope = {
   readonly org: string
   readonly repos: ReadonlyArray<string>
-  /** A board id; the default board when none was remembered. */
   readonly board: string
 }
 
@@ -49,10 +44,8 @@ const parseRepos = (selection: string | null) =>
 export const readRememberedRepos = (org: string): string | null =>
   read(reposKey(org)) ?? read(boardReposKey(org))
 
-/** The board last opened in `org`. */
 export const rememberedBoard = (org: string): string => read(lastBoardKey(org)) ?? DEFAULT_BOARD_ID
 
-/** What the browser remembers of `org`, for a link to any of its views. */
 export const rememberedScope = (org: string): LastScope => ({
   org,
   repos: parseRepos(readRememberedRepos(org)),
@@ -100,17 +93,12 @@ export const forgetRepos = (org: string) => {
   if (lastScope?.org === org) publish({ ...lastScope, repos: [] })
 }
 
-/** Makes `org` the last organization and `board` the board its links open. */
 export const rememberBoard = (org: string, board: string) => {
   write(LAST_ORG_KEY, org)
   write(lastBoardKey(org), board === DEFAULT_BOARD_ID ? null : board)
   publish({ org, repos: parseRepos(readRememberedRepos(org)), board })
 }
 
-/**
- * Stops opening `board` from the links of `org`, as after it was deleted. Answers whether it was
- * the board they opened.
- */
 export const forgetBoard = (org: string, board: string): boolean => {
   if (board === DEFAULT_BOARD_ID || rememberedBoard(org) !== board) return false
   write(lastBoardKey(org), null)

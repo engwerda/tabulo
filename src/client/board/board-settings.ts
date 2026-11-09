@@ -8,23 +8,16 @@ import {
   type UpdateBoardRequest,
 } from "../../shared/api.ts"
 
-/** A board's settings as loaded: the stored board and every column it lays out, in its order. */
 export type SettingsBase = Pick<Board, "board" | "allColumns">
 
-/** The settings dialog's form, which one Save sends. */
 export type BoardDraft = {
   readonly name: string
-  /** Repository names as Forgejo spells them. */
   readonly repos: ReadonlyArray<string>
-  /** The keys of the board's columns in the order the user arranged them, hidden ones included. */
   readonly order: ReadonlyArray<string>
-  /** The keys in `order` that the board hides. */
   readonly hidden: ReadonlyArray<string>
-  /** Stores only `repos`, without the board's repositories the user cannot read. */
   readonly dropUnreadable: boolean
 }
 
-/** A new board starts with the default board's columns, which the server copies. */
 export const NEW_BOARD_DRAFT: BoardDraft = {
   name: "",
   repos: [],
@@ -44,10 +37,8 @@ export const draftOf = ({ board, allColumns }: SettingsBase): BoardDraft => {
   }
 }
 
-/** One row of the settings' column list. */
 export type ColumnRow = { readonly column: BoardColumn; readonly hidden: boolean }
 
-/** The rows of `columns` in the draft's order. */
 export const columnRows = (
   columns: ReadonlyArray<BoardColumn>,
   draft: BoardDraft,
@@ -60,7 +51,6 @@ export const columnRows = (
   })
 }
 
-/** The draft with the column `key` at `index` of the order. */
 export const moveColumn = (draft: BoardDraft, key: string, index: number): BoardDraft => {
   const others = draft.order.filter((other) => other !== key)
   if (others.length === draft.order.length) return draft
@@ -73,7 +63,6 @@ export const setColumnHidden = (draft: BoardDraft, key: string, hidden: boolean)
   return { ...draft, hidden: hidden ? [...others, key] : others }
 }
 
-/** The parts of a board that one person can change while another edits it. */
 export const DRAFT_FIELDS = ["name", "repos", "columns", "hidden"] as const
 export type DraftField = (typeof DRAFT_FIELDS)[number]
 
@@ -89,7 +78,6 @@ const sameSet = (
   )
 }
 
-/** Whether two drafts agree on a field. Repositories are compared as Forgejo names them. */
 const SAME: Record<DraftField, (a: BoardDraft, b: BoardDraft) => boolean> = {
   name: (a, b) => a.name.trim() === b.name.trim(),
   repos: (a, b) => sameSet(a.repos, b.repos, (name) => name.toLowerCase()),
@@ -104,13 +92,8 @@ const changedFields = (from: BoardDraft, to: BoardDraft): ReadonlyArray<DraftFie
 export const isDirty = (base: SettingsBase, draft: BoardDraft) =>
   draft.dropUnreadable || changedFields(draftOf(base), draft).length > 0
 
-/** Why a draft cannot be saved, and the field that needs a change. */
 export type DraftProblem = { readonly field: "name" | "repos"; readonly message: string }
 
-/**
- * What stops Save, in words, or null. `unreadable` counts the board's repositories the user
- * cannot read, which an update keeps unless the draft drops them.
- */
 export const draftProblem = (draft: BoardDraft, unreadable = 0): DraftProblem | null => {
   const name = draft.name.trim()
   if (name === "") return { field: "name", message: "Name the board" }
@@ -135,11 +118,6 @@ export const toCreateRequest = (org: string, draft: BoardDraft): CreateBoardRequ
   repos: draft.repos,
 })
 
-/**
- * The update that saves `draft` over `base`. A column list the user left alone is sent as stored,
- * so a label added in Forgejo later still takes its place by name. A changed one keeps the stored
- * keys that have no column, so a label that comes back gets its old place.
- */
 export const toUpdateRequest = (
   org: string,
   base: SettingsBase,
@@ -164,10 +142,6 @@ export const toUpdateRequest = (
   }
 }
 
-/**
- * `mine` with the keys that are no longer in `current` left out and the new ones of `current`
- * added after the key they follow there.
- */
 const withCurrentColumns = (mine: ReadonlyArray<string>, current: ReadonlyArray<string>) => {
   const present = new Set(current)
   const order = mine.filter((key) => present.has(key))
@@ -182,11 +156,6 @@ const withCurrentColumns = (mine: ReadonlyArray<string>, current: ReadonlyArray<
   return order
 }
 
-/**
- * After a 409: `mine` moved onto `theirs`, the board as someone else saved it since `base`. A
- * field the user changed keeps the user's value and every other field takes theirs. Their changes
- * are named for the notice; the next Save goes against their version.
- */
 export const rebaseDraft = (
   base: SettingsBase,
   theirs: SettingsBase,
@@ -220,7 +189,6 @@ const FIELD_WORDS: Record<DraftField, string> = {
   hidden: "the hidden columns",
 }
 
-/** "the name, the repositories and the hidden columns". */
 export const describeFields = (fields: ReadonlyArray<DraftField>) => {
   const words = fields.map((field) => FIELD_WORDS[field])
   return words.length <= 1
@@ -228,11 +196,6 @@ export const describeFields = (fields: ReadonlyArray<DraftField>) => {
     : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`
 }
 
-/**
- * The loaded board once `saved` is stored, before the refetch: the new name and repositories,
- * columns in `order` with the hidden ones and their cards gone, and the cards of removed
- * repositories gone. Cards of newly shown columns and added repositories wait for the refetch.
- */
 export const applySavedBoard = (
   board: Board,
   saved: SavedBoard,

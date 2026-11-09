@@ -126,7 +126,6 @@ const storage = {
   },
 }
 
-// The default board keeps the key from before there were other boards.
 const collapsedKey = (org: string, board: string) =>
   `tabulo.board.collapsed.${org.toLowerCase()}${board === DEFAULT_BOARD_ID ? "" : `/${board}`}`
 const composerRepoKey = (org: string) => `tabulo.board.new-issue-repo.${org.toLowerCase()}`
@@ -197,7 +196,6 @@ const BoardSkeleton = () => (
   </div>
 )
 
-/** A board with nothing to show yet: why, and what to do about it. */
 const EmptyBoard = ({
   title,
   children,
@@ -261,10 +259,6 @@ const BoardNotFound = ({ org, defaultName }: { org: string; defaultName: string 
 const inlineAction =
   "relative font-medium pointer-coarse:before:absolute pointer-coarse:before:inset-x-0 pointer-coarse:before:-inset-y-3 text-zinc-700 underline decoration-zinc-300 underline-offset-2 transition hover:text-zinc-900 hover:decoration-zinc-500 dark:text-zinc-300 dark:decoration-zinc-600 dark:hover:text-zinc-100"
 
-/**
- * Why repositories could not be loaded, with what a member can do about it, such as taking them
- * off the board. A title that already names the one repository leaves only its reason here.
- */
 const FailedRepos = ({
   failures,
   named = false,
@@ -403,7 +397,6 @@ const BoardMenu = ({
   </Popover>
 )
 
-/** The board an address names; an address that names it another way becomes the board's own. */
 export const BoardPage = ({ org, board }: OrgViewParams) => {
   const [params] = useSearchParams()
   const [, navigate] = useLocation()
@@ -475,8 +468,6 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
   useEffect(() => {
     if (loaded) rememberBoard(org, boardId)
   }, [loaded, org, boardId])
-  // The links that opened the board the user had last opened lead to the default board once it
-  // is gone; a board deleted while it is on screen says so instead.
   const loadedBefore = board.data !== undefined
   useEffect(() => {
     if (!boardMissing) return
@@ -533,7 +524,6 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
     }: {
       request: MoveCardRequest
       cardMove: CardMove
-      /** The card as it was before the move. */
       before: BoardCard
       undo: CardMove | null
     }) => moveCard(request),
@@ -565,8 +555,6 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
       })
     },
     onError: (error, { before, request, cardMove, undo }) => {
-      // A partly applied move changed Forgejo, so the refetch below shows the truth; putting back
-      // the card where it was would show a state that no longer exists.
       if (error instanceof RequestFailed && error.code === "move_partly_applied") {
         toast({
           tone: "error",
@@ -918,8 +906,6 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
     }),
     [],
   )
-  // A card's link keeps the board's filters, but not the search text, so typing does not re-render
-  // every card.
   const hrefBase = (() => {
     const next = new URLSearchParams(params)
     next.delete(CARD_PARAM)
@@ -934,8 +920,6 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
   const orgTitle =
     orgs.data?.find((candidate) => candidate.name.toLowerCase() === org.toLowerCase())?.fullName ||
     org
-  // Without a board to say whether the viewer is a member, the organizations they belong to do,
-  // so a member can still add a board from one that is gone.
   const canChangeBoards =
     data?.viewerCanArrange ??
     orgs.data?.some((candidate) => candidate.name.toLowerCase() === org.toLowerCase()) === true
@@ -944,7 +928,6 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
     if (data !== undefined) setSettings({ _tag: "Edit", board: data, ...(focus ? { focus } : {}) })
   }
   const removeFailed = () => {
-    // A second update would go against the version the first one replaced and answer 409.
     if (data === undefined || boardWrites.update.isPending) return
     const failed = new Set(failures.map((failure) => failure.repo.toLowerCase()))
     const loading = data.board.repos.filter((repo) => !failed.has(repo.toLowerCase()))
@@ -1027,7 +1010,6 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
           refresh: () => void board.refetch(),
           updated: updated ?? "",
           boardName: data.board.name,
-          // Opened after the menu has closed and given focus back, which the dialog returns to.
           editBoard: canEditBoard ? () => window.setTimeout(() => editBoard()) : null,
           newBoard:
             canChangeBoards && !atBoardLimit

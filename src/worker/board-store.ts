@@ -9,7 +9,6 @@ import {
 import { BoardChanged, BoardLimitReached, BoardNotFound } from "./errors.ts"
 import type { ForgejoRepo } from "./forgejo/schemas.ts"
 
-/** A board id, lowercased because ids compare without regard to case. */
 const BoardIdText = Schema.String.check(Schema.isPattern(/^(default|[a-z0-9]{8})$/)).pipe(
   Schema.brand("BoardId"),
 )
@@ -17,13 +16,10 @@ export type BoardId = typeof BoardIdText.Type
 
 export const DEFAULT_BOARD: BoardId = Schema.decodeUnknownSync(BoardIdText)(DEFAULT_BOARD_ID)
 
-/** The board `value` names, or null for text that cannot be a board id. */
 export const parseBoardId = (value: string): BoardId | null =>
   Option.getOrNull(Schema.decodeUnknownOption(BoardIdText)(value.toLowerCase()))
 
 const ID_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"
-// The largest multiple of 36 that fits in a byte; larger bytes are drawn again, so every
-// character is equally likely.
 const ID_BYTE_LIMIT = 252
 
 const newBoardId = (): BoardId => {
@@ -36,17 +32,10 @@ const newBoardId = (): BoardId => {
   return Schema.decodeUnknownSync(BoardIdText)(id)
 }
 
-/**
- * One board of an organization: stored, or the default board that no member has changed, which
- * has version 0 and the repositories `defaultRepos` gives one viewer. It is also the column plan
- * `boardLayout` reads.
- */
 export type BoardRecord = {
   readonly id: BoardId
   readonly name: string
-  /** Lowercased names, whether or not any one viewer can read them. */
   readonly repos: ReadonlyArray<string>
-  /** As stored, keys the organization has no column for included. */
   readonly columns: ReadonlyArray<string>
   readonly hidden: ReadonlyArray<string>
   readonly version: number
@@ -54,38 +43,24 @@ export type BoardRecord = {
 
 export type BoardFields = Pick<BoardRecord, "name" | "repos" | "columns" | "hidden">
 
-/** The board a write read: its version must still be the stored one. */
 export type BoardVersion = Pick<BoardRecord, "id" | "version">
 
-/** The organization's boards. Only this service reads or writes the `boards` table. */
 export class BoardStore extends Context.Service<
   BoardStore,
   {
-    /** The id and name of every stored board of the organization, in no order. */
     readonly list: (org: string) => Effect.Effect<ReadonlyArray<Pick<BoardRecord, "id" | "name">>>
-    /** The stored board; undefined for no such board and for a default board nobody changed. */
     readonly find: (org: string, id: BoardId) => Effect.Effect<BoardRecord | undefined>
-    /**
-     * Stores a new board at version 1 under a fresh id, unless the organization already has
-     * MAX_BOARDS boards, the default one counted whether stored or not. One statement checks
-     * and inserts, so two members adding the last board at once cannot both succeed.
-     */
     readonly insert: (
       org: string,
       fields: BoardFields,
       updatedBy: string,
     ) => Effect.Effect<BoardRecord, BoardLimitReached>
-    /**
-     * Replaces the board's fields if its stored version is still `current.version` and answers
-     * the stored board. Version 0 stores the default board for the first time.
-     */
     readonly replace: (
       org: string,
       current: BoardVersion,
       fields: BoardFields,
       updatedBy: string,
     ) => Effect.Effect<BoardRecord, BoardChanged | BoardNotFound>
-    /** Deletes the board if its stored version is still `current.version`. Card order stays. */
     readonly remove: (
       org: string,
       current: BoardVersion,
@@ -107,13 +82,11 @@ const BoardRow = Schema.Struct({
 
 const ROW = "id, name, repos, column_order, hidden_columns, version"
 
-// Only this module writes the table, so a row that does not decode is a defect.
 const toRecord = (row: unknown): BoardRecord => {
   const { column_order, hidden_columns, ...rest } = Schema.decodeUnknownSync(BoardRow)(row)
   return { ...rest, columns: column_order, hidden: hidden_columns }
 }
 
-// D1 failures are infrastructure faults, not domain outcomes, so they surface as defects.
 const query = <A>(run: () => Promise<A>) => Effect.promise(run)
 
 export const makeBoardStore = (db: D1Database): BoardStore["Service"] => {
@@ -124,7 +97,6 @@ export const makeBoardStore = (db: D1Database): BoardStore["Service"] => {
     JSON.stringify(fields.hidden),
   ]
 
-  /** Why a compare-and-swap changed no row: the board is gone, or its version moved on. */
   const refusal = (org: string, id: BoardId) =>
     query(() =>
       db.prepare("SELECT 1 FROM boards WHERE org = ? AND id = ?").bind(org, id).first(),
@@ -151,7 +123,6 @@ export const makeBoardStore = (db: D1Database): BoardStore["Service"] => {
     insert: (org, fields, updatedBy) =>
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis
-        // A fresh id that is already taken (one chance in 2.8e12) fails the statement as a defect.
         const row = yield* query(() =>
           db
             .prepare(
@@ -180,7 +151,6 @@ export const makeBoardStore = (db: D1Database): BoardStore["Service"] => {
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis
         const values = [org, current.id, ...fieldValues(fields), now, updatedBy]
-        // Only the default board exists before it is stored, so version 0 can insert only it.
         const row =
           current.version === 0
             ? current.id === DEFAULT_BOARD
@@ -227,10 +197,6 @@ export const makeBoardStore = (db: D1Database): BoardStore["Service"] => {
 
 const byName = new Intl.Collator("en").compare
 
-/**
- * The repositories of a default board no member has changed, for one viewer: the organization's
- * repositories that are not archived when there are at most MAX_REPOS, none otherwise.
- */
 export const defaultRepos = (orgRepos: ReadonlyArray<ForgejoRepo>) => {
   const active = orgRepos.filter((repo) => !repo.archived)
   return active.length > MAX_REPOS
@@ -241,7 +207,6 @@ export const defaultRepos = (orgRepos: ReadonlyArray<ForgejoRepo>) => {
         .map((name) => name.toLowerCase())
 }
 
-/** The default board no member has changed, as one viewer sees it. */
 export const unchangedDefault = (
   defaultColumns: ReadonlyArray<string>,
   orgRepos: ReadonlyArray<ForgejoRepo>,
@@ -254,7 +219,6 @@ export const unchangedDefault = (
   version: 0,
 })
 
-/** The board in an answer: `repos` the viewer can read and a count of the others. */
 export const toSavedBoard = (
   board: BoardRecord,
   repos: ReadonlyArray<string>,
