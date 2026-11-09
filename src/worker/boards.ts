@@ -8,7 +8,7 @@ import {
   type SavedBoardResult,
   type UpdateBoardRequest,
 } from "../shared/api.ts"
-import { BoardConfig, defaultPlan, parseName, requireMember } from "./board.ts"
+import { BoardConfig, defaultPlan, parseName, requireMember, requireOrgVisible } from "./board.ts"
 import {
   type BoardRecord,
   BoardStore,
@@ -54,10 +54,7 @@ const unreadableRepos = (board: BoardRecord, visible: ReadonlyArray<ForgejoRepo>
 export const listBoards = (token: AccessToken, org: string) =>
   Effect.gen(function* () {
     const [, stored] = yield* Effect.all(
-      [
-        ForgejoClient.use((forgejo) => forgejo.org(token, org)),
-        BoardStore.use((boards) => boards.list(org)),
-      ],
+      [requireOrgVisible(token, org), BoardStore.use((boards) => boards.list(org))],
       { concurrency: "unbounded" },
     )
     const storedDefault = stored.find((board) => board.id === DEFAULT_BOARD)

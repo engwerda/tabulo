@@ -283,6 +283,9 @@ export const requireMember = (token: AccessToken, org: string, message: string) 
     member ? Effect.void : Effect.fail(new BoardWriteForbidden({ message })),
   )
 
+export const requireOrgVisible = (token: AccessToken, org: string) =>
+  ForgejoClient.use((forgejo) => forgejo.org(token, org)).pipe(Effect.asVoid)
+
 export const defaultPlan = (org: string) =>
   Effect.gen(function* () {
     const stored = yield* BoardStore.use((boards) => boards.find(org, DEFAULT_BOARD))
@@ -354,7 +357,7 @@ export const loadBoard = (
     const unchanged = stored === undefined && id === DEFAULT_BOARD
     const [, orgRepos, orgLabels, viewerCanArrange] = yield* Effect.all(
       [
-        forgejo.org(token, query.org),
+        requireOrgVisible(token, query.org),
         unchanged ? forgejo.orgRepos(token, query.org) : Effect.succeed([]),
         readOrgLabels(token, query.org),
         isOrgMember(token, query.org),
