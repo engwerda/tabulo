@@ -64,7 +64,7 @@ describe("epics view", () => {
     expect(epicSummary([])).toEqual({ total: 0, done: 0, percent: 0, atRisk: 0 })
   })
   it("says which listings and how many children Tabulo did not read", () => {
-    expect(incompleteNotice({ listings: [], children: 0 })).toBe("")
+    expect(incompleteNotice({ listings: [], children: 0, backlinks: [] })).toBe("")
     expect(
       incompleteNotice({
         listings: [
@@ -72,14 +72,21 @@ describe("epics view", () => {
           { repo: "web", listing: "closed" },
         ],
         children: 0,
+        backlinks: [],
       }),
     ).toBe(
       "Tabulo reached its limit of Forgejo requests and read only part of the open issues of api, recently closed issues of web, so some epics may be missing.",
     )
-    expect(incompleteNotice({ listings: [], children: 1 })).toBe(
+    expect(incompleteNotice({ listings: [], children: 1, backlinks: [] })).toBe(
       "Tabulo reached its limit of Forgejo requests and did not look up 1 child, which shows as unavailable.",
     )
-    expect(incompleteNotice({ listings: [{ repo: "api", listing: "open" }], children: 3 })).toBe(
+    expect(
+      incompleteNotice({
+        listings: [{ repo: "api", listing: "open" }],
+        children: 3,
+        backlinks: [],
+      }),
+    ).toBe(
       "Tabulo reached its limit of Forgejo requests and read only part of the open issues of api, so some epics may be missing. It did not look up 3 children, which show as unavailable.",
     )
   })

@@ -15,7 +15,13 @@ import {
   parseEpicParents,
 } from "./epic-links.ts"
 import { describeForgejoError, FORGEJO_READ_ERRORS } from "./errors.ts"
-import { type AccessToken, ForgejoClient, type PageBudget, sharePages } from "./forgejo/client.ts"
+import {
+  type AccessToken,
+  ForgejoClient,
+  type Listing,
+  type PageBudget,
+  sharePages,
+} from "./forgejo/client.ts"
 import type {
   ForgejoEpicIssue,
   ForgejoReferringIssue,
@@ -150,7 +156,12 @@ export const loadEpics = Effect.fn("loadEpics")(function* (
     ({ repo, issue }) =>
       forgejo
         .referencingIssues(token, { owner: query.org, name: repo.name }, issue.number, pool)
-        .pipe(Effect.map((timeline) => ({ repo, issue, timeline }))),
+        .pipe(
+          Effect.catchTag(["ForgejoForbidden", "ForgejoNotFound"], () =>
+            Effect.succeed<Listing<ForgejoReferringIssue>>({ items: [], complete: false }),
+          ),
+          Effect.map((timeline) => ({ repo, issue, timeline })),
+        ),
     { concurrency: READ_CONCURRENCY },
   )
   for (const referrer of timelines.flatMap(({ timeline }) => timeline.items)) {
@@ -243,6 +254,9 @@ export const loadEpics = Effect.fn("loadEpics")(function* (
         incomplete.map((listing) => ({ repo: repo.name, listing })),
       ),
       children: missing.size - lookups.length,
+      backlinks: timelines.flatMap(({ repo, issue, timeline }) =>
+        timeline.complete ? [] : [{ repo: repo.name, number: issue.number }],
+      ),
     },
   } satisfies Epics
 })

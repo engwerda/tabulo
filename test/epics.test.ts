@@ -202,7 +202,7 @@ describe("GET /api/epics", () => {
     expect(data.failedRepos).toEqual([
       { repo: "broken", message: "Forgejo had a problem (HTTP 500); try again in a moment" },
     ])
-    expect(data.incomplete).toEqual({ listings: [], children: 0 })
+    expect(data.incomplete).toEqual({ listings: [], children: 0, backlinks: [] })
     expect(forgejo.requests.filter(({ path }) => path.endsWith("/issues/2"))).toHaveLength(0)
     expect(forgejo.requests.filter(({ path }) => path.endsWith("/issues/3"))).toHaveLength(1)
     expect(
@@ -373,7 +373,7 @@ describe("GET /api/epics", () => {
       _tag: "Unavailable",
       ref: "acme/external#400",
     })
-    expect(data.incomplete).toEqual({ listings: [], children: 200 })
+    expect(data.incomplete).toEqual({ listings: [], children: 200, backlinks: [] })
     expect(forgejo.requests.filter(({ path }) => path.includes("/external/issues/"))).toHaveLength(
       200,
     )
@@ -392,7 +392,7 @@ describe("GET /api/epics", () => {
     const response = await call("/api/epics?org=acme&repos=api", { headers: { cookie } })
     const data = Schema.decodeUnknownSync(Epics)(await response.json())
     expect(data.epics.map(({ number }) => number)).toEqual([251])
-    expect(data.incomplete).toEqual({ listings: [], children: 0 })
+    expect(data.incomplete).toEqual({ listings: [], children: 0, backlinks: [] })
   })
 
   it("stays within the Worker's subrequest limit and says what it did not read", async () => {
@@ -410,12 +410,16 @@ describe("GET /api/epics", () => {
     const data = Schema.decodeUnknownSync(Epics)(await response.json())
     const reads = forgejo.requests.slice(before)
     expect(reads.length).toBeLessThan(1000)
-    // Labels, listings, and child lookups share 800 pages; each repository also reads itself.
+    // Labels, listings, timelines, and child lookups share 800 pages; each repository also
+    // reads itself.
     expect(reads.filter(({ path }) => PAGE_READ.test(path))).toHaveLength(800)
     // Each repository needs 60 listing pages, more than its share of 800.
     expect(data.incomplete.listings).toHaveLength(40)
     expect(data.incomplete.listings).toContainEqual({ repo: "r0", listing: "closed" })
     expect(data.incomplete.children).toBe(200)
+    expect(data.incomplete.backlinks, "the listings leave no page for r0#1's timeline").toEqual([
+      { repo: "r0", number: 1 },
+    ])
     expect(data.epics.map(({ key }) => key)).toEqual(["acme/r0#1"])
     expect(data.epics[0]?.children).toHaveLength(200)
     expect(data.epics[0]?.children.every(({ _tag }) => _tag === "Unavailable")).toBe(true)
@@ -427,6 +431,8 @@ describe("GET /api/epics", () => {
     // Labels and listings take 623 pages, leaving one for the timeline and 176 child lookups;
     // the 150th lookup is rejected.
     { read: "child lookup", closed: 0, rejects: /\/external\/issues\//, at: 150 },
+    // The first attempt rejects r0#1's timeline once labels and listings have taken 623 pages.
+    { read: "timeline", closed: 0, rejects: /\/timeline$/, at: 1 },
   ])("keeps one page budget when a late $read 401 refreshes the token", async (scenario) => {
     const { names, org } = crowdedOrg(60, scenario.closed)
     let matched = 0
@@ -728,6 +734,35 @@ describe("GET /api/epics, children that name their epic", () => {
       176,
     )
     expect(data.incomplete.children).toBe(24)
+  })
+
+  it.each([403, 404])(
+    "names an epic whose timeline answers HTTP %s and keeps its listed children",
+    async (status) => {
+      const unread = boardIssue("api", 1, { labels: [epicLabel], body: "- #2" })
+      const read = boardIssue("api", 3, { labels: [epicLabel] })
+
+      const { data } = await loadEpicsOf({
+        orgs: [linkedOrg([unread, boardIssue("api", 2), read])],
+        intercept: (_, path) =>
+          path.endsWith("/acme/api/issues/1/timeline") ? new Response(null, { status }) : undefined,
+      })
+
+      expect(childKeys(data.epics.find(({ number }) => number === 1))).toEqual(["acme/api#2"])
+      expect(data.incomplete.backlinks).toEqual([{ repo: "api", number: 1 }])
+    },
+  )
+
+  it("fails the request when a timeline answers HTTP 500", async () => {
+    const forgejo = createFakeForgejo({
+      orgs: [linkedOrg([boardIssue("api", 1, { labels: [epicLabel], body: "- #2" })])],
+      intercept: (_, path) =>
+        path.endsWith("/timeline") ? new Response(null, { status: 500 }) : undefined,
+    })
+    const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
+    const cookie = await signIn(call, forgejo)
+    const response = await call("/api/epics?org=acme&repos=api", { headers: { cookie } })
+    expect(response.status).toBe(502)
   })
 
   it("bounds concurrent timeline reads to four", async () => {

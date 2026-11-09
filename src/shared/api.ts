@@ -599,6 +599,14 @@ export const IncompleteEpicListing = Schema.Struct({
 })
 export type IncompleteEpicListing = typeof IncompleteEpicListing.Type
 
+/** An epic whose timeline Tabulo did not read to its end. */
+export const IncompleteEpicBacklinks = Schema.Struct({
+  /** The epic's repository, by its bare name as `Epic.repo` gives it. */
+  repo: Schema.String,
+  number: Schema.Number,
+})
+export type IncompleteEpicBacklinks = typeof IncompleteEpicBacklinks.Type
+
 export const Epics = Schema.Struct({
   org: Schema.String,
   repos: Schema.Array(Schema.String),
@@ -608,8 +616,10 @@ export const Epics = Schema.Struct({
   incomplete: Schema.Struct({
     /** Epics in the unread part of these listings are missing. */
     listings: Schema.Array(IncompleteEpicListing),
-    /** Child references Tabulo did not look up; they show as unavailable. */
+    /** Listed child references Tabulo did not look up; they show as unavailable. */
     children: Schema.Number,
+    /** Children that name these epics as their parent may be missing. */
+    backlinks: Schema.Array(IncompleteEpicBacklinks),
   }),
 })
 export type Epics = typeof Epics.Type
