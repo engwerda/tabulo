@@ -3,17 +3,14 @@ import { ConfigInvalid } from "./errors.ts"
 import type { ForgejoConfig } from "./forgejo/client.ts"
 import { importTokenKey } from "./token-crypto.ts"
 
-/** A column as configured: the reserved Todo or Done, or a status label by its full name. */
-export type ColumnRef =
-  | { readonly _tag: "Todo" }
-  | { readonly _tag: "Done" }
-  | { readonly _tag: "Status"; readonly name: string }
-
 export type BoardSettings = {
   /** Exclusive labels whose name starts with this are status labels, for example `Status/`. */
   readonly statusScope: string
-  /** The configured column order. Status labels it leaves out are placed before Done. */
-  readonly columnOrder: ReadonlyArray<ColumnRef>
+  /**
+   * BOARD_COLUMNS as column keys (`todo`, `done`, or a status label's full name): the column
+   * order of a default board that no member has changed.
+   */
+  readonly defaultColumns: ReadonlyArray<string>
   /** Issues closed within this many days are in Done. */
   readonly doneDays: number
 }
@@ -74,18 +71,18 @@ const parseBoardSettings = (env: Env) =>
     if (new Set(entries).size !== entries.length) {
       return yield* new ConfigInvalid({ message: "BOARD_COLUMNS lists a column twice" })
     }
-    const columnOrder: Array<ColumnRef> = []
+    const defaultColumns: Array<string> = []
     for (const entry of entries) {
-      if (entry === "Todo" || entry === "Done") columnOrder.push({ _tag: entry })
+      if (entry === "Todo" || entry === "Done") defaultColumns.push(entry.toLowerCase())
       else if (entry.startsWith(statusScope) && entry.length > statusScope.length) {
-        columnOrder.push({ _tag: "Status", name: entry })
+        defaultColumns.push(entry)
       } else {
         return yield* new ConfigInvalid({
           message: `BOARD_COLUMNS entry "${entry}" is not Todo, Done, or a label starting with ${statusScope}`,
         })
       }
     }
-    return { statusScope, columnOrder, doneDays } satisfies BoardSettings
+    return { statusScope, defaultColumns, doneDays } satisfies BoardSettings
   })
 
 export const loadConfig = (env: Env) =>

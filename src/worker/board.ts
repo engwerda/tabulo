@@ -64,32 +64,49 @@ const toBoardLabel = ({ id, name, color }: ForgejoLabel): BoardLabel => ({
   color: labelHexColor(color),
 })
 
+/** What a board decides about its columns, as column keys: their order and the ones it hides. */
+export type ColumnPlan = {
+  readonly columns: ReadonlyArray<string>
+  readonly hidden: ReadonlyArray<string>
+}
+
+/**
+ * The plan of moves, new issues, card edits, and issue options. They name no board: they need
+ * which columns exist and where an issue is, never a board's order or what it hides.
+ */
+export const UNORDERED: ColumnPlan = { columns: [], hidden: [] }
+
 /** The columns of a board and the one rule that puts an issue in a column. */
 export type BoardLayout = {
+  /** Every column, in the plan's order, hidden ones included. */
   readonly columns: ReadonlyArray<BoardColumn>
+  /** The keys of the plan's hidden columns that exist. */
+  readonly hidden: ReadonlySet<string>
   readonly column: (key: string) => BoardColumn | undefined
   /**
    * Whether the label names a Status column. Repository-level labels count too: repositories
    * can define their own label with an organization status label's name.
    */
   readonly isColumnLabel: (label: ForgejoLabel) => boolean
-  /** The column an issue belongs in, ignoring the Done window: every closed issue is Done. */
+  /**
+   * The column an issue belongs in, ignoring the Done window: every closed issue is Done. A
+   * hidden column is still the issue's column, so its card keeps its rank.
+   */
   readonly columnOf: (issue: ForgejoRepoIssue) => string
   /** The open column the issue's labels name, Todo when none does, whatever its state. */
   readonly labelColumnOf: (issue: ForgejoRepoIssue) => string
 }
 
 export const boardLayout = (
-  settings: BoardSettings,
+  statusScope: string,
   orgLabels: ReadonlyArray<ForgejoLabel>,
+  plan: ColumnPlan,
 ): BoardLayout => {
   const statusLabels = new Map(
     orgLabels
       .filter(
         (label) =>
-          label.exclusive &&
-          label.is_archived !== true &&
-          label.name.startsWith(settings.statusScope),
+          label.exclusive && label.is_archived !== true && label.name.startsWith(statusScope),
       )
       .map((label) => [label.name, label] as const),
   )
@@ -98,9 +115,12 @@ export const boardLayout = (
     | { readonly _tag: "Todo" }
     | { readonly _tag: "Done" }
     | { readonly _tag: "Status"; readonly label: ForgejoLabel }
-  const slots: Array<Slot> = settings.columnOrder.flatMap((ref): Array<Slot> => {
-    if (ref._tag !== "Status") return [ref]
-    const label = statusLabels.get(ref.name)
+  // A key the organization has no column for is skipped, so a label removed in Forgejo leaves
+  // the board without breaking it.
+  const slots: Array<Slot> = plan.columns.flatMap((key): Array<Slot> => {
+    if (key === TODO.key) return [{ _tag: "Todo" }]
+    if (key === DONE.key) return [{ _tag: "Done" }]
+    const label = statusLabels.get(key)
     return label === undefined ? [] : [{ _tag: "Status", label }]
   })
   if (!slots.some((slot) => slot._tag === "Todo")) slots.unshift({ _tag: "Todo" })
@@ -122,7 +142,7 @@ export const boardLayout = (
     return {
       _tag: "Status",
       key: slot.label.name,
-      title: slot.label.name.slice(settings.statusScope.length),
+      title: slot.label.name.slice(statusScope.length),
       label: toBoardLabel(slot.label),
     }
   })
@@ -133,6 +153,7 @@ export const boardLayout = (
 
   return {
     columns,
+    hidden: new Set(plan.hidden.filter((key) => byKey.has(key))),
     column: (key) => byKey.get(key),
     isColumnLabel,
     columnOf: (issue) => (issue.state === "closed" ? DONE.key : labelColumnOf(issue)),
@@ -292,19 +313,12 @@ type RepoCards =
  * Every label of the organization, read from `budget` (100 pages by default). Fails rather than
  * return part of them, because columns and label writes depend on all of them.
  */
-const readOrgLabels = (token: AccessToken, org: string, budget?: PageBudget) =>
+export const readOrgLabels = (token: AccessToken, org: string, budget?: PageBudget) =>
   Effect.gen(function* () {
     const forgejo = yield* ForgejoClient
     const labels = yield* forgejo.orgLabels(token, org, budget)
     if (!labels.complete) return yield* new PageBudgetExhausted()
     return labels.items
-  })
-
-/** The board layout from the organization's labels; see `readOrgLabels`. */
-export const loadLayout = (token: AccessToken, org: string, budget?: PageBudget) =>
-  Effect.gen(function* () {
-    const settings = yield* BoardConfig
-    return boardLayout(settings, yield* readOrgLabels(token, org, budget))
   })
 
 /**
@@ -319,10 +333,14 @@ export const loadBoard = (
   Effect.gen(function* () {
     const settings = yield* BoardConfig
     const forgejo = yield* ForgejoClient
-    const [layout, viewerCanArrange] = yield* Effect.all(
-      [loadLayout(token, query.org), isOrgMember(token, query.org)],
+    const [orgLabels, viewerCanArrange] = yield* Effect.all(
+      [readOrgLabels(token, query.org), isOrgMember(token, query.org)],
       { concurrency: "unbounded" },
     )
+    const layout = boardLayout(settings.statusScope, orgLabels, {
+      columns: settings.defaultColumns,
+      hidden: [],
+    })
     const windowStart = (yield* Clock.currentTimeMillis) - settings.doneDays * DAY_MS
     const updatedSince = new Date(windowStart).toISOString()
     // `since` filters by update time; an issue closed long ago may have been updated since.
@@ -552,7 +570,7 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
       ],
       { concurrency: "unbounded" },
     )
-    const layout = boardLayout(yield* BoardConfig, orgLabels)
+    const layout = boardLayout((yield* BoardConfig).statusScope, orgLabels, UNORDERED)
     if (issue.pull_request != null) {
       return yield* new BoardRequestInvalid({ message: "Pull requests are not on the board" })
     }
@@ -656,7 +674,7 @@ export const createCard = (token: AccessToken, login: string, request: CreateCar
         message: `${repo.full_name} is archived, so it takes no new issues`,
       })
     }
-    const layout = boardLayout(settings, orgLabels)
+    const layout = boardLayout(settings.statusScope, orgLabels, UNORDERED)
     if (request.column === DONE.key) {
       return yield* new BoardRequestInvalid({ message: "A new card cannot start in Done" })
     }
@@ -743,7 +761,7 @@ const editCard = <E>(
       [editableIssue(token, repoRef, request.number), readOrgLabels(token, org)],
       { concurrency: "unbounded" },
     )
-    const layout = boardLayout(settings, orgLabels)
+    const layout = boardLayout(settings.statusScope, orgLabels, UNORDERED)
     const edit = yield* plan({ repoRef, issue, layout, orgLabels })
     const updated = edit.isApplied(issue) ? issue : yield* edit.write(issue)
     if (!edit.isApplied(updated)) return yield* new ForgejoForbidden()
@@ -930,7 +948,7 @@ export const issueOptions = (token: AccessToken, repo: RepoRef) =>
       ],
       { concurrency: "unbounded" },
     )
-    const layout = boardLayout(settings, orgLabels)
+    const layout = boardLayout(settings.statusScope, orgLabels, UNORDERED)
     return {
       labels: [...orgLabels, ...repoLabels]
         .filter((label) => label.is_archived !== true && !layout.isColumnLabel(label))
