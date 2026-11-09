@@ -10,20 +10,26 @@ export type BoardUpdate = {
   readonly order?: ReadonlyArray<string> | undefined
 }
 
-export const useBoardWrites = (org: string) => {
+/** Saves a board's settings and shows the saved board at once. */
+export const useBoardUpdate = (org: string) => {
   const queryClient = useQueryClient()
-  const refreshList = () => void queryClient.invalidateQueries({ queryKey: boardListQueryKey(org) })
-  const create = useMutation({ mutationFn: createBoard, onSuccess: refreshList })
-  const update = useMutation({
+  return useMutation({
     mutationKey: [...boardWriteKey(org), "settings"],
     mutationFn: ({ request }: BoardUpdate) => updateBoard(request),
     onSuccess: (saved, { request, order }) => {
       queryClient.setQueryData<Board>(boardQueryKey(org, request.board), (current) =>
         current === undefined ? current : applySavedBoard(current, saved, order),
       )
-      refreshList()
+      void queryClient.invalidateQueries({ queryKey: boardListQueryKey(org) })
     },
   })
+}
+
+export const useBoardWrites = (org: string) => {
+  const queryClient = useQueryClient()
+  const refreshList = () => void queryClient.invalidateQueries({ queryKey: boardListQueryKey(org) })
+  const create = useMutation({ mutationFn: createBoard, onSuccess: refreshList })
+  const update = useBoardUpdate(org)
   const remove = useMutation({
     mutationKey: [...boardWriteKey(org), "delete"],
     mutationFn: deleteBoard,

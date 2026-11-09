@@ -67,7 +67,15 @@ import { BoardFiltersBar } from "./BoardFiltersBar.tsx"
 import { BoardSettingsDialog, type SettingsMode } from "./BoardSettingsDialog.tsx"
 import { BoardSwitcher, useBoardList } from "./BoardSwitcher.tsx"
 import { boardCommands } from "./board-commands.ts"
-import { draftOf, toUpdateRequest } from "./board-settings.ts"
+import {
+  type BoardDraft,
+  draftOf,
+  dropColumn,
+  isDirty,
+  placeColumnAsIn,
+  toUpdateRequest,
+  withColumnOrder,
+} from "./board-settings.ts"
 import { writingBoards } from "./board-sync.ts"
 import {
   applyMove,
@@ -88,7 +96,7 @@ import { CardComposer } from "./CardComposer.tsx"
 import { CardPanel } from "./CardPanel.tsx"
 import { drafts, titleDraftKey } from "./drafts.ts"
 import { BOARD_SHORTCUTS } from "./shortcuts.ts"
-import { useBoardWrites } from "./use-board-writes.ts"
+import { useBoardUpdate } from "./use-board-writes.ts"
 
 const REFRESH_MS = 60_000
 const NO_COMMANDS: ReturnType<typeof boardCommands> = []
@@ -113,6 +121,8 @@ const CARD_PARAM = "card"
 /** The toast key of a card: a newer toast about the card replaces an older one and its Undo. */
 const aboutCard = ({ repo, number }: { readonly repo: string; readonly number: number }) =>
   `card:${repo}#${number}`
+
+const COLUMN_ORDER_TOAST = "columns"
 
 // Remembering choices is a convenience: storage can be missing or refuse writes.
 const storage = {
@@ -451,14 +461,20 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
   const repos = useQuery({ queryKey: ["org-repos", org], queryFn: () => fetchOrgRepos(org) })
   const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
   const boards = useBoardList(org)
-  const boardWrites = useBoardWrites(org)
+  const repoRemoval = useBoardUpdate(org)
+  // Column drags save through their own observer, so the pending state of `repoRemoval`
+  // stays the repository removal's.
+  const columnOrderSave = useBoardUpdate(org)
 
   const boardKey = boardQueryKey(org, boardId)
   const writeKey = boardWriteKey(org)
   // A refetch that lands during a drag or before a write is stored would undo it on screen.
   const moving = useIsMutating({ mutationKey: writeKey }) > 0
-  // Any settings save of the organization, also one from a dialog that already closed.
-  const savingSettings = useIsMutating({ mutationKey: [...writeKey, "settings"] }) > 0
+  // Any settings save of the organization, also one from a dialog that already closed. Only one
+  // runs at a time: a second would carry the version the first replaced and answer 409.
+  const settingsKey = [...writeKey, "settings"]
+  const savingSettings = useIsMutating({ mutationKey: settingsKey }) > 0
+  const settingsSavePending = () => queryClient.isMutating({ mutationKey: settingsKey }) > 0
   const settled = !dragging && !moving
   const board = useQuery({
     queryKey: boardKey,
@@ -654,6 +670,98 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
       (candidate) => candidate.key !== card.key && visible(candidate),
     )
     startMove({ key: card.key, toColumn, afterKey: null, beforeKey: first?.key ?? null })
+  }
+
+  /** `action` comes back on the notice, since the toast that offered it closes when clicked. */
+  const stillSaving = (action?: { readonly label: string; readonly run: () => void }) =>
+    toast({
+      tone: "info",
+      title: "The board is still being saved",
+      detail: "Try again once it is saved.",
+      ...(action === undefined ? {} : { key: COLUMN_ORDER_TOAST, action }),
+    })
+
+  /**
+   * `arrange` runs against the board as it is when the save starts, also for Undo and Retry, so
+   * they move only this column and never send back an order someone has changed since. `again`
+   * is the button that offers it once more when a pending save turns it away.
+   */
+  const arrangeColumns = (
+    key: string,
+    arrange: (draft: BoardDraft) => BoardDraft,
+    kind: "move" | "undo",
+    again: "Undo" | "Retry",
+  ) => {
+    const current = queryClient.getQueryData<Board>(boardKey)
+    if (current === undefined) return
+    if (settingsSavePending()) {
+      stillSaving({ label: again, run: () => arrangeColumns(key, arrange, kind, again) })
+      return
+    }
+    const base = draftOf(current)
+    const arranged = withColumnOrder(current, arrange(base).order)
+    const draft = { ...base, order: arranged.allColumns.map((column) => column.key) }
+    if (!isDirty(current, draft)) return
+    const title = arranged.allColumns.find((column) => column.key === key)?.title ?? key
+    if (!navigator.onLine) {
+      offlineNotice(`The ${title} column moves for everyone once you are back online.`)
+    }
+    queryClient.setQueryData<Board>(boardKey, arranged)
+    // The promise settles even once the page is gone, where mutate's callbacks would not run.
+    columnOrderSave
+      .mutateAsync({ request: toUpdateRequest(org, current, draft), order: draft.order })
+      .then(
+        () =>
+          toast({
+            tone: "success",
+            title: kind === "undo" ? `Moved the ${title} column back` : `Moved the ${title} column`,
+            key: COLUMN_ORDER_TOAST,
+            ...(kind === "undo"
+              ? {}
+              : {
+                  action: {
+                    label: "Undo",
+                    run: () =>
+                      arrangeColumns(
+                        key,
+                        (latest) => placeColumnAsIn(latest, key, base.order),
+                        "undo",
+                        "Undo",
+                      ),
+                  },
+                }),
+          }),
+        (error: Error) => {
+          queryClient.setQueryData<Board>(boardKey, (latest) =>
+            latest === undefined ? latest : withColumnOrder(latest, base.order),
+          )
+          if (error instanceof RequestFailed && error.code === "board_changed") {
+            toast({
+              tone: "warning",
+              title: "Someone changed the board meanwhile",
+              detail: "The columns did not move. The board has been reloaded; try again.",
+              key: COLUMN_ORDER_TOAST,
+            })
+            return
+          }
+          toast({
+            tone: "error",
+            title: `Could not move the ${title} column`,
+            detail: error.message,
+            key: COLUMN_ORDER_TOAST,
+            action: {
+              label: "Retry",
+              run: () =>
+                arrangeColumns(
+                  key,
+                  (latest) => placeColumnAsIn(latest, key, draft.order),
+                  kind,
+                  "Retry",
+                ),
+            },
+          })
+        },
+      )
   }
 
   const putCard = (card: BoardCard) =>
@@ -940,14 +1048,20 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
     orgs.data?.some((candidate) => candidate.name.toLowerCase() === org.toLowerCase()) === true
   const canEditBoard = data?.viewerCanArrange === true
   const editBoard = (focus?: "repos" | "columns") => {
-    if (data !== undefined) setSettings({ _tag: "Edit", board: data, ...(focus ? { focus } : {}) })
+    if (data === undefined) return
+    // The dialog would start from the version that the pending save replaces.
+    if (settingsSavePending()) {
+      stillSaving()
+      return
+    }
+    const latest = queryClient.getQueryData<Board>(boardKey) ?? data
+    setSettings({ _tag: "Edit", board: latest, ...(focus ? { focus } : {}) })
   }
   const removeFailed = () => {
-    // A second update would go against the version the first one replaced and answer 409.
-    if (data === undefined || savingSettings) return
+    if (data === undefined || settingsSavePending()) return
     const failed = new Set(failures.map((failure) => failure.repo.toLowerCase()))
     const loading = data.board.repos.filter((repo) => !failed.has(repo.toLowerCase()))
-    boardWrites.update.mutate(
+    repoRemoval.mutate(
       { request: toUpdateRequest(org, data, { ...draftOf(data), repos: loading }) },
       {
         onSuccess: (saved) =>
@@ -1151,7 +1265,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
                 action={
                   canChangeBoards
                     ? {
-                        label: boardWrites.update.isPending
+                        label: repoRemoval.isPending
                           ? "Removing…"
                           : `Remove ${failures.length === 1 ? "it" : "them"} from the board`,
                         run: removeFailed,
@@ -1347,6 +1461,10 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
                 actions={actions}
                 hrefBase={hrefBase}
                 onMove={(cardMove) => startMove(cardMove)}
+                onArrange={(key, overKey) =>
+                  arrangeColumns(key, (draft) => dropColumn(draft, key, overKey), "move", "Retry")
+                }
+                columnsLocked={savingSettings}
                 onDragChange={(isDragging) => {
                   setDragging(isDragging)
                   if (isDragging) void queryClient.cancelQueries({ queryKey: boardKey })

@@ -1,6 +1,7 @@
 import {
   type Announcements,
   type CollisionDetection,
+  closestCenter,
   closestCorners,
   DndContext,
   type DragEndEvent,
@@ -9,23 +10,39 @@ import {
   type KeyboardCoordinateGetter,
   KeyboardSensor,
   MouseSensor,
+  type SensorContext,
   TouchSensor,
+  type UniqueIdentifier,
   useDroppable,
   useSensor,
   useSensors,
 } from "@dnd-kit/core"
 import {
+  arrayMove,
+  horizontalListSortingStrategy,
   SortableContext,
   sortableKeyboardCoordinates,
+  useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
-import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { CSS as DndCSS, useCombinedRefs } from "@dnd-kit/utilities"
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import type { Board, BoardCard, BoardColumn } from "../../shared/api.ts"
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
   CollapseIcon,
   ExpandIcon,
+  GripIcon,
   PlusIcon,
 } from "../ui/icons.tsx"
 import { buttonClass, Segmented } from "../ui/primitives.tsx"
@@ -38,21 +55,35 @@ import {
   previewKeys,
 } from "./board-view.ts"
 
-const COLUMN_PREFIX = "column:"
+const COLUMN_LIST_PREFIX = "column:"
+const SORTABLE_COLUMN_PREFIX = "sortable-column:"
 
-/**
- * Left and right move a picked-up card one column at a time, collapsed columns included, to the
- * top of that column. Up and down move it within a column as the sortable list does.
- */
-const keyboardCoordinates: KeyboardCoordinateGetter = (event, args) => {
-  if (event.code !== "ArrowLeft" && event.code !== "ArrowRight") {
-    return sortableKeyboardCoordinates(event, args)
-  }
-  const { collisionRect, droppableRects, droppableContainers } = args.context
+const sortableColumnId = (key: string) => `${SORTABLE_COLUMN_PREFIX}${key}`
+const sortableColumnKey = (id: UniqueIdentifier) => String(id).slice(SORTABLE_COLUMN_PREFIX.length)
+
+type DragKind = "card" | "column"
+
+const dragKind = (id: UniqueIdentifier): DragKind =>
+  String(id).startsWith(SORTABLE_COLUMN_PREFIX) ? "column" : "card"
+
+type DragBehaviour = {
+  readonly collision: CollisionDetection
+  readonly keyboard: KeyboardCoordinateGetter
+  readonly announcements: Announcements
+  readonly over: (event: DragOverEvent) => void
+  readonly drop: (event: DragEndEvent) => void
+  readonly overlay: (id: string) => ReactNode
+}
+
+const besideColumn = (
+  event: KeyboardEvent,
+  { collisionRect, droppableRects, droppableContainers }: SensorContext,
+  isColumn: (id: UniqueIdentifier) => boolean,
+) => {
   if (collisionRect === null) return undefined
   const columns = droppableContainers
     .getEnabled()
-    .filter((container) => String(container.id).startsWith(COLUMN_PREFIX))
+    .filter((container) => isColumn(container.id))
     .flatMap((container) => {
       const rect = droppableRects.get(container.id)
       return rect === undefined ? [] : [rect]
@@ -67,9 +98,56 @@ const keyboardCoordinates: KeyboardCoordinateGetter = (event, args) => {
     -1,
   )
   const target = columns[current + (event.code === "ArrowRight" ? 1 : -1)]
-  if (target === undefined) return undefined
+  return target === undefined
+    ? undefined
+    : { target, x: target.left + (target.width - collisionRect.width) / 2 }
+}
+
+/**
+ * Left and right move a picked-up card one column at a time, collapsed columns included, to the
+ * top of that column. Up and down move it within a column as the sortable list does.
+ */
+const cardKeyboardCoordinates: KeyboardCoordinateGetter = (event, args) => {
+  if (event.code !== "ArrowLeft" && event.code !== "ArrowRight") {
+    return sortableKeyboardCoordinates(event, args)
+  }
+  const beside = besideColumn(event, args.context, (id) =>
+    String(id).startsWith(COLUMN_LIST_PREFIX),
+  )
+  if (beside === undefined) return undefined
   event.preventDefault()
-  return { x: target.left + (target.width - collisionRect.width) / 2, y: target.top + 4 }
+  return { x: beside.x, y: beside.target.top + 4 }
+}
+
+const columnKeyboardCoordinates: KeyboardCoordinateGetter = (event, args) => {
+  if (!event.code.startsWith("Arrow")) return undefined
+  event.preventDefault()
+  if (event.code !== "ArrowLeft" && event.code !== "ArrowRight") return undefined
+  const beside = besideColumn(event, args.context, (id) => dragKind(id) === "column")
+  return beside === undefined ? undefined : { x: beside.x, y: args.currentCoordinates.y }
+}
+
+/**
+ * The pointer picks the column, as it does for cards: the grip sits at the header's end, far
+ * from the middle of the dragged copy. A keyboard drag goes by the copy's middle.
+ */
+const columnCollision: CollisionDetection = (args) => {
+  const droppableContainers = args.droppableContainers.filter(
+    (container) => dragKind(container.id) === "column",
+  )
+  const point = args.pointerCoordinates
+  if (point === null) return closestCenter({ ...args, droppableContainers })
+  const under = droppableContainers.find((container) => {
+    const rect = args.droppableRects.get(container.id)
+    return rect !== undefined && point.x >= rect.left && point.x <= rect.right
+  })
+  if (under !== undefined) return [{ id: under.id }]
+  const { x, y } = point
+  return closestCenter({
+    ...args,
+    droppableContainers,
+    collisionRect: { left: x, right: x, top: y, bottom: y, width: 0, height: 0 },
+  })
 }
 
 /** The narrowest a column gets so that whole columns fill the board beside the details panel. */
@@ -124,6 +202,9 @@ const screenReaderInstructions = {
     "Press Enter to open the card's details, or Space to pick it up. While it is picked up, the arrow keys move it, Space drops it, and Escape cancels. Arrow keys move between cards, and the period key opens the card's menu.",
 }
 
+const GRIP_INSTRUCTIONS =
+  "Press Space to pick the column up. While it is picked up, the left and right arrow keys move it, Space drops it, and Escape cancels."
+
 type BoardColumnsProps = {
   readonly board: Board
   /** Cards that pass the filters. Moves are computed against every card of the board. */
@@ -145,6 +226,8 @@ type BoardColumnsProps = {
   /** The details panel covers the right of the board, so the board leaves room for it. */
   readonly panelOpen: boolean
   readonly onMove: (move: CardMove) => void
+  readonly onArrange: (key: string, overKey: string) => void
+  readonly columnsLocked: boolean
   readonly onDragChange: (dragging: boolean) => void
 }
 
@@ -162,7 +245,31 @@ type ColumnProps = {
   readonly onToggleCollapsed: () => void
   /** A fixed width that makes whole columns fill the board beside the panel. */
   readonly width: number | null
+  readonly grip: { readonly describedBy: string; readonly locked: boolean } | null
+  readonly dropTarget: boolean
 }
+
+const ColumnCount = ({
+  shown,
+  total,
+  highlighted,
+}: {
+  shown: number
+  total: number
+  highlighted: boolean
+}) => (
+  <span
+    className={`text-xs font-medium tabular-nums ${
+      highlighted ? "text-indigo-700 dark:text-indigo-300" : "text-zinc-600 dark:text-zinc-400"
+    }`}
+    title={shown === total ? undefined : `${shown} of ${total} shown`}
+  >
+    {shown === total ? total : `${shown}/${total}`}
+  </span>
+)
+
+const revealOnHover =
+  "transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-focus-within/column:opacity-100 [@media(hover:hover)]:group-hover/column:opacity-100"
 
 const Column = ({
   index,
@@ -176,35 +283,57 @@ const Column = ({
   header,
   onToggleCollapsed,
   width,
+  grip,
+  dropTarget,
 }: ColumnProps) => {
   const droppable = useDroppable({
-    id: `${COLUMN_PREFIX}${column.key}`,
+    id: `${COLUMN_LIST_PREFIX}${column.key}`,
     data: { column: column.key },
   })
+  const sortable = useSortable({
+    id: sortableColumnId(column.key),
+    disabled: { draggable: grip === null || grip.locked, droppable: !dropTarget },
+  })
+  const railRef = useCombinedRefs(droppable.setNodeRef, sortable.setNodeRef)
+  const sorting = {
+    transform: DndCSS.Translate.toString(sortable.transform),
+    // An inline transition replaces the surface's color fade, which every drag sets one on.
+    transition: sortable.transition && `${sortable.transition}, ${SURFACE_FADE}`,
+  }
   // Column keys are label names with spaces and slashes, which aria-labelledby cannot reference.
   const headingId = `board-column-${index}`
-  const count = (
-    <span
-      className={`text-xs font-medium tabular-nums ${
-        highlighted ? "text-indigo-700 dark:text-indigo-300" : "text-zinc-600 dark:text-zinc-400"
-      }`}
-      title={shown === total ? undefined : `${shown} of ${total} shown`}
-    >
-      {shown === total ? total : `${shown}/${total}`}
-    </span>
-  )
+  const count = <ColumnCount shown={shown} total={total} highlighted={highlighted} />
+  const gripButton = (className: string) =>
+    grip !== null && (
+      <button
+        type="button"
+        ref={sortable.setActivatorNodeRef}
+        {...sortable.attributes}
+        {...sortable.listeners}
+        aria-describedby={grip.describedBy}
+        aria-label={`Move the ${column.title} column`}
+        title={`Move the ${column.title} column`}
+        className={`${buttonClass.iconSmall} cursor-grab touch-none active:cursor-grabbing aria-disabled:cursor-default aria-disabled:opacity-50 max-sm:hidden ${className}`}
+      >
+        <GripIcon className="size-3.5" />
+      </button>
+    )
 
   if (collapsed) {
     return (
       <section
-        ref={droppable.setNodeRef}
+        ref={railRef}
+        style={sorting}
         aria-labelledby={headingId}
-        className={`flex w-11 shrink-0 snap-start flex-col items-center gap-3 rounded-xl py-2 transition-colors ${
-          highlighted
-            ? columnHighlight
-            : `${columnSurface} hover:bg-zinc-200/50 dark:hover:bg-zinc-900`
+        className={`group/column flex w-11 shrink-0 snap-start flex-col items-center gap-3 rounded-xl py-2 transition-colors ${
+          sortable.isDragging
+            ? columnPlaceholder
+            : highlighted
+              ? columnHighlight
+              : `${columnSurface} hover:bg-zinc-200/50 dark:hover:bg-zinc-900`
         }`}
       >
+        {gripButton(revealOnHover)}
         <button
           type="button"
           onClick={onToggleCollapsed}
@@ -229,10 +358,11 @@ const Column = ({
 
   return (
     <section
+      ref={sortable.setNodeRef}
       aria-labelledby={headingId}
-      style={width === null ? undefined : { flex: "none", width, minWidth: 0 }}
+      style={width === null ? sorting : { ...sorting, flex: "none", width, minWidth: 0 }}
       className={`group/column flex h-full min-w-[14.5rem] max-w-[24rem] shrink grow basis-[16.5rem] snap-start flex-col rounded-xl transition-colors max-sm:w-[85vw] max-sm:max-w-none max-sm:shrink-0 max-sm:grow-0 max-sm:basis-auto ${
-        highlighted ? columnHighlight : columnSurface
+        sortable.isDragging ? columnPlaceholder : highlighted ? columnHighlight : columnSurface
       }`}
     >
       <header className="flex h-10 shrink-0 items-center gap-2 pr-1.5 pl-3">
@@ -244,8 +374,8 @@ const Column = ({
           {column.title}
         </h2>
         {count}
-        {/* Where a pointer can hover, the column's actions show on hover or focus only. */}
-        <span className="ml-auto flex items-center transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-focus-within/column:opacity-100 [@media(hover:hover)]:group-hover/column:opacity-100">
+        <span className={`ml-auto flex items-center ${revealOnHover}`}>
+          {gripButton("")}
           {header}
           <button
             type="button"
@@ -271,10 +401,54 @@ const Column = ({
   )
 }
 
-/** The column's surface, and its look while a dragged card is over it. */
 const columnSurface = "bg-zinc-100/70 dark:bg-zinc-900/60"
+const SURFACE_FADE = "background-color 150ms cubic-bezier(0.4, 0, 0.2, 1)"
 const columnHighlight =
   "bg-indigo-50/80 ring-1 ring-indigo-200 ring-inset dark:bg-indigo-500/[0.07] dark:ring-indigo-500/30"
+const columnPlaceholder =
+  "bg-indigo-50/60 outline-1 -outline-offset-1 outline-indigo-300 outline-dashed dark:bg-indigo-500/[0.06] dark:outline-indigo-400/40 [&>*]:opacity-0"
+
+// dnd-kit measures the overlay's only child for collisions and keyboard moves, so the tilt sits
+// one level down, as on the card overlay.
+const OverlayColumn = ({
+  column,
+  shown,
+  total,
+  collapsed,
+}: {
+  column: BoardColumn
+  shown: number
+  total: number
+  collapsed: boolean
+}) => (
+  <div>
+    {collapsed ? (
+      <div
+        className={`flex w-11 flex-col items-center gap-3 rounded-xl py-2 ${overlayColumnSurface}`}
+      >
+        <ColumnDot column={column} />
+        <p className="text-sm font-semibold text-zinc-700 [writing-mode:vertical-rl] dark:text-zinc-300">
+          {column.title}
+        </p>
+        <ColumnCount shown={shown} total={total} highlighted={false} />
+      </div>
+    ) : (
+      <div className={`rounded-xl ${overlayColumnSurface}`}>
+        <div className="flex h-10 items-center gap-2 pr-1.5 pl-3">
+          <ColumnDot column={column} />
+          <p className="truncate text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+            {column.title}
+          </p>
+          <ColumnCount shown={shown} total={total} highlighted={false} />
+        </div>
+        <div className="h-16" />
+      </div>
+    )}
+  </div>
+)
+
+const overlayColumnSurface =
+  "rotate-1 cursor-grabbing bg-zinc-100 shadow-lift ring-1 ring-zinc-900/5 dark:bg-zinc-900 dark:ring-white/5"
 
 const EmptyColumn = ({ filtered, column }: { filtered: boolean; column: BoardColumn }) => (
   <li className="px-3 py-5 text-center text-xs text-zinc-600 dark:text-zinc-400">
@@ -303,18 +477,28 @@ export const BoardColumns = ({
   saving,
   panelOpen,
   onMove,
+  onArrange,
+  columnsLocked,
   onDragChange,
 }: BoardColumnsProps) => {
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 6 } }),
     useSensor(KeyboardSensor, {
-      coordinateGetter: keyboardCoordinates,
+      // The sensor keeps the getter of the render its drag started in, so each kind's getter
+      // reads only its arguments.
+      coordinateGetter: (event, args) => behaviourOf(args.active).keyboard(event, args),
       // Enter on a card opens its details, so only Space picks a card up.
       keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space", "Enter"] },
     }),
   )
-  const [activeKey, setActiveKey] = useState<string | null>(null)
+  const gripInstructions = useId()
+  // dnd-kit compares the ids by reference and drops a column's transitions when they change.
+  const columnIds = useMemo(
+    () => board.columns.map((column) => sortableColumnId(column.key)),
+    [board.columns],
+  )
+  const [activeId, setActiveId] = useState<string | null>(null)
   const [overColumn, setOverColumn] = useState<string | null>(null)
   // The dragged card shows in the column it is over, so that column opens a gap where it lands.
   const [preview, setPreview] = useState<DragPreview | null>(null)
@@ -331,7 +515,7 @@ export const BoardColumns = ({
   const targetColumn = (overId: string | number | undefined) => {
     if (overId === undefined) return undefined
     const id = String(overId)
-    if (id.startsWith(COLUMN_PREFIX)) return id.slice(COLUMN_PREFIX.length)
+    if (id.startsWith(COLUMN_LIST_PREFIX)) return id.slice(COLUMN_LIST_PREFIX.length)
     if (preview !== null && id === preview.key) return preview.column
     return cardsByKey.get(id)?.column
   }
@@ -340,7 +524,7 @@ export const BoardColumns = ({
     return card === undefined ? "the card" : `${card.repo}#${card.number} ${card.title}`
   }
 
-  const announcements: Announcements = {
+  const cardAnnouncements: Announcements = {
     onDragStart: ({ active }) => `Picked up ${describe(active.id)}.`,
     onDragOver: ({ active, over }) =>
       over === null
@@ -360,19 +544,19 @@ export const BoardColumns = ({
    * keyboard drag), and only that column's cards and list compete for the drop. Corner distances
    * across the whole board would let a card in the next column beat a tall, empty list.
    */
-  const collision: CollisionDetection = (args) => {
+  const cardCollision: CollisionDetection = (args) => {
     const point = args.pointerCoordinates ?? {
       x: args.collisionRect.left + args.collisionRect.width / 2,
       y: args.collisionRect.top + args.collisionRect.height / 2,
     }
     const columnUnder = args.droppableContainers.find((container) => {
-      if (!String(container.id).startsWith(COLUMN_PREFIX)) return false
+      if (!String(container.id).startsWith(COLUMN_LIST_PREFIX)) return false
       const rect = args.droppableRects.get(container.id)
       // A list is inset from its column by the column's padding and the gap between columns.
       return rect !== undefined && point.x >= rect.left - 14 && point.x <= rect.right + 14
     })
     if (columnUnder === undefined) return closestCorners(args)
-    const column = String(columnUnder.id).slice(COLUMN_PREFIX.length)
+    const column = String(columnUnder.id).slice(COLUMN_LIST_PREFIX.length)
     if (collapsed.has(column)) return [{ id: columnUnder.id }]
     const inColumn = args.droppableContainers.filter(
       (container) => container.id === columnUnder.id || targetColumn(container.id) === column,
@@ -382,13 +566,13 @@ export const BoardColumns = ({
   }
 
   const finish = () => {
-    setActiveKey(null)
+    setActiveId(null)
     setOverColumn(null)
     setPreview(null)
     onDragChange(false)
   }
 
-  const draggedOver = ({ active, over }: DragOverEvent) => {
+  const cardDraggedOver = ({ active, over }: DragOverEvent) => {
     const key = String(active.id)
     const card = cardsByKey.get(key)
     const toColumn = targetColumn(over?.id)
@@ -410,7 +594,7 @@ export const BoardColumns = ({
     })
   }
 
-  const dropped = ({ active, over }: DragEndEvent) => {
+  const cardDropped = ({ active, over }: DragEndEvent) => {
     const key = String(active.id)
     const card = cardsByKey.get(key)
     const toColumn = targetColumn(over?.id)
@@ -421,7 +605,7 @@ export const BoardColumns = ({
     const neighbours = neighboursAfterDrop(
       keys,
       key,
-      overId.startsWith(COLUMN_PREFIX) ? null : overId,
+      overId.startsWith(COLUMN_LIST_PREFIX) ? null : overId,
     )
     if (toColumn === card.column) {
       const unchanged = neighboursAfterDrop(shownKeys(card.column), key, null)
@@ -449,7 +633,77 @@ export const BoardColumns = ({
     })
   }
 
-  const active = activeKey === null ? undefined : cardsByKey.get(activeKey)
+  const isCollapsed = (key: string) => collapsed.has(key) && composing !== key
+  const counts = (key: string) => {
+    const all = columnCards(board.cards, key)
+    return { shown: all.filter(visible).length, total: all.length }
+  }
+  const sortableTitle = (id: UniqueIdentifier) => columnTitle(sortableColumnKey(id))
+  const landing = (id: UniqueIdentifier, overId: UniqueIdentifier) => {
+    const keys = board.columns.map((column) => column.key)
+    const key = sortableColumnKey(id)
+    const order = arrayMove(keys, keys.indexOf(key), keys.indexOf(sortableColumnKey(overId)))
+    const at = order.indexOf(key)
+    const before = order[at - 1]
+    const after = order[at + 1]
+    if (before !== undefined) return `after ${columnTitle(before)}`
+    return after === undefined ? "where it was" : `before ${columnTitle(after)}`
+  }
+
+  const behaviours: Record<DragKind, DragBehaviour> = {
+    card: {
+      collision: cardCollision,
+      keyboard: cardKeyboardCoordinates,
+      announcements: cardAnnouncements,
+      over: cardDraggedOver,
+      drop: cardDropped,
+      overlay: (id) => {
+        const card = cardsByKey.get(id)
+        return card === undefined ? null : <OverlayCard card={card} showRepo={showRepo} />
+      },
+    },
+    column: {
+      collision: columnCollision,
+      keyboard: columnKeyboardCoordinates,
+      announcements: {
+        onDragStart: ({ active }) => `Picked up the ${sortableTitle(active.id)} column.`,
+        onDragOver: ({ active, over }) =>
+          over === null
+            ? `${sortableTitle(active.id)} is not over a column.`
+            : `${sortableTitle(active.id)} will go ${landing(active.id, over.id)}.`,
+        onDragEnd: ({ active, over }) =>
+          over === null || over.id === active.id
+            ? `${sortableTitle(active.id)} did not move.`
+            : `${sortableTitle(active.id)} was dropped ${landing(active.id, over.id)}.`,
+        onDragCancel: ({ active }) => `Moving ${sortableTitle(active.id)} was cancelled.`,
+      },
+      over: () => {},
+      drop: ({ active, over }) => {
+        finish()
+        if (over === null || over.id === active.id) return
+        onArrange(sortableColumnKey(active.id), sortableColumnKey(over.id))
+      },
+      overlay: (id) => {
+        const column = board.columns.find((candidate) => candidate.key === sortableColumnKey(id))
+        return column === undefined ? null : (
+          <OverlayColumn
+            column={column}
+            collapsed={isCollapsed(column.key)}
+            {...counts(column.key)}
+          />
+        )
+      },
+    },
+  }
+  const behaviourOf = (id: UniqueIdentifier) => behaviours[dragKind(id)]
+  const announcements: Announcements = {
+    onDragStart: (args) => behaviourOf(args.active.id).announcements.onDragStart(args),
+    onDragOver: (args) => behaviourOf(args.active.id).announcements.onDragOver(args),
+    onDragEnd: (args) => behaviourOf(args.active.id).announcements.onDragEnd(args),
+    onDragCancel: (args) => behaviourOf(args.active.id).announcements.onDragCancel(args),
+  }
+  const activeKind = activeId === null ? null : dragKind(activeId)
+
   const scroller = useRef<HTMLDivElement>(null)
   const [inView, setInView] = useState(0)
   // On a phone one column fills the screen; the tabs above say which one and jump to others.
@@ -526,19 +780,24 @@ export const BoardColumns = ({
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={collision}
+      collisionDetection={(args) => behaviourOf(args.active.id).collision(args)}
       accessibility={{ announcements, screenReaderInstructions }}
       // Near an edge the board scrolls gently, so a held card does not race past columns.
       autoScroll={{ acceleration: 2, interval: 16, threshold: { x: 0.1, y: 0.15 } }}
       onDragStart={({ active }) => {
-        setActiveKey(String(active.id))
+        setActiveId(String(active.id))
         onDragChange(true)
       }}
-      onDragOver={draggedOver}
-      onDragEnd={dropped}
+      onDragOver={(event) => behaviourOf(event.active.id).over(event)}
+      onDragEnd={(event) => behaviourOf(event.active.id).drop(event)}
       onDragCancel={finish}
     >
       <div className="flex h-full min-h-0 flex-col">
+        {board.viewerCanArrange && (
+          <p id={gripInstructions} hidden>
+            {GRIP_INSTRUCTIONS}
+          </p>
+        )}
         <div
           ref={tabs}
           onScroll={measureTabs}
@@ -593,59 +852,69 @@ export const BoardColumns = ({
                 : ""
             }`}
           >
-            {board.columns.map((column, index) => {
-              const all = columnCards(board.cards, column.key)
-              const cards = shownDuringDrag(column.key).flatMap((key) => cardsByKey.get(key) ?? [])
-              const isComposing = composing === column.key
-              return (
-                <Column
-                  key={column.key}
-                  index={index}
-                  column={column}
-                  cards={cards}
-                  shown={cards.length}
-                  total={all.length + (cards.length - all.filter(visible).length)}
-                  highlighted={activeKey !== null && overColumn === column.key}
-                  collapsed={collapsed.has(column.key) && !isComposing}
-                  onToggleCollapsed={() => onToggleCollapsed(column.key)}
-                  width={fittedWidth}
-                  header={
-                    canCreate &&
-                    column._tag !== "Done" && (
-                      <button
-                        type="button"
-                        onClick={() => onCompose(column.key)}
-                        aria-label={`New issue in ${column.title}`}
-                        title={`New issue in ${column.title}`}
-                        className={buttonClass.iconSmall}
-                      >
-                        <PlusIcon className="size-3.5" />
-                      </button>
-                    )
-                  }
-                >
-                  {isComposing && <li>{composer}</li>}
-                  {cards.length === 0 && !isComposing && (
-                    <EmptyColumn filtered={filtered && all.length > 0} column={column} />
-                  )}
-                  {cards.map((card, position) => (
-                    <SortableCard
-                      key={card.key}
-                      tabbable={position === 0}
-                      card={card}
-                      columns={board.columns}
-                      viewerCanArrange={board.viewerCanArrange}
-                      viewer={viewer}
-                      showRepo={showRepo}
-                      selected={selectedKey === card.key}
-                      actions={actions}
-                      hrefBase={hrefBase}
-                      saving={saving.has(card.key)}
-                    />
-                  ))}
-                </Column>
-              )
-            })}
+            <SortableContext items={columnIds} strategy={horizontalListSortingStrategy}>
+              {board.columns.map((column, index) => {
+                const all = columnCards(board.cards, column.key)
+                const cards = shownDuringDrag(column.key).flatMap(
+                  (key) => cardsByKey.get(key) ?? [],
+                )
+                const isComposing = composing === column.key
+                return (
+                  <Column
+                    key={column.key}
+                    index={index}
+                    column={column}
+                    cards={cards}
+                    shown={cards.length}
+                    total={all.length + (cards.length - all.filter(visible).length)}
+                    highlighted={activeId !== null && overColumn === column.key}
+                    collapsed={isCollapsed(column.key)}
+                    onToggleCollapsed={() => onToggleCollapsed(column.key)}
+                    width={fittedWidth}
+                    grip={
+                      board.viewerCanArrange
+                        ? { describedBy: gripInstructions, locked: columnsLocked }
+                        : null
+                    }
+                    dropTarget={activeKind !== "card"}
+                    header={
+                      canCreate &&
+                      column._tag !== "Done" && (
+                        <button
+                          type="button"
+                          onClick={() => onCompose(column.key)}
+                          aria-label={`New issue in ${column.title}`}
+                          title={`New issue in ${column.title}`}
+                          className={buttonClass.iconSmall}
+                        >
+                          <PlusIcon className="size-3.5" />
+                        </button>
+                      )
+                    }
+                  >
+                    {isComposing && <li>{composer}</li>}
+                    {cards.length === 0 && !isComposing && (
+                      <EmptyColumn filtered={filtered && all.length > 0} column={column} />
+                    )}
+                    {cards.map((card, position) => (
+                      <SortableCard
+                        key={card.key}
+                        tabbable={position === 0}
+                        card={card}
+                        columns={board.columns}
+                        viewerCanArrange={board.viewerCanArrange}
+                        viewer={viewer}
+                        showRepo={showRepo}
+                        selected={selectedKey === card.key}
+                        actions={actions}
+                        hrefBase={hrefBase}
+                        saving={saving.has(card.key)}
+                      />
+                    ))}
+                  </Column>
+                )
+              })}
+            </SortableContext>
           </div>
           {panelOpen &&
             (
@@ -673,7 +942,7 @@ export const BoardColumns = ({
         </div>
       </div>
       <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" }}>
-        {active === undefined ? null : <OverlayCard card={active} showRepo={showRepo} />}
+        {activeId === null ? null : behaviourOf(activeId).overlay(activeId)}
       </DragOverlay>
     </DndContext>
   )
