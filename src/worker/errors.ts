@@ -58,7 +58,10 @@ export class BoardWriteForbidden extends Schema.TaggedError<BoardWriteForbidden>
   { message: Schema.String },
 ) {}
 
-/** The user's board is out of date: a move's neighbours moved, or a newer version is stored. */
+/**
+ * The user's board is out of date: the moved card left the column they saw, a move's neighbours
+ * moved, a new card's column is gone, or a newer version of the board is stored.
+ */
 export class BoardChanged extends Schema.TaggedError<BoardChanged>()("BoardChanged", {}) {}
 
 export class BoardNotFound extends Schema.TaggedError<BoardNotFound>()("BoardNotFound", {}) {}
