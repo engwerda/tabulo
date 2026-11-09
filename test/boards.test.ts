@@ -1005,15 +1005,20 @@ describe("repositories a member cannot read", () => {
   })
 
   it("keep their rank rows when a member who cannot read them loads the board", async () => {
-    const { get, post, grace } = await session()
+    const { forgejo, clock, get, post, grace } = await session()
     await storeAllThree(post)
     await get("/api/board?org=acme")
     const before = await rankRows()
+    const closedLongAgo = forgejo.issue("acme", "api", 2)
+    if (closedLongAgo === undefined) throw new Error("fixture has no acme/api#2")
+    closedLongAgo.state = "closed"
+    closedLongAgo.closed_at = "2026-09-01T00:00:00Z"
+    clock.advance(60_000)
 
     await answer(await get("/api/board?org=acme", grace))
 
     expect(before).toContainEqual(expect.objectContaining({ issue_key: "acme/secret#4" }))
-    expect(await rankRows()).toEqual(before)
+    expect(await rankRows()).toEqual(before.filter((row) => row.issue_key !== "acme/api#2"))
   })
 
   it("count toward the 20 repositories until a member drops them", async () => {
