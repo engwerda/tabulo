@@ -20,7 +20,9 @@ import type {
   SetLabelRequest,
   SetMilestoneRequest,
 } from "../shared/api.ts"
+import { MAX_REPOS } from "../shared/api.ts"
 import { rankForDrop } from "../shared/card-order.ts"
+import { BoardStore, DEFAULT_BOARD } from "./board-store.ts"
 import { CardRanks, rankCards, rankOf, topRank } from "./card-ranks.ts"
 import type { BoardSettings } from "./config.ts"
 import {
@@ -49,7 +51,6 @@ export class BoardConfig extends Context.Service<BoardConfig, BoardSettings>()(
 ) {}
 
 const DAY_MS = 24 * 60 * 60 * 1000
-const MAX_BOARD_REPOS = 20
 // Each repository needs three Forgejo reads at once; Workers allow six open connections.
 const REPO_CONCURRENCY = 2
 
@@ -252,7 +253,8 @@ export const parseCardQuery = (
     return { repo: ref, number: Number(number) }
   })
 
-export const parseBoardQuery = (org: string | undefined, repos: string | undefined) =>
+/** The organization and 1 to MAX_REPOS repositories of an insights or epics request. */
+export const parseReposQuery = (org: string | undefined, repos: string | undefined) =>
   Effect.gen(function* () {
     const parsed = yield* Effect.forEach(
       (repos ?? "").split(",").filter((name) => name !== ""),
@@ -262,9 +264,9 @@ export const parseBoardQuery = (org: string | undefined, repos: string | undefin
     if (names.length === 0) {
       return yield* new BoardRequestInvalid({ message: "Choose at least one repository" })
     }
-    if (names.length > MAX_BOARD_REPOS) {
+    if (names.length > MAX_REPOS) {
       return yield* new BoardRequestInvalid({
-        message: `Choose at most ${MAX_BOARD_REPOS} repositories`,
+        message: `Choose at most ${MAX_REPOS} repositories`,
       })
     }
     return { org: yield* parseName("org", org), repos: names }
@@ -274,6 +276,19 @@ const isOrgMember = (token: AccessToken, org: string) =>
   ForgejoClient.use((forgejo) => forgejo.userOrgs(token)).pipe(
     Effect.map((orgs) => orgs.some(({ name }) => name.toLowerCase() === org)),
   )
+
+/** BoardWriteForbidden with `message` unless `/user/orgs` lists the organization for `token`. */
+export const requireMember = (token: AccessToken, org: string, message: string) =>
+  Effect.flatMap(isOrgMember(token, org), (member) =>
+    member ? Effect.void : Effect.fail(new BoardWriteForbidden({ message })),
+  )
+
+/** The default board's column order and hidden columns: as stored, else BOARD_COLUMNS. */
+export const defaultPlan = (org: string) =>
+  Effect.gen(function* () {
+    const stored = yield* BoardStore.use((boards) => boards.find(org, DEFAULT_BOARD))
+    return stored ?? { columns: (yield* BoardConfig).defaultColumns, hidden: [] }
+  })
 
 export const listOrgs = (token: AccessToken) =>
   ForgejoClient.use((forgejo) => forgejo.userOrgs(token)).pipe(
@@ -545,11 +560,7 @@ export const moveCard = (token: AccessToken, login: string, request: MoveCardReq
     }
 
     const forgejo = yield* ForgejoClient
-    if (!(yield* isOrgMember(token, org))) {
-      return yield* new BoardWriteForbidden({
-        message: `Only members of ${org} can arrange its board`,
-      })
-    }
+    yield* requireMember(token, org, `Only members of ${org} can arrange its board`)
     const canRead = (key: string | null) => {
       const neighbour = key === null ? undefined : cardIssue(key)
       return neighbour === undefined
@@ -660,11 +671,7 @@ export const createCard = (token: AccessToken, login: string, request: CreateCar
     const repoRef = { owner: org, name: yield* parseName("repository", request.repo) }
     const settings = yield* BoardConfig
     const forgejo = yield* ForgejoClient
-    if (!(yield* isOrgMember(token, org))) {
-      return yield* new BoardWriteForbidden({
-        message: `Only members of ${org} can add cards to its board`,
-      })
-    }
+    yield* requireMember(token, org, `Only members of ${org} can add cards to its board`)
     const [repo, orgLabels] = yield* Effect.all(
       [forgejo.repo(token, repoRef), readOrgLabels(token, org)],
       { concurrency: "unbounded" },

@@ -122,6 +122,88 @@ export const BoardCard = Schema.Struct({
 })
 export type BoardCard = typeof BoardCard.Type
 
+export const DEFAULT_BOARD_ID = "default"
+export const DEFAULT_BOARD_NAME = "Board"
+/** The default board and up to 49 more. */
+export const MAX_BOARDS = 50
+/** Repositories per board, and per insights or epics request. */
+export const MAX_REPOS = 20
+export const MAX_BOARD_NAME = 60
+export const MAX_COLUMN_KEY = 200
+
+const BoardName = Schema.String.check(
+  Schema.isTrimmed(),
+  Schema.isNonEmpty(),
+  Schema.isMaxLength(MAX_BOARD_NAME),
+)
+/** Column keys: `todo`, `done`, or a status label's full name. Keys without a column are kept. */
+const ColumnKeys = Schema.Array(
+  Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(MAX_COLUMN_KEY)),
+).check(Schema.isUnique())
+/** The server checks the names and refuses one named twice in any case. */
+const BoardRepos = Schema.Array(Schema.String).check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(MAX_REPOS),
+)
+/** The version the client loaded; another answers 409 and changes nothing. */
+const BoardVersion = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+
+/** An entry of GET /api/boards. */
+export const BoardSummary = Schema.Struct({ id: Schema.String, name: Schema.String })
+export type BoardSummary = typeof BoardSummary.Type
+
+/** The organization's boards, the default board first and the others by name. */
+export const BoardList = Schema.Struct({ boards: Schema.Array(BoardSummary) })
+export type BoardList = typeof BoardList.Type
+
+/** A board as one user may see it. */
+export const SavedBoard = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  /** The board's repositories that the user can read, in the board's order. */
+  repos: Schema.Array(Schema.String),
+  /** How many of the board's repositories the user cannot read; they are never named. */
+  unreadableRepos: Schema.Number,
+  /** The stored column order as column keys, keys without a column included. */
+  columns: Schema.Array(Schema.String),
+  /** The keys of the hidden columns, as stored. */
+  hidden: Schema.Array(Schema.String),
+  /** 0 for the default board until a member first changes it; every change adds 1. */
+  version: Schema.Number,
+})
+export type SavedBoard = typeof SavedBoard.Type
+
+export const SavedBoardResult = Schema.Struct({ board: SavedBoard })
+export type SavedBoardResult = typeof SavedBoardResult.Type
+
+export const CreateBoardRequest = Schema.Struct({
+  org: Schema.String,
+  name: BoardName,
+  repos: BoardRepos,
+})
+export type CreateBoardRequest = typeof CreateBoardRequest.Type
+
+/** Replaces every field of the board except its id. */
+export const UpdateBoardRequest = Schema.Struct({
+  org: Schema.String,
+  board: Schema.String,
+  version: BoardVersion,
+  name: BoardName,
+  repos: BoardRepos,
+  columns: ColumnKeys,
+  hidden: ColumnKeys,
+  /** Stores only `repos`, without the stored repositories the user cannot read. */
+  dropUnreadable: Schema.Boolean,
+})
+export type UpdateBoardRequest = typeof UpdateBoardRequest.Type
+
+export const DeleteBoardRequest = Schema.Struct({
+  org: Schema.String,
+  board: Schema.String,
+  version: BoardVersion,
+})
+export type DeleteBoardRequest = typeof DeleteBoardRequest.Type
+
 export const Board = Schema.Struct({
   org: Schema.String,
   repos: Schema.Array(Schema.String),

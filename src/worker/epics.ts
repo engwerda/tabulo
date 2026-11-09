@@ -1,7 +1,14 @@
 import { Parser } from "commonmark"
 import { Clock, Context, Effect } from "effect"
 import type { Epic, EpicChild, Epics, IncompleteEpicListing } from "../shared/api.ts"
-import { BoardConfig, boardLayout, cardKey, readOrgLabels, toBoardCard } from "./board.ts"
+import {
+  BoardConfig,
+  boardLayout,
+  cardKey,
+  defaultPlan,
+  readOrgLabels,
+  toBoardCard,
+} from "./board.ts"
 import { describeForgejoError, FORGEJO_READ_ERRORS } from "./errors.ts"
 import {
   type AccessToken,
@@ -137,11 +144,12 @@ export const loadEpics = Effect.fn("loadEpics")(function* (
   const settings = yield* BoardConfig
   const config = yield* EpicsConfig
   const forgejo = yield* ForgejoClient
-  // Every column counts, hidden or not, so progress includes every child.
-  const layout = boardLayout(settings.statusScope, yield* readOrgLabels(token, query.org, pool), {
-    columns: settings.defaultColumns,
-    hidden: [],
-  })
+  const [orgLabels, plan] = yield* Effect.all(
+    [readOrgLabels(token, query.org, pool), defaultPlan(query.org)],
+    { concurrency: "unbounded" },
+  )
+  // Hidden columns count too, so progress includes every child.
+  const layout = boardLayout(settings.statusScope, orgLabels, { columns: plan.columns, hidden: [] })
   const windowStart = (yield* Clock.currentTimeMillis) - settings.doneDays * 86_400_000
   const updatedSince = new Date(windowStart).toISOString()
   const share = sharePages(pool, query.repos.length)

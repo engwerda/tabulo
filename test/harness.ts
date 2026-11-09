@@ -66,3 +66,36 @@ export const signIn = async (
   if (session === undefined) throw new Error(`sign-in failed with HTTP ${response.status}`)
   return `${SESSION_COOKIE}=${session.value}`
 }
+
+/** POSTs `body` as JSON from Tabulo's own origin, as every write must. */
+export const postJson = (call: Call, cookie: string, path: string, body: unknown) =>
+  call(path, {
+    method: "POST",
+    headers: { cookie, origin: APP_URL, "content-type": "application/json" },
+    body: JSON.stringify(body),
+  })
+
+/**
+ * Sets the repositories of `org`'s default board through the API, as the member whose cookie it
+ * is given, and keeps the board's version between calls. It stores no column order and hides
+ * nothing, so the columns are Todo, the status labels by name, and Done.
+ */
+export const defaultBoardRepos = (call: Call, org: string) => {
+  let version = 0
+  return async (cookie: string, repos: ReadonlyArray<string>) => {
+    const response = await postJson(call, cookie, "/api/boards/update", {
+      org,
+      board: "default",
+      version,
+      name: "Board",
+      repos,
+      columns: [],
+      hidden: [],
+      dropUnreadable: true,
+    })
+    if (response.status !== 200) {
+      throw new Error(`setting the default board failed with HTTP ${response.status}`)
+    }
+    version = ((await response.json()) as { board: { version: number } }).board.version
+  }
+}

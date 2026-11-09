@@ -8,7 +8,7 @@ import {
   type Insights,
 } from "../shared/api.ts"
 import { buildActivity } from "./activity.ts"
-import { BoardConfig, parseBoardQuery } from "./board.ts"
+import { BoardConfig, parseReposQuery } from "./board.ts"
 import {
   BoardRequestInvalid,
   describeForgejoError,
@@ -71,7 +71,7 @@ export const parseInsightsQuery = (query: {
   readonly user: string | undefined
 }) =>
   Effect.all({
-    scope: parseBoardQuery(query.org, query.repos),
+    scope: parseReposQuery(query.org, query.repos),
     days: parseDays(query.days),
     tz: parseTimeZone(query.tz),
     user: parseUser(query.user),

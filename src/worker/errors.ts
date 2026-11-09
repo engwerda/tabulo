@@ -58,8 +58,20 @@ export class BoardWriteForbidden extends Schema.TaggedError<BoardWriteForbidden>
   { message: Schema.String },
 ) {}
 
-/** The neighbours of a move do not match the stored order: the mover's board is out of date. */
+/**
+ * The user's board is out of date: a move's card or neighbours are not where the user saw them,
+ * or a board's version is not the one the user loaded.
+ */
 export class BoardChanged extends Schema.TaggedError<BoardChanged>()("BoardChanged", {}) {}
+
+/** The organization has no board with this id. */
+export class BoardNotFound extends Schema.TaggedError<BoardNotFound>()("BoardNotFound", {}) {}
+
+/** A new board would be one more than an organization may have. */
+export class BoardLimitReached extends Schema.TaggedError<BoardLimitReached>()(
+  "BoardLimitReached",
+  {},
+) {}
 
 /** A move needed several Forgejo writes, and one failed after an earlier one succeeded. */
 export class ForgejoMovePartlyApplied extends Schema.TaggedError<ForgejoMovePartlyApplied>()(
