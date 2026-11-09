@@ -57,7 +57,12 @@ const session = async (
     expect(response.status).toBe(200)
     return ((await response.json()) as { board: SavedBoard }).board
   }
-  return { forgejo, clock, call, ada, grace: graceCookie, linus, get, post, create }
+  const holding = (sql: string, before = barrier(2)) =>
+    tabulo(forgejo.fetch, {
+      clock: clock.clock,
+      vars: { ...vars, DB: holdStatements(env.DB, sql, before) },
+    })
+  return { forgejo, clock, call, ada, grace: graceCookie, linus, get, post, create, holding }
 }
 
 const update = (board: string, version: number, fields: Record<string, unknown> = {}) => ({
@@ -308,26 +313,13 @@ describe("POST /api/boards", () => {
   })
 
   it("lets only one of two members add the 50th board at the same moment", async () => {
-    const forgejo = createFakeForgejo({ orgs: [boardsOrg()], otherUsers: [grace] })
-    const clock = createFakeClock().clock
-    const plain = tabulo(forgejo.fetch, { clock })
-    const ada = await signIn(plain, forgejo)
-    const graceCookie = await signIn(plain, forgejo, "grace")
-    for (let i = 0; i < 48; i++) {
-      await postJson(plain, ada, "/api/boards", { org: "acme", name: `Board ${i}`, repos: ["api"] })
-    }
-    const racing = tabulo(forgejo.fetch, {
-      clock,
-      vars: { DB: holdStatements(env.DB, "INSERT INTO boards", barrier(2)) },
-    })
+    const { ada, grace, create, holding } = await session()
+    for (let i = 0; i < 48; i++) await create(`Board ${i}`)
+    const racing = holding("INSERT INTO boards")
 
     const responses = await Promise.all([
       postJson(racing, ada, "/api/boards", { org: "acme", name: "Ada's", repos: ["api"] }),
-      postJson(racing, graceCookie, "/api/boards", {
-        org: "acme",
-        name: "Grace's",
-        repos: ["api"],
-      }),
+      postJson(racing, grace, "/api/boards", { org: "acme", name: "Grace's", repos: ["api"] }),
     ])
 
     expect(responses.map((response) => response.status).sort()).toEqual([200, 400])
@@ -399,24 +391,12 @@ describe("POST /api/boards/update", () => {
   })
 
   it("lets only one of two members store the default board first", async () => {
-    const forgejo = createFakeForgejo({ orgs: [boardsOrg()], otherUsers: [grace] })
-    const clock = createFakeClock().clock
-    const plain = tabulo(forgejo.fetch, { clock })
-    const ada = await signIn(plain, forgejo)
-    const graceCookie = await signIn(plain, forgejo, "grace")
-    const racing = tabulo(forgejo.fetch, {
-      clock,
-      vars: { DB: holdStatements(env.DB, "INSERT INTO boards", barrier(2)) },
-    })
+    const { ada, grace, holding } = await session()
+    const racing = holding("INSERT INTO boards")
 
     const responses = await Promise.all([
       postJson(racing, ada, "/api/boards/update", update("default", 0, { name: "Ada's" })),
-      postJson(
-        racing,
-        graceCookie,
-        "/api/boards/update",
-        update("default", 0, { name: "Grace's" }),
-      ),
+      postJson(racing, grace, "/api/boards/update", update("default", 0, { name: "Grace's" })),
     ])
 
     expect(responses.map((response) => response.status).sort()).toEqual([200, 409])
@@ -424,26 +404,14 @@ describe("POST /api/boards/update", () => {
   })
 
   it("lets only one of two members change a stored board from the same version", async () => {
-    const forgejo = createFakeForgejo({ orgs: [boardsOrg()], otherUsers: [grace] })
-    const clock = createFakeClock().clock
-    const plain = tabulo(forgejo.fetch, { clock })
-    const ada = await signIn(plain, forgejo)
-    const graceCookie = await signIn(plain, forgejo, "grace")
-    const stored = await postJson(plain, ada, "/api/boards/update", update("default", 0))
+    const { ada, grace, post, holding } = await session()
+    const stored = await post("/api/boards/update", update("default", 0))
     expect(stored.status).toBe(200)
-    const racing = tabulo(forgejo.fetch, {
-      clock,
-      vars: { DB: holdStatements(env.DB, "UPDATE boards", barrier(2)) },
-    })
+    const racing = holding("UPDATE boards")
 
     const responses = await Promise.all([
       postJson(racing, ada, "/api/boards/update", update("default", 1, { name: "Ada's" })),
-      postJson(
-        racing,
-        graceCookie,
-        "/api/boards/update",
-        update("default", 1, { name: "Grace's" }),
-      ),
+      postJson(racing, grace, "/api/boards/update", update("default", 1, { name: "Grace's" })),
     ])
 
     expect(responses.map((response) => response.status).sort()).toEqual([200, 409])
@@ -451,29 +419,17 @@ describe("POST /api/boards/update", () => {
   })
 
   it("answers 404 board_not_found to an update that a delete got to first", async () => {
-    const forgejo = createFakeForgejo({ orgs: [boardsOrg()], otherUsers: [grace] })
-    const clock = createFakeClock().clock
-    const plain = tabulo(forgejo.fetch, { clock })
-    const ada = await signIn(plain, forgejo)
-    const graceCookie = await signIn(plain, forgejo, "grace")
-    const created = await postJson(plain, ada, "/api/boards", {
-      org: "acme",
-      name: "Design",
-      repos: ["api"],
-    })
-    const { id } = ((await created.json()) as { board: SavedBoard }).board
+    const { ada, grace, post, create, holding } = await session()
+    const { id } = await create("Design")
     const graceDeletes = async () => {
-      const deleted = await postJson(plain, graceCookie, "/api/boards/delete", {
-        org: "acme",
-        board: id,
-        version: 1,
-      })
+      const deleted = await post(
+        "/api/boards/delete",
+        { org: "acme", board: id, version: 1 },
+        grace,
+      )
       expect(deleted.status).toBe(200)
     }
-    const updater = tabulo(forgejo.fetch, {
-      clock,
-      vars: { DB: holdStatements(env.DB, "UPDATE boards", graceDeletes) },
-    })
+    const updater = holding("UPDATE boards", graceDeletes)
 
     const response = await postJson(updater, ada, "/api/boards/update", update(id, 1))
 
