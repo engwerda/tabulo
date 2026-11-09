@@ -68,6 +68,7 @@ import { BoardSettingsDialog, type SettingsMode } from "./BoardSettingsDialog.ts
 import { BoardSwitcher, useBoardList } from "./BoardSwitcher.tsx"
 import { boardCommands } from "./board-commands.ts"
 import { draftOf, toUpdateRequest } from "./board-settings.ts"
+import { writingBoards } from "./board-sync.ts"
 import {
   applyMove,
   boardQueryKey,
@@ -463,6 +464,11 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
     refetchInterval: settled ? REFRESH_MS : false,
     refetchOnWindowFocus: settled,
   })
+  // While a write is pending its end reads the boards again; an answer read now predates the
+  // write and would put a moved card back.
+  const refresh = () => {
+    if (!writingBoards(queryClient, org)) void board.refetch()
+  }
   const boardMissing =
     board.error instanceof RequestFailed && board.error.code === "board_not_found"
   const orgMissing =
@@ -867,7 +873,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
     const key = event.key
     if (key === "?") openShortcuts()
     else if (key === "/") searchInput.current?.focus()
-    else if (key === "r" || key === "R") void board.refetch()
+    else if (key === "r" || key === "R") refresh()
     else if (key === "m" || key === "M") toggleMine()
     else if ((key === "n" || key === "N") && canCreate && firstCreatable !== undefined) {
       openComposer(firstCreatable.key)
@@ -947,7 +953,6 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
           }),
         onError: (error) => {
           if (error instanceof RequestFailed && error.code === "board_changed") {
-            void board.refetch()
             toast({
               tone: "warning",
               title: "Someone changed the board meanwhile",
@@ -1012,7 +1017,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
             setParams((current) => withFilter(current, filter, values), { replace: true }),
           clearFilters,
           focusSearch: afterPaletteCloses(() => searchInput.current?.focus()),
-          refresh: () => void board.refetch(),
+          refresh,
           updated: updated ?? "",
           boardName: data.board.name,
           editBoard: canEditBoard ? afterPaletteCloses(() => editBoard()) : null,
@@ -1070,7 +1075,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
               <BoardMenu
                 updated={updated}
                 refreshing={board.isFetching}
-                onRefresh={() => void board.refetch()}
+                onRefresh={refresh}
                 onShortcuts={openShortcuts}
                 className="col-start-2 row-start-2 self-start sm:row-start-1 sm:self-center min-[84rem]:col-start-3"
               />
@@ -1091,7 +1096,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
               <BoardMenu
                 updated={updated}
                 refreshing={board.isFetching}
-                onRefresh={() => void board.refetch()}
+                onRefresh={refresh}
                 onShortcuts={openShortcuts}
               />
             )}
@@ -1116,7 +1121,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
           <ErrorNotice
             tone="warning"
             title="Could not refresh the board"
-            onRetry={() => void board.refetch()}
+            onRetry={refresh}
             retrying={board.isFetching}
             className="mx-4 mb-3 sm:mx-6"
           >
@@ -1133,7 +1138,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
             <ErrorNotice
               tone="warning"
               title="Could not load some repositories"
-              onRetry={() => void board.refetch()}
+              onRetry={refresh}
               retrying={board.isFetching}
               className="mx-4 mb-3 sm:mx-6"
             >
@@ -1187,7 +1192,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
             board.isError ? (
               <ErrorNotice
                 title="Could not load the board"
-                onRetry={() => void board.refetch()}
+                onRetry={refresh}
                 retrying={board.isFetching}
                 className="mx-4 sm:mx-6"
               >
@@ -1205,7 +1210,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
                   ? `Could not load ${data.failedRepos[0]?.repo}`
                   : "Could not load any of the repositories"
               }
-              onRetry={() => void board.refetch()}
+              onRetry={refresh}
               retrying={board.isFetching}
               className="mx-4 sm:mx-6"
             >

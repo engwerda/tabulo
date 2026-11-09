@@ -28,7 +28,7 @@ import {
   toCreateRequest,
   toUpdateRequest,
 } from "./board-settings.ts"
-import { boardListQueryKey, boardQueryKey } from "./board-view.ts"
+import { boardListQueryKey } from "./board-view.ts"
 import { ColumnSettings } from "./ColumnSettings.tsx"
 import { useBoardWrites } from "./use-board-writes.ts"
 
@@ -168,13 +168,10 @@ export const BoardSettingsDialog = ({
       fail(`Could not ${during} ${current.board.name}`, "Someone else changed it meanwhile")
       return
     }
-    const key = boardQueryKey(org, current.board.id)
     try {
-      await queryClient.cancelQueries({ queryKey: key })
-      const theirs = await queryClient.fetchQuery({
-        queryKey: key,
-        queryFn: () => fetchBoard(org, current.board.id),
-      })
+      // Not through the board's cache: a card move may still be pending, and the boards are read
+      // again once the organization's writes end.
+      const theirs = await fetchBoard(org, current.board.id)
       setClash({ theirChanges: rebaseDraft(current, theirs, draft).theirChanges, during })
       setDraft((mine) => rebaseDraft(current, theirs, mine).draft)
       setBase(theirs)

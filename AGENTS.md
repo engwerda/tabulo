@@ -59,7 +59,8 @@ major version.
 - A client write that changes what boards show (a card move, new issue, card edit, comment, or
   board settings) runs under `boardWriteKey(org)`. `syncBoardsWithWrites` in
   `src/client/board/board-sync.ts` then stops the organization's board reads when it starts,
-  and reads every board of the organization again once its last pending write ends.
+  and reads every board of the organization again once its last pending write ends. While
+  `writingBoards` is true, a refresh does nothing and a read for a 409 bypasses the cache.
 - `src/client/scope/` owns the organization scope of the org-level views: `ORG_VIEWS` in
   `views.ts` lists them with their routes, `orgViewHref` builds every link to a view,
   `useRepoSelection` owns the `?repos=` of insights and epics, `remembered.ts` owns the remembered
