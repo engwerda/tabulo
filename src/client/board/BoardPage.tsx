@@ -457,6 +457,8 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
   const writeKey = boardWriteKey(org)
   // A refetch that lands during a drag or before a write is stored would undo it on screen.
   const moving = useIsMutating({ mutationKey: writeKey }) > 0
+  // Any settings save of the organization, also one from a dialog that already closed.
+  const savingSettings = useIsMutating({ mutationKey: [...writeKey, "settings"] }) > 0
   const settled = !dragging && !moving
   const board = useQuery({
     queryKey: boardKey,
@@ -942,7 +944,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
   }
   const removeFailed = () => {
     // A second update would go against the version the first one replaced and answer 409.
-    if (data === undefined || boardWrites.update.isPending) return
+    if (data === undefined || savingSettings) return
     const failed = new Set(failures.map((failure) => failure.repo.toLowerCase()))
     const loading = data.board.repos.filter((repo) => !failed.has(repo.toLowerCase()))
     boardWrites.update.mutate(
@@ -1153,7 +1155,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
                           ? "Removing…"
                           : `Remove ${failures.length === 1 ? "it" : "them"} from the board`,
                         run: removeFailed,
-                        pending: boardWrites.update.isPending,
+                        pending: savingSettings,
                       }
                     : undefined
                 }
