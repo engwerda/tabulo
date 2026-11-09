@@ -715,6 +715,38 @@ describe("GET /api/board", () => {
     expect(board.cards.map((card) => card.key)).toContain("acme/web#3")
   })
 
+  it("refreshes the token when Forgejo refuses it on an issue listing after a failed repository read", async () => {
+    const calls = new Map<string, number>()
+    const once = (path: string) => {
+      calls.set(path, (calls.get(path) ?? 0) + 1)
+      return calls.get(path) === 1
+    }
+    let armed = false
+    const { forgejo, get } = await session({
+      intercept: (method, path) => {
+        if (!armed || method !== "GET") return undefined
+        if (path === "/api/v1/repos/acme/api" && once(path)) {
+          return new Response("unavailable", { status: 503 })
+        }
+        if (path === "/api/v1/repos/acme/api/issues" && once(path)) {
+          return new Response(null, { status: 401 })
+        }
+        return undefined
+      },
+    })
+    armed = true
+
+    const board = await answer(await get("/api/board?org=acme"))
+
+    expect(
+      forgejo.requests.filter((request) => request.form.get("grant_type") === "refresh_token"),
+    ).toHaveLength(1)
+    expect(board.failedRepos).toEqual([])
+    expect(board.cards.map((card) => card.key)).toEqual(
+      expect.arrayContaining(["acme/api#1", "acme/api#2"]),
+    )
+  })
+
   it.each([
     ["an unknown board", "abcd1234"],
     ["text that cannot be a board id", "no/such board"],

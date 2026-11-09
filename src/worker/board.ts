@@ -412,6 +412,13 @@ export const loadBoard = (
         { concurrency: "unbounded", mode: "result" },
       ).pipe(
         Effect.flatMap(([repo, open, closed]): Effect.Effect<RepoRead, ForgejoUnauthorized> => {
+          // A refused token refreshes, whichever read failed first.
+          const outcomes: ReadonlyArray<Result.Result<unknown, ForgejoError>> = [repo, open, closed]
+          for (const read of outcomes) {
+            if (Result.isFailure(read) && read.failure._tag === "ForgejoUnauthorized") {
+              return Effect.fail(read.failure)
+            }
+          }
           const reads = Result.all([repo, open, closed])
           if (Result.isSuccess(reads)) {
             const [forgejoRepo, openIssues, closedIssues] = reads.success
@@ -425,7 +432,6 @@ export const loadBoard = (
             })
           }
           const failure = reads.failure
-          if (failure._tag === "ForgejoUnauthorized") return Effect.fail(failure)
           // The repository's own read decides whether the user can read it. A listing refused
           // after that read succeeded, as for a team without the issues unit, is a named failure.
           if (
