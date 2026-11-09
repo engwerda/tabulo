@@ -121,7 +121,9 @@ export const BoardSwitcher = ({
             </>
           )
         }
-        panelClass="w-72 p-1.5"
+        // Below the header and the board's row, so the panel opens under its button; the boards
+        // scroll inside it, and the actions stay in sight under them.
+        panelClass="flex max-h-[calc(100dvh-8rem-var(--tab-bar-height))] w-72 flex-col p-1.5"
         focusFirstItem
       >
         {(close) => (
@@ -150,34 +152,36 @@ export const BoardSwitcher = ({
                 Loading…
               </p>
             )}
-            <div role="menu" aria-labelledby={headingId}>
-              {(listed ?? []).map((board) => {
-                const current = board.id === boardId
-                return (
-                  <Link
-                    key={board.id}
-                    href={boardHref(org, board.id)}
-                    role="menuitemradio"
-                    aria-checked={current}
-                    onClick={(event) => {
-                      if (current) event.preventDefault()
-                      else refocusAfterSwitch = true
-                      close()
-                    }}
-                    onKeyDown={clickOnSpace}
-                    className={`${menuItem} aria-checked:font-medium aria-checked:text-zinc-900 dark:aria-checked:text-zinc-50`}
-                  >
-                    <Glyph
-                      name="board"
-                      className="size-4 shrink-0 text-zinc-500 dark:text-zinc-400"
-                    />
-                    <span className="min-w-0 flex-1 truncate">{board.name}</span>
-                    {current && (
-                      <CheckIcon className="size-4 text-indigo-600 dark:text-indigo-400" />
-                    )}
-                  </Link>
-                )
-              })}
+            <div role="menu" aria-labelledby={headingId} className="flex min-h-0 flex-col">
+              <div className="scroll-thin min-h-0 overflow-y-auto">
+                {(listed ?? []).map((board) => {
+                  const current = board.id === boardId
+                  return (
+                    <Link
+                      key={board.id}
+                      href={boardHref(org, board.id)}
+                      role="menuitemradio"
+                      aria-checked={current}
+                      onClick={(event) => {
+                        if (current) event.preventDefault()
+                        else refocusAfterSwitch = true
+                        close()
+                      }}
+                      onKeyDown={clickOnSpace}
+                      className={`${menuItem} aria-checked:font-medium aria-checked:text-zinc-900 dark:aria-checked:text-zinc-50`}
+                    >
+                      <Glyph
+                        name="board"
+                        className="size-4 shrink-0 text-zinc-500 dark:text-zinc-400"
+                      />
+                      <span className="min-w-0 flex-1 truncate">{board.name}</span>
+                      {current && (
+                        <CheckIcon className="size-4 text-indigo-600 dark:text-indigo-400" />
+                      )}
+                    </Link>
+                  )
+                })}
+              </div>
               {actions && <hr className="mx-1 my-1.5 border-zinc-100 dark:border-zinc-800" />}
               {onEdit !== undefined && (
                 <ActionItem
