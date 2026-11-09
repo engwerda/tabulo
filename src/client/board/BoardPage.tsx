@@ -273,7 +273,9 @@ const FailedRepos = ({
 }: {
   failures: ReadonlyArray<{ readonly repo: string; readonly message: string }>
   named?: boolean
-  action?: { readonly label: string; readonly run: () => void } | undefined
+  action?:
+    | { readonly label: string; readonly run: () => void; readonly pending?: boolean }
+    | undefined
   onDismiss?: () => void
 }) => (
   <>
@@ -283,7 +285,12 @@ const FailedRepos = ({
     {action !== undefined && (
       <>
         {" "}
-        <button type="button" onClick={action.run} className={inlineAction}>
+        <button
+          type="button"
+          onClick={action.run}
+          aria-disabled={action.pending || undefined}
+          className={`${inlineAction} aria-disabled:opacity-60`}
+        >
           {action.label}
         </button>
       </>
@@ -937,7 +944,8 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
     if (data !== undefined) setSettings({ _tag: "Edit", board: data, ...(focus ? { focus } : {}) })
   }
   const removeFailed = () => {
-    if (data === undefined) return
+    // A second update would go against the version the first one replaced and answer 409.
+    if (data === undefined || boardWrites.update.isPending) return
     const failed = new Set(failures.map((failure) => failure.repo.toLowerCase()))
     const loading = data.board.repos.filter((repo) => !failed.has(repo.toLowerCase()))
     boardWrites.update.mutate(
@@ -1147,8 +1155,11 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
                 action={
                   canChangeBoards
                     ? {
-                        label: `Remove ${failures.length === 1 ? "it" : "them"} from the board`,
+                        label: boardWrites.update.isPending
+                          ? "Removing…"
+                          : `Remove ${failures.length === 1 ? "it" : "them"} from the board`,
                         run: removeFailed,
+                        pending: boardWrites.update.isPending,
                       }
                     : undefined
                 }
