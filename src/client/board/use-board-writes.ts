@@ -15,6 +15,8 @@ export type BoardUpdate = {
   readonly order?: ReadonlyArray<string> | undefined
 }
 
+// A write stops the boards' reads in flight, whose answers predate it. Only the last write to
+// finish reads them again; an earlier one would read while a later write is still on its way.
 export const useBoardReads = (org: string) => {
   const queryClient = useQueryClient()
   return {

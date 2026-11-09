@@ -32,6 +32,7 @@ const parseRepoNames = (names: ReadonlyArray<string>) =>
     return parsed
   })
 
+/** A board never stores a repository name its author could not see: such a name answers 400. */
 const readableNames = (
   org: string,
   requested: ReadonlyArray<string>,
@@ -86,6 +87,7 @@ export const createBoard = (token: AccessToken, login: string, request: CreateBo
     return { board: toSavedBoard(board, names, 0) } satisfies SavedBoardResult
   })
 
+/** Every Forgejo read precedes the one D1 write, so a rerun after a token refresh writes once. */
 export const updateBoard = (token: AccessToken, login: string, request: UpdateBoardRequest) =>
   Effect.gen(function* () {
     const org = yield* parseName("org", request.org)

@@ -82,11 +82,13 @@ const BoardRow = Schema.Struct({
 
 const ROW = "id, name, repos, column_order, hidden_columns, version"
 
+// Only this module writes the table, so a row that does not decode is a defect.
 const toRecord = (row: unknown): BoardRecord => {
   const { column_order, hidden_columns, ...rest } = Schema.decodeUnknownSync(BoardRow)(row)
   return { ...rest, columns: column_order, hidden: hidden_columns }
 }
 
+// D1 failures are infrastructure faults, not domain outcomes, so they surface as defects.
 const query = <A>(run: () => Promise<A>) => Effect.promise(run)
 
 export const makeBoardStore = (db: D1Database): BoardStore["Service"] => {
@@ -123,6 +125,8 @@ export const makeBoardStore = (db: D1Database): BoardStore["Service"] => {
     insert: (org, fields, updatedBy) =>
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis
+        // One statement checks the limit and inserts, so two members adding the last board at
+        // once cannot both succeed. A taken id (one chance in 2.8e12) is a defect, not retried.
         const row = yield* query(() =>
           db
             .prepare(
@@ -151,6 +155,7 @@ export const makeBoardStore = (db: D1Database): BoardStore["Service"] => {
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis
         const values = [org, current.id, ...fieldValues(fields), now, updatedBy]
+        // Only the default board exists before it is stored, so version 0 can insert only it.
         if (current.version === 0 && current.id !== DEFAULT_BOARD) {
           return yield* refusal(org, current.id)
         }

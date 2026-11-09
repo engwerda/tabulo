@@ -78,6 +78,10 @@ export type ColumnPlan = {
   readonly hidden: ReadonlyArray<string>
 }
 
+/**
+ * The plan of moves, new issues, card edits, and issue options, which name no board: they need
+ * only which columns exist and where an issue is.
+ */
 export const UNORDERED: ColumnPlan = { columns: [], hidden: [] }
 
 /** The columns of a board and the one rule that puts an issue in a column. */
@@ -114,6 +118,8 @@ export const boardLayout = (
     | { readonly _tag: "Todo" }
     | { readonly _tag: "Done" }
     | { readonly _tag: "Status"; readonly label: ForgejoLabel }
+  // A stored key the organization has no column for is skipped, so a label removed in Forgejo
+  // does not break the board.
   const slots: Array<Slot> = plan.columns.flatMap((key): Array<Slot> => {
     if (key === TODO.key) return [{ _tag: "Todo" }]
     if (key === DONE.key) return [{ _tag: "Done" }]
@@ -343,6 +349,11 @@ export const readOrgLabels = (token: AccessToken, org: string, budget?: PageBudg
     return labels.items
   })
 
+/**
+ * Forgejo must show the organization before an unknown board answers BoardNotFound, so a board id
+ * answers alike for every organization the user cannot see. Cards of hidden columns are ranked
+ * like the others, then left out.
+ */
 export const loadBoard = (
   token: AccessToken,
   login: string,
@@ -385,6 +396,7 @@ export const loadBoard = (
         { concurrency: "unbounded", mode: "result" },
       ).pipe(
         Effect.flatMap(([repo, open, closed]): Effect.Effect<RepoRead, ForgejoUnauthorized> => {
+          // A refused token refreshes, whichever read failed first.
           const outcomes: ReadonlyArray<Result.Result<unknown, ForgejoError>> = [repo, open, closed]
           for (const read of outcomes) {
             if (Result.isFailure(read) && read.failure._tag === "ForgejoUnauthorized") {
@@ -436,7 +448,8 @@ export const loadBoard = (
     const repoReads = yield* Effect.forEach(board.repos, repoCards, {
       concurrency: REPO_CONCURRENCY,
     })
-    // The organization's listing shows only repositories the user can read.
+    // The organization's listing shows only repositories the user can read. One listing serves
+    // every unknown repository, and one that fails leaves them all unnamed.
     const visible = repoReads.some((read) => read._tag === "AccessUnknown")
       ? yield* (unchanged ? Effect.succeed(orgRepos) : forgejo.orgRepos(token, query.org)).pipe(
           Effect.catchTag(FORGEJO_READ_ERRORS, () => Effect.succeed([])),
