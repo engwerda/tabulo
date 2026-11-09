@@ -1,14 +1,16 @@
 import type { Board, BoardCard } from "../../shared/api.ts"
 import { compareCardOrder, rankForDrop } from "../../shared/card-order.ts"
 
-export const everyBoardQueryKey = (org: string) => ["board", org] as const
+// Organization names compare without regard to case, and the board's own `org` is lowercased
+// while the address keeps the case it was typed in.
+export const everyBoardQueryKey = (org: string) => ["board", org.toLowerCase()] as const
 
 export const boardQueryKey = (org: string, board: string) =>
   [...everyBoardQueryKey(org), board] as const
 
 export const boardListQueryKey = (org: string) => ["boards", org] as const
 
-export const boardWriteKey = (org: string) => ["board-write", org] as const
+export const boardWriteKey = (org: string) => ["board-write", org.toLowerCase()] as const
 
 /** Every card of a column in board order. */
 export const columnCards = (cards: ReadonlyArray<BoardCard>, column: string) =>

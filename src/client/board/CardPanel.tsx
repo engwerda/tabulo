@@ -36,6 +36,7 @@ import { SearchField } from "../ui/SearchField.tsx"
 import { useToast } from "../ui/toast.tsx"
 import { ColumnDot, LabelName, RepoIssueRef } from "./BoardCardView.tsx"
 import type { CardUpdate } from "./BoardPage.tsx"
+import { boardWriteKey } from "./board-view.ts"
 import { commentDraftKey, drafts } from "./drafts.ts"
 
 const FORM_TAGS = ["button", "dialog", "form", "option", "select", "textarea"]
@@ -440,8 +441,6 @@ type CardPanelProps = {
   readonly onUpdate: (change: CardUpdate) => void
   /** The card with its new comment count after the viewer commented. */
   readonly onCommented: (card: BoardCard) => void
-  /** Stops board reads in flight before a write, so their older answers cannot undo it. */
-  readonly holdReads: () => Promise<void>
   readonly updating: boolean
   readonly onCopyLink: () => void
   readonly onClose: () => void
@@ -459,7 +458,6 @@ export const CardPanel = ({
   onToggleAssigned,
   onUpdate,
   onCommented,
-  holdReads,
   updating,
   onCopyLink,
   onClose,
@@ -480,6 +478,7 @@ export const CardPanel = ({
     enabled: editable,
   })
   const comment = useMutation({
+    mutationKey: [...boardWriteKey(org), "comment"],
     mutationFn: (body: string) => addComment({ org, repo: card.repo, number: card.number, body }),
     onMutate: () => {
       if (!navigator.onLine) {
@@ -489,7 +488,6 @@ export const CardPanel = ({
           detail: "The comment is sent once you are back online.",
         })
       }
-      return holdReads()
     },
     onSuccess: ({ comment: added }) => {
       queryClient.setQueryData<CardDetail>(detailKey, (current) =>

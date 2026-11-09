@@ -87,7 +87,7 @@ import { CardComposer } from "./CardComposer.tsx"
 import { CardPanel } from "./CardPanel.tsx"
 import { drafts, titleDraftKey } from "./drafts.ts"
 import { BOARD_SHORTCUTS } from "./shortcuts.ts"
-import { useBoardReads, useBoardWrites } from "./use-board-writes.ts"
+import { useBoardWrites } from "./use-board-writes.ts"
 
 const REFRESH_MS = 60_000
 const NO_COMMANDS: ReturnType<typeof boardCommands> = []
@@ -454,7 +454,6 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
 
   const boardKey = boardQueryKey(org, boardId)
   const writeKey = boardWriteKey(org)
-  const { holdReads, refetchAfterWrites } = useBoardReads(org)
   // A refetch that lands during a drag or before a write is stored would undo it on screen.
   const moving = useIsMutating({ mutationKey: writeKey }) > 0
   const settled = !dragging && !moving
@@ -598,7 +597,6 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
         action: { label: "Retry", run: () => startMove(cardMove, undo) },
       })
     },
-    onSettled: refetchAfterWrites,
   })
 
   /** Moves a card and offers to put it back where it was, unless `undo` is null. */
@@ -619,7 +617,6 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
     }
     // The board shows the move in the same render that ends the drag, so the dropped card's
     // overlay settles into its new place rather than flying back to the old one.
-    void holdReads()
     queryClient.setQueryData<Board>(
       boardKey,
       applyMove(current, cardMove, new Date().toISOString()),
@@ -661,8 +658,6 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
   const create = useMutation({
     mutationKey: [...writeKey, "create"],
     mutationFn: createCard,
-    onMutate: holdReads,
-    onSettled: refetchAfterWrites,
     onSuccess: ({ card, orderSaved }) => {
       putCard(card)
       toast({
@@ -686,8 +681,6 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
   const update = useMutation({
     mutationKey: [...writeKey, "update"],
     mutationFn: ({ run }: CardUpdate) => run(),
-    onMutate: holdReads,
-    onSettled: refetchAfterWrites,
     onSuccess: ({ card }, { done, issue, undo }) => {
       putCard(card)
       toast({
@@ -1370,7 +1363,6 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
               onToggleAssigned={() => toggleAssigned(selectedCard)}
               onUpdate={(change) => update.mutate(change)}
               onCommented={putCard}
-              holdReads={holdReads}
               updating={update.isPending}
               onCopyLink={() => copyLink(selectedCard)}
               onClose={closePanel}
