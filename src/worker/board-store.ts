@@ -151,34 +151,32 @@ export const makeBoardStore = (db: D1Database): BoardStore["Service"] => {
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis
         const values = [org, current.id, ...fieldValues(fields), now, updatedBy]
-        const row =
+        if (current.version === 0 && current.id !== DEFAULT_BOARD) {
+          return yield* refusal(org, current.id)
+        }
+        const row = yield* query(() =>
           current.version === 0
-            ? current.id === DEFAULT_BOARD
-              ? yield* query(() =>
-                  db
-                    .prepare(
-                      `INSERT INTO boards (org, id, name, repos, column_order, hidden_columns,
-                         version, updated_at, updated_by)
-                       VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8)
-                       ON CONFLICT (org, id) DO NOTHING
-                       RETURNING ${ROW}`,
-                    )
-                    .bind(...values)
-                    .first(),
+            ? db
+                .prepare(
+                  `INSERT INTO boards (org, id, name, repos, column_order, hidden_columns,
+                     version, updated_at, updated_by)
+                   VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8)
+                   ON CONFLICT (org, id) DO NOTHING
+                   RETURNING ${ROW}`,
                 )
-              : null
-            : yield* query(() =>
-                db
-                  .prepare(
-                    `UPDATE boards SET name = ?3, repos = ?4, column_order = ?5,
-                       hidden_columns = ?6, version = version + 1, updated_at = ?7,
-                       updated_by = ?8
-                     WHERE org = ?1 AND id = ?2 AND version = ?9
-                     RETURNING ${ROW}`,
-                  )
-                  .bind(...values, current.version)
-                  .first(),
-              )
+                .bind(...values)
+                .first()
+            : db
+                .prepare(
+                  `UPDATE boards SET name = ?3, repos = ?4, column_order = ?5,
+                     hidden_columns = ?6, version = version + 1, updated_at = ?7,
+                     updated_by = ?8
+                   WHERE org = ?1 AND id = ?2 AND version = ?9
+                   RETURNING ${ROW}`,
+                )
+                .bind(...values, current.version)
+                .first(),
+        )
         return row === null ? yield* refusal(org, current.id) : toRecord(row)
       }),
 
