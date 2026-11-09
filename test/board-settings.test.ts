@@ -6,9 +6,11 @@ import {
   describeFields,
   draftOf,
   draftProblem,
+  dropColumn,
   isDirty,
   moveColumn,
   NEW_BOARD_DRAFT,
+  placeColumnAsIn,
   rebaseDraft,
   type SettingsBase,
   setColumnHidden,
@@ -80,6 +82,109 @@ describe("the draft of a board", () => {
       "todo",
     ])
     expect(moveColumn(draft, "Status/Unknown", 0)).toBe(draft)
+  })
+
+  it("drops a column after the one it is over when it moves right and before it when it moves left", () => {
+    const draft = draftOf(base())
+    expect(dropColumn(draft, "todo", "Status/Review").order).toEqual([
+      "Status/In Progress",
+      "Status/Review",
+      "todo",
+      "done",
+    ])
+    expect(dropColumn(draft, "done", "Status/In Progress").order).toEqual([
+      "todo",
+      "done",
+      "Status/In Progress",
+      "Status/Review",
+    ])
+    expect(dropColumn(draft, "Status/Review", "Status/Review").order).toEqual(draft.order)
+    expect(dropColumn(draft, "todo", "Status/Gone")).toBe(draft)
+    expect(dropColumn(draft, "Status/Gone", "todo")).toBe(draft)
+  })
+
+  it("leaves a hidden column between the dragged one and its drop in its place", () => {
+    const draft = {
+      ...draftOf(base({}, [TODO, BLOCKED, PROGRESS, REVIEW, DONE])),
+      hidden: ["Status/Blocked"],
+    }
+    expect(dropColumn(draft, "todo", "Status/In Progress").order).toEqual([
+      "Status/Blocked",
+      "Status/In Progress",
+      "todo",
+      "Status/Review",
+      "done",
+    ])
+    expect(dropColumn(draft, "Status/In Progress", "todo").order).toEqual([
+      "Status/In Progress",
+      "todo",
+      "Status/Blocked",
+      "Status/Review",
+      "done",
+    ])
+  })
+
+  it("leaves a hidden column beside the column dropped on in its place", () => {
+    const hiddenAfter = {
+      ...draftOf(base({}, [TODO, PROGRESS, BLOCKED, REVIEW, DONE])),
+      hidden: ["Status/Blocked"],
+    }
+    expect(dropColumn(hiddenAfter, "todo", "Status/In Progress").order).toEqual([
+      "Status/In Progress",
+      "todo",
+      "Status/Blocked",
+      "Status/Review",
+      "done",
+    ])
+    const hiddenBefore = {
+      ...draftOf(base({}, [TODO, BLOCKED, PROGRESS, REVIEW, DONE])),
+      hidden: ["Status/Blocked"],
+    }
+    expect(dropColumn(hiddenBefore, "Status/Review", "Status/In Progress").order).toEqual([
+      "todo",
+      "Status/Blocked",
+      "Status/Review",
+      "Status/In Progress",
+      "done",
+    ])
+  })
+
+  it("puts back only the moved column and keeps a later change to the others", () => {
+    const before = ["todo", "Status/In Progress", "Status/Review", "done"]
+    const moved = {
+      ...draftOf(base()),
+      order: ["Status/In Progress", "Status/Review", "todo", "done"],
+    }
+    expect(placeColumnAsIn(moved, "todo", before).order).toEqual(before)
+    const changedSince = {
+      ...moved,
+      order: ["Status/Review", "Status/In Progress", "todo", "done"],
+    }
+    expect(placeColumnAsIn(changedSince, "todo", before).order).toEqual([
+      "Status/Review",
+      "todo",
+      "Status/In Progress",
+      "done",
+    ])
+  })
+
+  it("places a column the same way whether or not it is already there", () => {
+    const intended = ["Status/In Progress", "todo", "Status/Review", "done"]
+    const loaded = draftOf(base())
+    const once = placeColumnAsIn(loaded, "todo", intended)
+    expect(once.order).toEqual(intended)
+    expect(placeColumnAsIn(once, "todo", intended).order).toEqual(intended)
+  })
+
+  it("puts a column back last when every column that followed it is gone", () => {
+    const before = ["todo", "Status/In Progress", "Status/Gone"]
+    const moved = { ...draftOf(base()), order: ["Status/In Progress", "todo", "done"] }
+    expect(placeColumnAsIn(moved, "Status/In Progress", before).order).toEqual([
+      "todo",
+      "done",
+      "Status/In Progress",
+    ])
+    expect(placeColumnAsIn(moved, "Status/Gone", before)).toBe(moved)
   })
 
   it("hides and shows a column", () => {

@@ -58,6 +58,25 @@ export const moveColumn = (draft: BoardDraft, key: string, index: number): Board
   return { ...draft, order: [...others.slice(0, at), key, ...others.slice(at)] }
 }
 
+export const dropColumn = (draft: BoardDraft, key: string, overKey: string): BoardDraft => {
+  const index = draft.order.indexOf(overKey)
+  return index === -1 ? draft : moveColumn(draft, key, index)
+}
+
+/**
+ * Moves only `key` before the column that follows it in `order`, so changes to the other columns
+ * stay, and running it again changes nothing.
+ */
+export const placeColumnAsIn = (
+  draft: BoardDraft,
+  key: string,
+  order: ReadonlyArray<string>,
+): BoardDraft => {
+  const others = draft.order.filter((other) => other !== key)
+  const next = order.slice(order.indexOf(key) + 1).find((other) => others.includes(other))
+  return moveColumn(draft, key, next === undefined ? others.length : others.indexOf(next))
+}
+
 export const setColumnHidden = (draft: BoardDraft, key: string, hidden: boolean): BoardDraft => {
   const others = draft.hidden.filter((other) => other !== key)
   return { ...draft, hidden: hidden ? [...others, key] : others }
