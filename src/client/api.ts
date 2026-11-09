@@ -51,7 +51,7 @@ export class RequestFailed extends Error {
   }
 }
 
-/** Whether a read answered 404: a board, or its organization, that the user cannot have. */
+/** Whether a read answered 404, as for a deleted board or an organization the user cannot see. */
 export const isNotFound = (error: unknown) => error instanceof RequestFailed && error.status === 404
 
 const decodeUser = Schema.decodeUnknownPromise(User)

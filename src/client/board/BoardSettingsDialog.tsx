@@ -15,6 +15,7 @@ import {
   type BoardDraft,
   columnRows,
   type DraftField,
+  type DraftProblem,
   describeFields,
   draftOf,
   draftProblem,
@@ -97,9 +98,7 @@ export const BoardSettingsDialog = ({
   const [failure, setFailure] = useState<string | null>(null)
   const [problemShown, setProblemShown] = useState(false)
   // Focus moves to the field after it says what is wrong with it, so a screen reader reads that.
-  const [focusRequest, setFocusRequest] = useState<{ readonly field: "name" | "repos" } | null>(
-    null,
-  )
+  const [focusRequest, setFocusRequest] = useState<Pick<DraftProblem, "field"> | null>(null)
   useEffect(() => {
     if (focusRequest === null) return
     if (focusRequest.field === "name") nameInput.current?.focus()
