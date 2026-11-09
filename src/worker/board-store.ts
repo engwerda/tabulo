@@ -61,8 +61,8 @@ export type BoardVersion = Pick<BoardRecord, "id" | "version">
 export class BoardStore extends Context.Service<
   BoardStore,
   {
-    /** Every stored board of the organization, in no order. */
-    readonly list: (org: string) => Effect.Effect<ReadonlyArray<BoardRecord>>
+    /** The id and name of every stored board of the organization, in no order. */
+    readonly list: (org: string) => Effect.Effect<ReadonlyArray<Pick<BoardRecord, "id" | "name">>>
     /** The stored board; undefined for no such board and for a default board nobody changed. */
     readonly find: (org: string, id: BoardId) => Effect.Effect<BoardRecord | undefined>
     /**
@@ -95,9 +95,10 @@ export class BoardStore extends Context.Service<
 
 const KeyList = Schema.fromJsonString(Schema.Array(Schema.String))
 
+const BoardNameRow = Schema.Struct({ id: BoardIdText, name: Schema.String })
+
 const BoardRow = Schema.Struct({
-  id: BoardIdText,
-  name: Schema.String,
+  ...BoardNameRow.fields,
   repos: KeyList,
   column_order: KeyList,
   hidden_columns: KeyList,
@@ -136,8 +137,10 @@ export const makeBoardStore = (db: D1Database): BoardStore["Service"] => {
 
   return {
     list: (org) =>
-      query(() => db.prepare(`SELECT ${ROW} FROM boards WHERE org = ?`).bind(org).all()).pipe(
-        Effect.map(({ results }) => results.map(toRecord)),
+      query(() => db.prepare("SELECT id, name FROM boards WHERE org = ?").bind(org).all()).pipe(
+        Effect.map(({ results }) =>
+          results.map((row) => Schema.decodeUnknownSync(BoardNameRow)(row)),
+        ),
       ),
 
     find: (org, id) =>

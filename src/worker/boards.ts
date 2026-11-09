@@ -75,10 +75,7 @@ export const listBoards = (token: AccessToken, org: string) =>
       .filter((board) => board.id !== DEFAULT_BOARD)
       .sort((a, b) => byName(a.name, b.name) || (a.id < b.id ? -1 : 1))
     return {
-      boards: [
-        { id: DEFAULT_BOARD, name: storedDefault?.name ?? DEFAULT_BOARD_NAME },
-        ...others.map(({ id, name }) => ({ id, name })),
-      ],
+      boards: [{ id: DEFAULT_BOARD, name: storedDefault?.name ?? DEFAULT_BOARD_NAME }, ...others],
     } satisfies BoardList
   })
 
