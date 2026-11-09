@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { type FormEvent, useId, useLayoutEffect, useRef, useState } from "react"
+import { type FormEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import { useLocation } from "wouter"
 import { type Board, DEFAULT_BOARD_ID, MAX_BOARD_NAME, MAX_REPOS } from "../../shared/api.ts"
 import { fetchBoard, fetchOrgRepos, RequestFailed } from "../api.ts"
@@ -45,6 +45,10 @@ const isCode = (error: unknown, code: string) =>
   error instanceof RequestFailed && error.code === code
 
 const sectionTitle = "text-sm font-medium text-zinc-900 dark:text-zinc-50"
+const dangerButton =
+  "inline-flex h-8 pointer-coarse:h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-red-600 px-3 text-sm font-medium text-white shadow-sm shadow-red-600/20 transition hover:bg-red-500 active:bg-red-700 aria-disabled:opacity-60 dark:bg-red-500 dark:hover:bg-red-400"
+const quietDangerButton =
+  "inline-flex h-8 pointer-coarse:h-11 items-center justify-center whitespace-nowrap rounded-lg px-2.5 text-sm font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
 const sectionHint = "mt-0.5 text-xs text-zinc-500 dark:text-zinc-400"
 
 /**
@@ -68,6 +72,8 @@ export const BoardSettingsDialog = ({
   const reposSection = useRef<HTMLElement>(null)
   const repoSearch = useRef<HTMLInputElement>(null)
   const firstColumnBox = useRef<HTMLInputElement>(null)
+  const deleteButton = useRef<HTMLButtonElement>(null)
+  const keepButton = useRef<HTMLButtonElement>(null)
   // A drag that Escape cancels must not close the dialog too.
   const dragging = useRef(false)
   const [announcer, setAnnouncer] = useState<HTMLDialogElement | null>(null)
@@ -86,11 +92,19 @@ export const BoardSettingsDialog = ({
   const [theirChanges, setTheirChanges] = useState<ReadonlyArray<DraftField> | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   const [problemShown, setProblemShown] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  // The confirmation takes focus on its safe choice, and gives it back when it goes away.
+  const confirmShown = useRef(false)
+  useEffect(() => {
+    if (confirmingDelete) keepButton.current?.focus()
+    else if (confirmShown.current) deleteButton.current?.focus()
+    confirmShown.current = confirmingDelete
+  }, [confirmingDelete])
 
   const unreadable = base?.board.unreadableRepos ?? 0
   const kept = draft.dropUnreadable ? 0 : unreadable
   const problem = draftProblem(draft, unreadable)
-  const pending = writes.create.isPending || writes.update.isPending
+  const pending = writes.create.isPending || writes.update.isPending || writes.remove.isPending
   const dirty =
     base === null ? draft.name.trim() !== "" || draft.repos.length > 0 : isDirty(base, draft)
 
@@ -150,6 +164,37 @@ export const BoardSettingsDialog = ({
     }
   }
 
+  const remove = (current: SettingsBase) => {
+    if (pending) return
+    setFailure(null)
+    writes.remove.mutate(
+      { org, board: current.board.id, version: current.board.version },
+      {
+        onSuccess: () => {
+          toast({
+            tone: "success",
+            title: `Deleted ${current.board.name}`,
+            detail: "Its cards keep their order on every board.",
+          })
+          openBoard(DEFAULT_BOARD_ID, true)
+        },
+        onError: (error) => {
+          if (isCode(error, "board_not_found")) {
+            forgetBoard(org, current.board.id)
+            void queryClient.invalidateQueries({ queryKey: boardsQueryKey(org) })
+            toast({ tone: "info", title: `${current.board.name} was already deleted` })
+            openBoard(DEFAULT_BOARD_ID, true)
+          } else if (isCode(error, "board_changed")) {
+            setConfirmingDelete(false)
+            void rebase(current)
+          } else {
+            setFailure(sentence(error.message))
+          }
+        },
+      },
+    )
+  }
+
   const focusField = (field: "name" | "repos") => {
     if (field === "name") nameInput.current?.focus()
     else (repoSearch.current ?? reposSection.current)?.focus()
@@ -204,6 +249,11 @@ export const BoardSettingsDialog = ({
       aria-labelledby={`${id}-title`}
       onCancel={(event) => {
         if (dragging.current) event.preventDefault()
+        // Escape backs out of the confirmation before it closes the dialog.
+        else if (confirmingDelete) {
+          event.preventDefault()
+          setConfirmingDelete(false)
+        }
       }}
       onClose={() => {
         onClose()
@@ -408,35 +458,82 @@ export const BoardSettingsDialog = ({
           )}
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-x-3 gap-y-2 border-t border-zinc-100 px-5 py-3 dark:border-zinc-800">
+        <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-t border-zinc-100 px-5 py-3 dark:border-zinc-800">
           {failure !== null && (
             <p role="alert" className="w-full text-sm text-red-600 dark:text-red-400">
               {failure}
             </p>
           )}
-          {problem !== null && (
-            <p
-              id={`${id}-problem`}
-              className={`mr-auto text-sm ${
-                problemShown ? "text-red-600 dark:text-red-400" : "text-zinc-500 dark:text-zinc-400"
-              }`}
-            >
-              {sentence(problem.message)}
-            </p>
+          {confirmingDelete && base !== null ? (
+            <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2">
+              <p id={`${id}-delete`} className="mr-auto text-sm text-zinc-700 dark:text-zinc-300">
+                <span className="font-medium text-zinc-900 dark:text-zinc-50">
+                  Delete {base.board.name}?
+                </span>{" "}
+                Cards and their order stay.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  ref={keepButton}
+                  type="button"
+                  aria-describedby={`${id}-delete`}
+                  onClick={() => setConfirmingDelete(false)}
+                  className={buttonClass.secondary}
+                >
+                  Keep it
+                </button>
+                <button
+                  type="button"
+                  onClick={() => remove(base)}
+                  aria-describedby={`${id}-delete`}
+                  aria-disabled={pending || undefined}
+                  className={dangerButton}
+                >
+                  {writes.remove.isPending ? "Deleting…" : "Delete board"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {base !== null && base.board.id !== DEFAULT_BOARD_ID && (
+                <button
+                  ref={deleteButton}
+                  type="button"
+                  onClick={() => setConfirmingDelete(true)}
+                  className={`${quietDangerButton} -ml-2.5`}
+                >
+                  Delete board…
+                </button>
+              )}
+              <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-2">
+                {problem !== null && (
+                  <p
+                    id={`${id}-problem`}
+                    className={`text-sm ${
+                      problemShown
+                        ? "text-red-600 dark:text-red-400"
+                        : "text-zinc-500 dark:text-zinc-400"
+                    }`}
+                  >
+                    {sentence(problem.message)}
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <button type="button" onClick={close} className={buttonClass.secondary}>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    aria-disabled={problem !== null || pending || undefined}
+                    aria-describedby={problem !== null ? `${id}-problem` : undefined}
+                    className={`${buttonClass.primary} aria-disabled:opacity-60`}
+                  >
+                    {pending ? "Saving…" : base === null ? "Create board" : "Save"}
+                  </button>
+                </div>
+              </div>
+            </>
           )}
-          <div className="flex gap-2">
-            <button type="button" onClick={close} className={buttonClass.secondary}>
-              Cancel
-            </button>
-            <button
-              type="submit"
-              aria-disabled={problem !== null || pending || undefined}
-              aria-describedby={problem !== null ? `${id}-problem` : undefined}
-              className={`${buttonClass.primary} aria-disabled:opacity-60`}
-            >
-              {pending ? "Saving…" : base === null ? "Create board" : "Save"}
-            </button>
-          </div>
         </div>
       </form>
     </dialog>
