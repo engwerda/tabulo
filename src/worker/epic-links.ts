@@ -9,7 +9,7 @@ const SHORT_REF = new RegExp(`^(?:(?:(${NAME})/)?(${NAME}))?#([1-9][0-9]*)(?![A-
 const ISSUE_PATH = new RegExp(`^/(${NAME})/(${NAME})/(?:issues|pulls)/([1-9][0-9]*)/?$`)
 // Forgejo's Goldmark task list extension reads the checkbox from the source of the item's first
 // line, so escapes, emphasis, and link definitions there make it plain text.
-const TASK = /^\[[ xX]\][\t ]+(.*)/
+const CHECKBOX = /^\[[ xX]\][\t ]+/
 const firstWord = (text: string) => /^\S*/.exec(text.trimStart())?.[0] ?? ""
 
 /** The text and destination of the inline link `text` starts with, as CommonMark reads it. */
@@ -63,10 +63,10 @@ const referenceOf = (
 }
 
 /**
- * The issues that the task-list items of an epic's body reference, in body order. The body is
- * parsed as CommonMark, as Forgejo renders it, so code and HTML never hold task items. The
- * checkbox and reference come from the source text of each item's first line. A leading inline
- * link names its issue by its text or, failing that, its destination.
+ * The issues that the list items of an epic's body reference, in body order. The body is parsed
+ * as CommonMark, as Forgejo renders it, so code and HTML never hold list items. The reference
+ * comes from the source text of each item's first line, after an optional task checkbox. A
+ * leading inline link names its issue by its text or, failing that, its destination.
  */
 export const parseEpicChildren = (
   body: string,
@@ -83,8 +83,7 @@ export const parseEpicChildren = (
     const paragraph = step.node.firstChild
     if (!step.entering || step.node.type !== "item" || paragraph?.type !== "paragraph") continue
     const [[line, column]] = paragraph.sourcepos
-    const text = TASK.exec(lines[line - 1]?.slice(column - 1) ?? "")?.[1]
-    if (text === undefined) continue
+    const text = (lines[line - 1]?.slice(column - 1) ?? "").replace(CHECKBOX, "")
     const link = leadingLink(text)
     const reference =
       link === undefined

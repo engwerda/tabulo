@@ -4,7 +4,7 @@ import { parseEpicChildren } from "../src/worker/epic-links.ts"
 const parse = (body: string, url = "https://forgejo.example") =>
   parseEpicChildren(body, { owner: "acme", name: "api" }, url).map(({ ref }) => ref)
 
-describe("epic task-list references", () => {
+describe("epic list references", () => {
   it.each([
     ["- [ ] #12", "acme/api#12"],
     ["- [x] #12 trailing text", "acme/api#12"],
@@ -41,8 +41,60 @@ describe("epic task-list references", () => {
   })
 
   it.each([
+    ["- #12", "acme/api#12"],
+    ["10) web#3", "acme/web#3"],
+    ["* other/web#4 title", "other/web#4"],
+    ["- https://forgejo.example/acme/api/issues/12", "acme/api#12"],
+    [
+      "1. [#931 Manage the dataset lifecycle](https://forgejo.example/acme/api/issues/931)",
+      "acme/api#931",
+    ],
+  ])("lists the plain item %s without a checkbox", (line, ref) =>
+    expect(parse(line)).toEqual([ref]),
+  )
+
+  it("reads a numbered delivery list as children in its order, by each item's first reference", () => {
+    const body = [
+      "## Proposed solution",
+      "",
+      "This epic delivers #1083 in six issues.",
+      "",
+      "### Findings that shape the plan",
+      "",
+      "- **Events are already in our data feed.** They join through `OBJECTID`.",
+      "- **There is no calendar model.**",
+      "",
+      "### Issues in delivery order",
+      "",
+      "1. #1814 Sync upcoming company events and show them on the company page.",
+      "2. #1815 Add research meetings and a calendar page. Uses #1814 for the merged list.",
+      "3. #1816 Let the assistant read the calendar. Depends on #1814 and #1815.",
+      "4. #1817 Prepare a pack before a meeting. Depends on #1815 and uses #1814.",
+      "5. #1818 Email attendees when their pack is ready. Depends on #1817.",
+      "6. #1819 Prompt for notes after a meeting. Hands over to the flow from #1082.",
+      "",
+      "## Acceptance criteria",
+      "",
+      "- [ ] All child issues are closed.",
+      "- [ ] Every acceptance criterion in #1083 is met or moved to a follow-up issue.",
+    ].join("\n")
+    expect(parse(body)).toEqual([
+      "acme/api#1814",
+      "acme/api#1815",
+      "acme/api#1816",
+      "acme/api#1817",
+      "acme/api#1818",
+      "acme/api#1819",
+    ])
+  })
+
+  it("lists an issue once whether its item has a checkbox or not", () => {
+    expect(parse("- [ ] #1\n- #1\n1. #2")).toEqual(["acme/api#1", "acme/api#2"])
+  })
+
+  it.each([
     "#12",
-    "- #12",
+    "- Depends on #12",
     "- [ ] text #12",
     "- [y] #12",
     "- [ ] #0",
@@ -61,7 +113,9 @@ describe("epic task-list references", () => {
     "- [ ]#12",
     "- [ ] [Fix login](https://elsewhere.example/acme/api/issues/12)",
     "- [ ] <!-- #8 --> #9",
-  ])("ignores invalid or non-task reference %s", (line) => expect(parse(line)).toEqual([]))
+  ])("ignores %s, whose item does not start with a valid reference", (line) =>
+    expect(parse(line)).toEqual([]),
+  )
 
   it("ignores backtick and tilde fences, including longer fences and unfinished fences", () => {
     expect(
