@@ -53,12 +53,15 @@ major version.
 - `src/shared/card-order.ts` holds the card order rules (sorting and the rank of a drop) that
   the server and the client's optimistic update share.
 - `src/client/board/board-view.ts` holds the client's pure board logic (column order, filters,
-  drop neighbours). The worker tsconfig includes it so tests can import it.
+  drop neighbours), and `board-settings.ts` the board settings dialog's (the draft, its requests,
+  and the rebase after a 409). The worker tsconfig includes both so tests can import them.
 - `src/client/scope/` owns the organization scope of the org-level views: `ORG_VIEWS` in
-  `views.ts` lists them, `useRepoSelection` owns `?repos=` and the remembered selection, and
-  `ScopeBar` is the heading of insights and epics, and the board's header composes the same
-  `OrgSwitcher` and `RepoPicker`. A view added to `ORG_VIEWS` appears in the header,
-  and `ORG_VIEW_PAGES` in `src/client/App.tsx` then requires its page.
+  `views.ts` lists them with their routes, `orgViewHref` builds every link to a view,
+  `useRepoSelection` owns the `?repos=` of insights and epics, `remembered.ts` owns the remembered
+  repositories, last board, and last organization, and `ScopeBar` is the heading of insights and
+  epics. The board's header composes the same `OrgSwitcher` with `BoardSwitcher`. A view added to
+  `ORG_VIEWS` appears in the header, and `ORG_VIEW_PAGES` in `src/client/App.tsx` then requires
+  its page.
 - `src/client/theme.ts` owns the light, dark, and system theme. `public/theme-init.js` applies
   it before first paint with the same storage key. Chart colors are the `--chart-*` properties
   in `src/client/styles.css`.

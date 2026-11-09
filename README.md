@@ -210,13 +210,24 @@ organization keeps exactly the labels its owners make.
 
 Open **Board** in the header and choose an organization. Every organization has a default
 board. One with at most 20 repositories that are not archived starts with all of them; a member
-chooses the repositories of a larger one. Members can add more boards, up to 50 per
-organization, from the board menu in the header. Each board has a name, its own repositories,
-and its own column order, and can hide columns, so a design team's board can show only the
-columns it works in. Every board shares the same status labels, so a card moved on one board is
-in its new column on every board. A board's settings are shared with everyone who opens it.
-The address is `/board/<org>` for the default board and `/board/<org>/<id>` for another, so a
-board can be bookmarked or shared, filters included.
+chooses the repositories of a larger one. The board's name beside the organization's opens the
+board menu, which lists the organization's boards. Members can add more boards there with
+**New board…**, up to 50 per organization. Each board has a name, its own repositories, and its
+own column order, and can hide columns, so a design team's board can show only the columns it
+works in. Every board shares the same status labels, so a card moved on one board is in its new
+column on every board. **Board** in the header opens the board you used last. The address is
+`/board/<org>` for the default board and `/board/<org>/<id>` for another, so a board can be
+bookmarked or shared, filters included.
+
+**Edit board…** in the board menu changes the board's name, repositories, and columns for
+everyone who opens it. Drag a column by its handle to move it. With the keyboard, focus the
+handle, press Space, move the column with the arrow keys, and press Space again; Escape cancels.
+Clear a column's box to hide it. The board then leaves out that column's cards, and nothing
+changes in Forgejo. If someone else saves the board while you edit it, Tabulo keeps your changes
+on top of theirs, names what they changed, and waits for you to save again. A board can hold
+repositories you cannot read. Tabulo counts them without naming them and keeps them when you
+save, unless you ask it to remove them, which frees the place of a repository that was deleted.
+**Delete board…** deletes any board but the default one; its cards and their order stay.
 
 Drag a card with the mouse, or press and hold it on a touch screen. The column under it opens a
 gap where the card will land. With the keyboard, Tab moves from column to column and the arrow
@@ -241,8 +252,9 @@ The filters narrow the board by text or `#number`, assignee, label, and mileston
 label take several values, and a card shows when it matches any of them. **Assigned to me** puts
 `assignee=@me` in the address, so a shared link shows each person their own cards.
 `@none` stands for no assignee or no milestone. Collapse a column with the button in its header;
-Tabulo remembers it in your browser. Press `?` on the board for the keyboard shortcuts, such as
-`/` to search, `N` for a new issue, and `J` and `K` to browse cards in the details panel.
+Tabulo remembers it for each board in your browser. Press `?` on the board for the keyboard
+shortcuts, such as `/` to search, `N` for a new issue, and `J` and `K` to browse cards in the
+details panel.
 
 The order of cards within a column is shared by everyone, on every board of the organization.
 Only members of the organization can move, reorder, and add cards and change boards; others see
@@ -251,9 +263,9 @@ only the repositories they can read in Forgejo.
 
 ## Use the insights
 
-Open **Insights** in the header, choose an organization, and choose its repositories, as for
-the board. Pick a period of 24 hours, 7 days (the default), 30 days, 90 days, 6 months, or a
-year. The address is `/insights/<org>?repos=<repo>,<repo>&days=<days>`, so a view can be
+Open **Insights** in the header, choose an organization, and choose its repositories. Pick a
+period of 24 hours, 7 days (the default), 30 days, 90 days, 6 months, or a year. The address
+is `/insights/<org>?repos=<repo>,<repo>&days=<days>`, so a view can be
 bookmarked or shared. The page counts 24 hours per hour, 7 days per day, and longer periods per week. Weeks
 start on Monday, and hours, days, and weeks are read in your browser's time zone. A period
 starts at the beginning of its first hour, day, or week, so the page shows whole ones; the
@@ -325,11 +337,11 @@ The page refreshes every minute.
 ## Search and shortcuts
 
 Press `Cmd+K` (`Ctrl+K` on Windows and Linux), or choose **Search…** in the header, to open the
-command menu. Type to find a view of an organization, a repository of the organization you used
-last (or your first organization), an item on your dashboard, or an action such as switching the
-theme. From two characters on, it also searches the issues and pull requests of every repository
-you can access, open ones first. Press `Enter` to run the highlighted result and `Esc` to close
-the menu. It lists the commands you used last when the query is empty.
+command menu. Type to find a view of an organization, a board or repository of the organization
+you used last (or your first organization), an item on your dashboard, or an action such as
+switching the theme. From two characters on, it also searches the issues and pull requests of
+every repository you can access, open ones first. Press `Enter` to run the highlighted result and
+`Esc` to close the menu. It lists the commands you used last when the query is empty.
 
 Your avatar in the header opens a menu with the theme (System, Light, or Dark) and **Sign
 out**. The theme is remembered in your browser and follows the system setting by default.
