@@ -595,9 +595,18 @@ describe("GET /api/epics, children that name their epic", () => {
       updated_at: "2026-05-01T00:00:00Z",
     })
     const unchosenRepo = boardIssue("web", 22, {
-      body: "Part of api#1",
+      body: "Part of acme/api#1",
       created_at: "2026-04-03T00:00:00Z",
     })
+    const ownParent = boardIssue("web", 25, {
+      body: "Part of #1. See acme/api#1 for the data.",
+      created_at: "2026-04-04T00:00:00Z",
+    })
+    const otherOwner: FakeIssue = {
+      ...boardIssue("tools", 7, { body: "Part of acme/api#1", created_at: "2026-04-05T00:00:00Z" }),
+      html_url: "https://forgejo.example/umbrella/tools/issues/7",
+      repository: { id: 300, name: "tools", owner: "umbrella", full_name: "umbrella/tools" },
+    }
     const editedAway = boardIssue("api", 23, {
       body: "Related to #1",
       created_at: "2026-03-01T00:00:00Z",
@@ -609,15 +618,28 @@ describe("GET /api/epics, children that name their epic", () => {
     })
     const epic = boardIssue("api", 1, {
       labels: [epicLabel],
-      timeline: referencedBy(unchosenRepo, editedAway, pull, closedLongAgo, inProgressChild),
+      timeline: referencedBy(
+        unchosenRepo,
+        editedAway,
+        pull,
+        closedLongAgo,
+        inProgressChild,
+        ownParent,
+        otherOwner,
+      ),
     })
 
     const { data, forgejo } = await loadEpicsOf({
       orgs: [
         linkedOrg(
           [epic, inProgressChild, closedLongAgo, editedAway, pull],
-          boardRepo("web", { issues: [unchosenRepo] }),
+          boardRepo("web", { issues: [unchosenRepo, ownParent] }),
         ),
+        {
+          ...acme([boardRepo("tools", { issues: [otherOwner] })]),
+          name: "umbrella",
+          full_name: "Umbrella",
+        },
       ],
     })
 
@@ -625,8 +647,9 @@ describe("GET /api/epics, children that name their epic", () => {
       expect.objectContaining({ key: "acme/api#20", column: inProgress.name, kind: "issue" }),
       expect.objectContaining({ key: "acme/api#21", column: "done", state: "closed" }),
       expect.objectContaining({ key: "acme/web#22", repo: "acme/web", column: "todo" }),
+      expect.objectContaining({ key: "umbrella/tools#7", repo: "umbrella/tools" }),
     ])
-    expect(data.epics[0]?.progress).toMatchObject({ total: 3, done: 1 })
+    expect(data.epics[0]?.progress).toMatchObject({ total: 4, done: 1 })
     expect(
       forgejo.requests.filter(({ path }) => /\/issues\/2\d$/.test(path)),
       "linked children come with the timeline, so none is looked up",
@@ -662,7 +685,7 @@ describe("GET /api/epics, children that name their epic", () => {
   })
 
   it("reads past a timeline page that Forgejo shortened by dropping an unreadable reference", async () => {
-    const hidden = boardIssue("secret", 9, { body: "Part of api#1" })
+    const hidden = boardIssue("secret", 9, { body: "Part of acme/api#1" })
     const late = boardIssue("api", 50, { body: "Part of #1" })
     const epic = boardIssue("api", 1, {
       labels: [epicLabel],
@@ -753,16 +776,58 @@ describe("GET /api/epics, children that name their epic", () => {
     },
   )
 
-  it("fails the request when a timeline answers HTTP 500", async () => {
-    const forgejo = createFakeForgejo({
-      orgs: [linkedOrg([boardIssue("api", 1, { labels: [epicLabel], body: "- #2" })])],
+  it.each([
+    ["answers HTTP 500", () => new Response(null, { status: 500 })],
+    ["sends an event Tabulo cannot decode", () => Response.json([{ type: 7 }])],
+  ])("names an epic whose timeline %s and keeps the other epics", async (_, failure) => {
+    const failing = boardIssue("api", 1, { labels: [epicLabel], body: "- #2" })
+    const child = boardIssue("api", 4, { body: "Part of #3" })
+    const read = boardIssue("api", 3, { labels: [epicLabel], timeline: referencedBy(child) })
+
+    const { data } = await loadEpicsOf({
+      orgs: [linkedOrg([failing, boardIssue("api", 2), read, child])],
       intercept: (_, path) =>
-        path.endsWith("/timeline") ? new Response(null, { status: 500 }) : undefined,
+        path.endsWith("/acme/api/issues/1/timeline") ? failure() : undefined,
     })
-    const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
-    const cookie = await signIn(call, forgejo)
-    const response = await call("/api/epics?org=acme&repos=api", { headers: { cookie } })
-    expect(response.status).toBe(502)
+
+    expect(childKeys(data.epics.find(({ number }) => number === 1))).toEqual(["acme/api#2"])
+    expect(childKeys(data.epics.find(({ number }) => number === 3))).toEqual(["acme/api#4"])
+    expect(data.incomplete.backlinks).toEqual([{ repo: "api", number: 1 }])
+  })
+
+  it("stops a timeline at 20 pages and names its epic, leaving pages for the rest", async () => {
+    const late = boardIssue("api", 60, { body: "Part of #1" })
+    const huge = boardIssue("api", 1, {
+      labels: [epicLabel],
+      timeline: [...Array.from({ length: 48 }, () => LABELLED), ...referencedBy(late)],
+    })
+    const child = boardIssue("api", 4, { body: "Part of #3" })
+    const small = boardIssue("api", 3, { labels: [epicLabel], timeline: referencedBy(child) })
+
+    const { data, forgejo } = await loadEpicsOf({
+      orgs: [linkedOrg([huge, late, small, child])],
+      maxPageSize: 2,
+    })
+
+    expect(timelineReads(forgejo, "api/issues/1")).toHaveLength(20)
+    expect(childKeys(data.epics.find(({ number }) => number === 1))).toEqual([])
+    expect(childKeys(data.epics.find(({ number }) => number === 3))).toEqual(["acme/api#4"])
+    expect(data.incomplete.backlinks).toEqual([{ repo: "api", number: 1 }])
+  })
+
+  it("does not count the parent a sub-epic names in its own description", async () => {
+    const sub = boardIssue("api", 110, {
+      labels: [epicLabel],
+      body: "## Parent\n\n- #100\n\n## Tasks\n\n- [ ] #111",
+    })
+    const parent = boardIssue("api", 100, { labels: [epicLabel], timeline: referencedBy(sub) })
+
+    const { data } = await loadEpicsOf({
+      orgs: [linkedOrg([parent, sub, boardIssue("api", 111)])],
+    })
+
+    expect(childKeys(data.epics.find(({ number }) => number === 110))).toEqual(["acme/api#111"])
+    expect(childKeys(data.epics.find(({ number }) => number === 100))).toEqual(["acme/api#110"])
   })
 
   it("bounds concurrent timeline reads to four", async () => {

@@ -396,8 +396,9 @@ epics closed within `BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
 
 - **Children.** An epic's children are its listed children in body order, then its linked
   children from oldest to newest, with the key breaking ties. An issue that is both keeps its
-  listed place. Each issue counts once, and an epic has at most 200 children. Listed children
-  fill the cap first.
+  listed place. An issue the epic's own description names as its parent is not its child, so a
+  sub-epic that lists its parent under a `Parent` heading does not count it. Each issue counts
+  once, and an epic has at most 200 children. Listed children fill the cap first.
 - **Listed children.** `parseEpicChildren` in `src/worker/epic-links.ts` parses the body as
   CommonMark with the reference parser, as Forgejo renders it, to find its list items: bullet
   (`-`, `*`, `+`) and ordered (`1.`, `1)`) items at any nesting depth, in block quotes too. Code
@@ -431,12 +432,17 @@ epics closed within `BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
     and `part of a whole` name none.
   - A line that starts with `Parent:` or `Epic:` and a reference. Emphasis does not matter, so
     `**Parent:** #12` counts.
-  - A heading whose whole text is `Parent` or `Epic`, with an optional colon, followed directly
-    by a paragraph that starts with a reference, or by a list whose first item does.
+  - A heading whose whole text is `Parent` or `Epic`, with an optional colon, followed by a
+    paragraph that starts with a reference, or by a list whose first item does. HTML blocks
+    between them, such as a template's comment, are skipped, and so is the item's checkbox.
 
   A reference is a word as in **References**, or a link, which counts by the first word of its
-  text and then by an absolute `http` or `https` destination on `FORGEJO_URL`. A bare number
-  refers to the describing issue's own repository, a repo-only reference to its organization.
+  text and then by an absolute `http` or `https` destination on `FORGEJO_URL`. An opening `(`,
+  `<`, `[`, `*`, or `_` that CommonMark parses apart from a link, as in `(<https://…/issues/12>)`,
+  is skipped. A bare number refers to the describing issue's own repository, a repo-only
+  reference to its organization. Forgejo records a reference from another repository only for
+  `owner/repo#12` or an issue URL, not for `repo#12`, so a child in another repository is found
+  only when it names the epic one of those ways.
   `Related to`, `Depends on`, `Blocked by`, `Follow-up to`, `Split from`, `Closes`, and
   `parent issue #12` name no parent. The endpoint finds candidates in the epic's Forgejo
   timeline. Each `issue_ref` event carries the issue whose description references the epic, as
@@ -462,8 +468,9 @@ epics closed within `BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
   needs a lookup. Missing listed children, including older closed issues and pull requests, are
   read individually with at most four concurrent requests and 200 unique lookups per endpoint
   call. Duplicate references across epics share that lookup. A 403, 404, or lookup beyond that
-  cap or the page budget becomes `{ _tag: "Unavailable", ref }`. A 403 or 404 on a timeline
-  leaves that epic's timeline unread. Other child or timeline failures fail the request. Failed
+  cap or the page budget becomes `{ _tag: "Unavailable", ref }`. A timeline that fails for any
+  reason but an authentication failure leaves that epic's timeline unread, because the timeline
+  is read for every epic on every refresh. Other child failures fail the request. Failed
   repositories enter `failedRepos`; an authentication failure still ends the request. This
   endpoint writes no Forgejo data or card ranks.
 - **Page budget.** The organization labels, repository listings, epic timelines, and child
@@ -473,11 +480,11 @@ epics closed within `BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
   fit in the pages left, the request fails with HTTP 503 and
   `{ error: "Too many Forgejo pages for one request; choose fewer repositories" }`. A
   repository takes an equal share of the pages left when it starts and gives back what it does
-  not use. Timelines then take one page each as they read it, until their empty page or until
-  no pages are left. Each child lookup takes one page when it starts. A listing that runs out
+  not use. Timelines then take one page each as they read it, until their empty page, their
+  20th page (1,000 events), or until no pages are left. Each child lookup takes one page when it starts. A listing that runs out
   of pages is named in `incomplete.listings`, and epics in its unread part are missing. An epic
-  whose timeline Tabulo did not read to its empty page, because the pages ran out or the
-  timeline answered 403 or 404, is named in `incomplete.backlinks`; children that name it as
+  whose timeline Tabulo did not read to its empty page, because the pages ran out, it reached 20
+  pages, or the timeline failed, is named in `incomplete.backlinks`; children that name it as
   their parent may be missing. `incomplete.children` counts the listed child references that
   were not looked up. With at most 20 repositories read on each of two attempts and one token
   refresh, a request makes at most 842 Forgejo requests.

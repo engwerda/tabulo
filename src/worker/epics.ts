@@ -20,6 +20,7 @@ import {
   ForgejoClient,
   type Listing,
   type PageBudget,
+  type RepoRef,
   sharePages,
 } from "./forgejo/client.ts"
 import type {
@@ -52,17 +53,23 @@ const issueReference = (issue: ForgejoReferringIssue): EpicReference => {
 }
 
 /**
- * An epic's children: the issues its body lists, in body order, then the `referrers` whose
- * current description names the epic as their parent, oldest first with the key breaking ties.
- * Each issue once, listed ones first.
+ * An epic's children: the issues its body lists, in body order, except one it names as its own
+ * parent, then the `referrers` whose current description names the epic as their parent, oldest
+ * first with the key breaking ties. Each issue once, listed ones first.
  */
 const epicChildren = (
   epic: string,
-  listed: ReadonlyArray<EpicReference>,
+  body: string,
+  repository: RepoRef,
   referrers: ReadonlyArray<ForgejoReferringIssue>,
   forgejoUrl: string,
 ) => {
-  const children = new Map(listed.map((reference) => [reference.ref, reference]))
+  const parents = new Set(parseEpicParents(body, repository, forgejoUrl).map(({ ref }) => ref))
+  const children = new Map(
+    parseEpicChildren(body, repository, forgejoUrl)
+      .filter(({ ref }) => !parents.has(ref))
+      .map((reference) => [reference.ref, reference]),
+  )
   const linked = referrers
     .filter((issue) =>
       parseEpicParents(issue.body ?? "", issue.repository, forgejoUrl).some(
@@ -155,7 +162,7 @@ export const loadEpics = Effect.fn("loadEpics")(function* (
       forgejo
         .referencingIssues(token, { owner: query.org, name: repo.name }, issue.number, pool)
         .pipe(
-          Effect.catchTag(["ForgejoForbidden", "ForgejoNotFound"], () =>
+          Effect.catchTag(FORGEJO_READ_ERRORS, () =>
             Effect.succeed<Listing<ForgejoReferringIssue>>({ items: [], complete: false }),
           ),
           Effect.map((timeline) => ({ repo, issue, timeline })),
@@ -171,7 +178,8 @@ export const loadEpics = Effect.fn("loadEpics")(function* (
     issue,
     refs: epicChildren(
       cardKey(query.org, repo.name, issue.number),
-      parseEpicChildren(issue.body ?? "", { owner: query.org, name: repo.name }, forgejo.baseUrl),
+      issue.body ?? "",
+      { owner: query.org, name: repo.name },
       timeline.items,
       forgejo.baseUrl,
     ),

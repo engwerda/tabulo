@@ -315,7 +315,11 @@ export const EpicCard = ({
                 No children yet. List them in this epic's description, like{" "}
                 <code className={codeClass}>- #12</code>, or write{" "}
                 <code className={codeClass}>Part of #{epic.number}</code> in each child's
-                description.
+                description, or{" "}
+                <code className={codeClass}>
+                  Part of {org}/{epic.repo}#{epic.number}
+                </code>{" "}
+                in a child in another repository.
               </>
             ) : (
               `No children found. ${UNREAD_LINKS}, so some may be missing.`

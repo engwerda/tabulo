@@ -168,9 +168,9 @@ export class ForgejoClient extends Context.Service<
     ) => Effect.Effect<ForgejoRepoIssue, ForgejoError>
     /**
      * The issues whose description references the issue, oldest reference first, each as it is
-     * now, as far as `budget` reaches. Read from the issue's timeline: pull requests, comments,
-     * and commits that reference it are left out, and Forgejo leaves out issues the user cannot
-     * read.
+     * now, as far as `budget` and 20 timeline pages reach. Read from the issue's timeline: pull
+     * requests, comments, and commits that reference it are left out, and Forgejo leaves out
+     * issues the user cannot read.
      */
     readonly referencingIssues: (
       token: AccessToken,
@@ -350,6 +350,8 @@ const knownTotal = <A>(page: {
 
 const PAGE_SIZE = 50
 const MAX_PAGES = 100
+// One long timeline must not spend the pages that other epics and child lookups need.
+const TIMELINE_PAGES = 20
 
 /**
  * How a listing shows its end. "total": its X-Total-Count, or without one a short page.
@@ -431,7 +433,7 @@ export const makeForgejoClient = (
 
   /**
    * Reads pages from the first until the listing ends as `end` shows it, `isLast` holds for a
-   * page, or the budget runs out.
+   * page, or the budget or `maxPages` runs out.
    */
   const paginate = <A>(
     budget: PageBudget,
@@ -443,11 +445,12 @@ export const makeForgejoClient = (
     >,
     isLast: (batch: ReadonlyArray<A>) => boolean = () => false,
     end: ListingEnd = "total",
+    maxPages = Number.POSITIVE_INFINITY,
   ) =>
     Effect.gen(function* () {
       const items: Array<A> = []
       let fullPage = 0
-      for (let number = 1; budget.remaining > 0; number++) {
+      for (let number = 1; budget.remaining > 0 && number <= maxPages; number++) {
         budget.remaining -= 1
         const { items: batch, total } = yield* readPage(number)
         items.push(...batch)
@@ -638,6 +641,7 @@ export const makeForgejoClient = (
           ).pipe(Effect.map(({ body }) => ({ items: body ?? [], total: undefined }))),
         undefined,
         "empty",
+        TIMELINE_PAGES,
       ).pipe(
         Effect.map(({ items, complete }) => ({
           items: items.flatMap((event) =>

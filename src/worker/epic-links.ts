@@ -148,13 +148,25 @@ export const parseEpicChildren = (
 const word = (token: Token | undefined) =>
   token?._tag === "Word" ? token.text.toLowerCase() : undefined
 
+// CommonMark parses the `(` of `(<https://…>)` as text apart from the autolink.
+const referenceToken = (tokens: ReadonlyArray<Token>, i: number) => {
+  const token = tokens[i]
+  return token?._tag === "Word" && /^[(<[*_]+$/.test(token.text) ? tokens[i + 1] : token
+}
+
 const isParentHeading = (tokens: ReadonlyArray<Token>) =>
   tokens.every((token) => token._tag === "Word") &&
   ["parent", "epic"].includes(tokens.map(word).join(" ").replace(/:$/, ""))
 
 const openingToken = (block: Node | null) => {
-  const paragraph = block?.type === "list" ? block.firstChild?.firstChild : block
-  return paragraph?.type === "paragraph" ? inlineTokens(paragraph)[0] : undefined
+  let next = block
+  while (next?.type === "html_block") next = next.next
+  const paragraph = next?.type === "list" ? next.firstChild?.firstChild : next
+  if (paragraph?.type !== "paragraph") return undefined
+  const tokens = inlineTokens(paragraph)
+  const checkbox =
+    word(tokens[0]) === "[" && word(tokens[1]) === "]" ? 2 : word(tokens[0]) === "[x]" ? 1 : 0
+  return referenceToken(tokens, checkbox)
 }
 
 /**
@@ -189,13 +201,14 @@ export const parseEpicParents = (
     tokens.forEach((token, i) => {
       const before = tokens[i - 1]
       const lineStart = before === undefined || before._tag === "Break"
-      if (lineStart && (word(token) === "parent:" || word(token) === "epic:")) add(tokens[i + 1])
+      if (lineStart && (word(token) === "parent:" || word(token) === "epic:"))
+        add(referenceToken(tokens, i + 1))
       if (
         (word(token) === "part" || word(token) === "(part") &&
         (word(tokens[i + 1]) === "of" || word(tokens[i + 1]) === "of:") &&
         (lineStart || /[.!?:]$/.test(word(before) ?? "") || word(before) === "is")
       )
-        add(tokens[i + 2])
+        add(referenceToken(tokens, i + 2))
     })
   }
   return [...parents.values()]

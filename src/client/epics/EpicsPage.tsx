@@ -151,7 +151,7 @@ const NoEpics = ({ org, selected }: { org: string; selected: ReadonlyArray<strin
               Type/Epic
             </code>{" "}
             label, or the label your <code className="font-mono text-xs">EPIC_LABEL</code> setting
-            names. List its children in its description, one per line:
+            names. List its children in its description, one per list item:
           </p>
           <div className="mt-3 flex items-start justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 py-1.5 pr-1.5 pl-3 dark:border-zinc-800 dark:bg-zinc-950/50">
             <pre className="overflow-x-auto py-1 font-mono text-xs leading-5 text-zinc-700 dark:text-zinc-300">
@@ -169,7 +169,8 @@ const NoEpics = ({ org, selected }: { org: string; selected: ReadonlyArray<strin
           </div>
           <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
             Or write <code className="font-mono">Part of #N</code> in each child's description,
-            where #N is the epic. Progress follows each child's state in Forgejo.
+            where #N is the epic, or <code className="font-mono">Part of owner/repo#N</code> in a
+            child in another repository. Progress follows each child's state in Forgejo.
           </p>
           {newIssue !== undefined && (
             <a
