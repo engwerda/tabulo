@@ -37,8 +37,15 @@ major version.
 - Time comes from Effect's `Clock`. Tests that depend on time or waiting pass the fake clock
   from `test/fake-clock.ts` to `tabulo()`, never real sleeps or timeouts.
 - `SessionStore` owns token encryption. Nothing else reads or writes token columns.
-- `boardLayout` in `src/worker/board.ts` is the one place that decides an issue's board column.
-  `CardRanks` in `src/worker/card-ranks.ts` owns the `card_ranks` table.
+- `boardLayout(statusScope, orgLabels, plan)` in `src/worker/board.ts` is the one place that
+  decides the columns and an issue's column. A board passes its column order and hidden keys as
+  the plan; moves, new issues, card edits, and issue options pass `UNORDERED`, and epics pass the
+  default board's order without hiding anything. `CardRanks` in `src/worker/card-ranks.ts` owns
+  the `card_ranks` table.
+- `BoardStore` in `src/worker/board-store.ts` owns the `boards` table. Its writes compare and
+  swap on the version the writer read, and its insert enforces the board limit. Board CRUD lives
+  in `src/worker/boards.ts`, which checks membership and repository access and does every Forgejo
+  read before the one D1 write. An answer never names a repository the user cannot read.
 - Board writes live in `src/worker/board.ts`. `moveCard` and `createCard` check organization
   membership before any Forgejo write; the card edits (`setAssignee`, `setLabel`,
   `setMilestone`, `addComment`) refuse archived repositories and let Forgejo decide the rest.
