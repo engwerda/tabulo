@@ -21,6 +21,7 @@ import {
   type BoardCard,
   type CardUpdateResult,
   DEFAULT_BOARD_ID,
+  DEFAULT_BOARD_NAME,
   type MoveCardRequest,
 } from "../../shared/api.ts"
 import {
@@ -55,6 +56,7 @@ import { useToast } from "../ui/toast.tsx"
 import type { CardActions } from "./BoardCardView.tsx"
 import { BoardColumns } from "./BoardColumns.tsx"
 import { BoardFiltersBar } from "./BoardFiltersBar.tsx"
+import { BoardSwitcher, useBoardList } from "./BoardSwitcher.tsx"
 import { boardCommands } from "./board-commands.ts"
 import {
   applyMove,
@@ -232,13 +234,13 @@ const OrgNotFound = ({ org }: { org: string }) => (
   </NotFound>
 )
 
-const BoardNotFound = ({ org }: { org: string }) => (
+const BoardNotFound = ({ org, defaultName }: { org: string; defaultName: string }) => (
   <NotFound title="There is no such board">
     <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">
-      It may have been deleted, or the address is not quite right.
+      Someone may have deleted it, or the address is not quite right.
     </p>
     <Link href={boardHref(org, DEFAULT_BOARD_ID)} className={`${buttonClass.primary} mt-6`}>
-      Open the default board
+      Open {defaultName}
     </Link>
   </NotFound>
 )
@@ -434,6 +436,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
 
   const repos = useQuery({ queryKey: ["org-repos", org], queryFn: () => fetchOrgRepos(org) })
   const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
+  const boards = useBoardList(org)
 
   const boardKey = boardQueryKey(org, boardId)
   const writeKey = boardWriteKey(org, boardId)
@@ -995,6 +998,10 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
         >
           <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-1.5">
             <OrgSwitcher org={org} view="board" />
+            <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-700">
+              /
+            </span>
+            <BoardSwitcher org={org} boardId={boardId} name={data?.board.name} />
           </div>
           {filtersShown && (
             <>
@@ -1102,7 +1109,13 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
           {orgMissing ? (
             <OrgNotFound org={org} />
           ) : boardMissing ? (
-            <BoardNotFound org={org} />
+            <BoardNotFound
+              org={org}
+              defaultName={
+                boards.data?.boards.find((listed) => listed.id === DEFAULT_BOARD_ID)?.name ??
+                DEFAULT_BOARD_NAME
+              }
+            />
           ) : data === undefined ? (
             board.isError ? (
               <ErrorNotice

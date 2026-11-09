@@ -4,13 +4,14 @@ import { useRoute, useSearchParams } from "wouter"
 import type { BoardCard, DashboardItem } from "../../shared/api.ts"
 import {
   fetchBoard,
+  fetchBoards,
   fetchDashboard,
   fetchInstance,
   fetchOrgRepos,
   fetchOrgs,
   fetchSearch,
 } from "../api.ts"
-import { boardQueryKey } from "../board/board-view.ts"
+import { boardQueryKey, boardsQueryKey } from "../board/board-view.ts"
 import { DASHBOARD } from "../Dashboard.tsx"
 import { boardCardHref } from "../epics/epics-view.ts"
 import { ORGS } from "../scope/OrgPicker.tsx"
@@ -172,6 +173,11 @@ export const usePaletteGroups = (query: string, active: boolean) => {
     queryFn: () => fetchOrgRepos(org ?? ""),
     enabled: active && org !== undefined,
   })
+  const boards = useQuery({
+    queryKey: boardsQueryKey(org ?? ""),
+    queryFn: () => fetchBoards(org ?? ""),
+    enabled: active && org !== undefined,
+  })
   const dashboard = useQuery({ queryKey: DASHBOARD, queryFn: fetchDashboard, enabled: false })
   const instance = useQuery({
     queryKey: ["instance"],
@@ -237,6 +243,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
   const searchItems = searching && debounced === text ? search.data?.items : undefined
 
   const orgList = orgs.data
+  const boardList = boards.data?.boards
   const forgejoUrl = instance.data?.forgejoUrl
   const dashboardData = dashboard.data
 
@@ -290,8 +297,24 @@ export const usePaletteGroups = (query: string, active: boolean) => {
       }
     }
 
-    const repositories: Array<PaletteItem> = []
     const orgName = orgList?.find((entry) => entry.name === org)?.fullName || org
+    const onOrgBoard = (id: string) =>
+      boardId === id && org !== undefined && viewOrg?.toLowerCase() === org.toLowerCase()
+    const boardItems: ReadonlyArray<PaletteItem> =
+      org === undefined
+        ? []
+        : (boardList ?? []).map((board) => ({
+            id: `boards:${org}:${board.id}`,
+            title: board.name,
+            subtitle: orgName,
+            keywords: `board go ${org} ${orgName}`,
+            icon: "board",
+            ...(onOrgBoard(board.id) ? { current: "Current" } : {}),
+            remember: true,
+            run: ({ navigate }) => navigate(boardHref(org, board.id)),
+          }))
+
+    const repositories: Array<PaletteItem> = []
     if (org !== undefined) {
       const active = (repos.data ?? []).filter((repo) => !repo.archived)
       if (forgejoUrl !== undefined) {
@@ -415,6 +438,14 @@ export const usePaletteGroups = (query: string, active: boolean) => {
         emptyLimit: 1 + ORG_VIEWS.length,
         filter: true,
       },
+      {
+        id: "boards",
+        heading: orgName === undefined ? "Boards" : `Boards in ${orgName}`,
+        items: boardItems,
+        limit: 6,
+        emptyLimit: 0,
+        filter: true,
+      },
       { id: "work", heading: "Your work", items: work, limit: 5, emptyLimit: 4, filter: true },
       {
         id: "repositories",
@@ -438,6 +469,9 @@ export const usePaletteGroups = (query: string, active: boolean) => {
     lastScope,
     orgList,
     org,
+    boardList,
+    viewOrg,
+    boardId,
     repos.data,
     forgejoUrl,
     dashboardData,

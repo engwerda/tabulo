@@ -3,7 +3,8 @@ import { type ComponentType, lazy, Suspense, useEffect } from "react"
 import { Link, Route, Switch, useLocation } from "wouter"
 import type { User } from "../shared/api.ts"
 import { Avatar } from "./Avatar.tsx"
-import { fetchOrgs, signOut } from "./api.ts"
+import { fetchBoards, fetchOrgs, signOut } from "./api.ts"
+import { boardsQueryKey } from "./board/board-view.ts"
 import { DashboardView } from "./Dashboard.tsx"
 import { Glyph, type GlyphName, SearchIcon } from "./palette/icons.tsx"
 import { ShortcutKeys } from "./palette/keys.tsx"
@@ -11,6 +12,7 @@ import { PaletteProvider, usePalette } from "./palette/PaletteProvider.tsx"
 import { ORGS, OrgPicker } from "./scope/OrgPicker.tsx"
 import { useLastScope } from "./scope/remembered.ts"
 import {
+  boardIdFromPath,
   isOrgViewPath,
   ORG_VIEWS,
   type OrgViewId,
@@ -95,23 +97,36 @@ const decodePathSegment = (segment: string) => {
   }
 }
 
-/** Names the browser tab after the view and organization, so tabs and history stay apart. */
+/**
+ * Names the browser tab after the view, or the board, and the organization, so tabs and history
+ * stay apart.
+ */
 const useRouteTitle = () => {
   const [path] = useLocation()
   const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
   const view = ORG_VIEWS.find((candidate) => isOrgViewPath(candidate, path))
-  const org = view === undefined ? undefined : decodePathSegment(path.split("/")[2] ?? "")
+  const segments = path.split("/")
+  const org = view === undefined ? undefined : decodePathSegment(segments[2] ?? "")
   const orgName =
     orgs.data?.find((candidate) => candidate.name.toLowerCase() === org?.toLowerCase())?.fullName ||
     org
+  // The board page loads its organization's boards; the title only reads them.
+  const boards = useQuery({
+    queryKey: boardsQueryKey(org ?? ""),
+    queryFn: () => fetchBoards(org ?? ""),
+    enabled: false,
+  })
+  const boardId = view?.id === "board" ? boardIdFromPath(segments[3]) : undefined
+  const boardName = boards.data?.boards.find((board) => board.id === boardId)?.name
+  const label = boardName ?? view?.label
   useDocumentTitle(
     path === "/"
       ? "Dashboard"
-      : view === undefined
+      : label === undefined
         ? "Page not found"
         : orgName
-          ? `${view.label} · ${orgName}`
-          : view.label,
+          ? `${label} · ${orgName}`
+          : label,
   )
 }
 

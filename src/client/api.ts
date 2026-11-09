@@ -4,6 +4,7 @@ import {
   type AddCommentRequest,
   AddCommentResult,
   Board,
+  BoardList,
   CardDetail,
   CardUpdateResult,
   type CreateCardRequest,
@@ -50,6 +51,7 @@ const decodeDashboard = Schema.decodeUnknownPromise(Dashboard)
 const decodeOrgs = Schema.decodeUnknownPromise(Schema.Array(Org))
 const decodeOrgRepos = Schema.decodeUnknownPromise(Schema.Array(OrgRepo))
 const decodeBoard = Schema.decodeUnknownPromise(Board)
+const decodeBoardList = Schema.decodeUnknownPromise(BoardList)
 const decodeEpics = Schema.decodeUnknownPromise(Epics)
 const decodeMoveCardResult = Schema.decodeUnknownPromise(MoveCardResult)
 const decodeCreateCardResult = Schema.decodeUnknownPromise(CreateCardResult)
@@ -100,6 +102,9 @@ export const fetchOrgRepos = async (org: string): Promise<ReadonlyArray<OrgRepo>
 
 export const fetchBoard = async (org: string, board = DEFAULT_BOARD_ID): Promise<Board> =>
   decodeBoard(await requestJson(`/api/board?${new URLSearchParams({ org, board })}`))
+
+export const fetchBoards = async (org: string): Promise<BoardList> =>
+  decodeBoardList(await requestJson(`/api/boards?${new URLSearchParams({ org })}`))
 
 const postJson = (path: string, body: unknown) =>
   requestJson(path, {
