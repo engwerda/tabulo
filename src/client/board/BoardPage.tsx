@@ -86,7 +86,7 @@ import { CardComposer } from "./CardComposer.tsx"
 import { CardPanel } from "./CardPanel.tsx"
 import { drafts, titleDraftKey } from "./drafts.ts"
 import { BOARD_SHORTCUTS } from "./shortcuts.ts"
-import { useBoardWrites } from "./use-board-writes.ts"
+import { useBoardReads, useBoardWrites } from "./use-board-writes.ts"
 
 const REFRESH_MS = 60_000
 const NO_COMMANDS: ReturnType<typeof boardCommands> = []
@@ -445,7 +445,8 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
   const boardWrites = useBoardWrites(org)
 
   const boardKey = boardQueryKey(org, boardId)
-  const writeKey = boardWriteKey(org, boardId)
+  const writeKey = boardWriteKey(org)
+  const { holdReads, refetchAfterWrites } = useBoardReads(org)
   // A refetch that lands during a drag or before a write is stored would undo it on screen.
   const moving = useIsMutating({ mutationKey: writeKey }) > 0
   const settled = !dragging && !moving
@@ -495,8 +496,6 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
   const columnTitle = (key: string) =>
     board.data?.columns.find((column) => column.key === key)?.title ?? key
 
-  // The last write to finish reads the board again; an earlier one would read it while a later
-  // write is still on its way and show that card back in its old place for a moment.
   // Writes wait while the browser is offline; one notice says so and goes away once it is back.
   const online = useOnline()
   const dismissOffline = useRef<(() => void) | null>(null)
@@ -518,16 +517,6 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
       select: (mutation) => (mutation.state.variables as { cardMove: CardMove }).cardMove.key,
     }),
   )
-
-  // Not returned: React Query would keep the write pending, and its card "Saving", until the
-  // board reload finished.
-  const refetchAfterWrites = () => {
-    if (queryClient.isMutating({ mutationKey: writeKey }) > 1) return
-    void queryClient.invalidateQueries({ queryKey: boardKey })
-  }
-
-  /** Stops board reads in flight, whose answers predate a write and would undo it on screen. */
-  const holdReads = () => queryClient.cancelQueries({ queryKey: boardKey }, { revert: false })
 
   const move = useMutation({
     mutationKey: [...writeKey, "move"],

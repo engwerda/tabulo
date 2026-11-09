@@ -1,16 +1,22 @@
 import type { Board, BoardCard } from "../../shared/api.ts"
 import { compareCardOrder, rankForDrop } from "../../shared/card-order.ts"
 
+/** Every board query of an organization: a card's move changes what each of its boards shows. */
+export const orgBoardsKey = (org: string) => ["board", org] as const
+
 /**
  * One board's query, by its id as `boardIdFromPath` gives it. The command palette reads the same
  * entry to open cards in the board's panel.
  */
-export const boardQueryKey = (org: string, board: string) => ["board", org, board] as const
+export const boardQueryKey = (org: string, board: string) => [...orgBoardsKey(org), board] as const
 
 export const boardsQueryKey = (org: string) => ["boards", org] as const
 
-/** Card writes from one board wait for each other, and the board's reads hold off meanwhile. */
-export const boardWriteKey = (org: string, board: string) => ["board-write", org, board] as const
+/**
+ * The writes that change what an organization's boards show: card moves, new issues, card edits,
+ * and board settings. The boards' reads hold off while any of them is in flight.
+ */
+export const boardWriteKey = (org: string) => ["board-write", org] as const
 
 /** Every card of a column in board order. */
 export const columnCards = (cards: ReadonlyArray<BoardCard>, column: string) =>

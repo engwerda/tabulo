@@ -53,8 +53,13 @@ major version.
 - `src/shared/card-order.ts` holds the card order rules (sorting and the rank of a drop) that
   the server and the client's optimistic update share.
 - `src/client/board/board-view.ts` holds the client's pure board logic (column order, filters,
-  drop neighbours), and `board-settings.ts` the board settings dialog's (the draft, its requests,
-  and the rebase after a 409). The worker tsconfig includes both so tests can import them.
+  drop neighbours, the rollback of a failed move), and `board-settings.ts` the board settings
+  dialog's (the draft, its requests, and the rebase after a 409). The worker tsconfig includes
+  both so tests can import them.
+- A client write that changes what boards show (a card move, new issue, card edit, or board
+  settings) runs under `boardWriteKey(org)` with `useBoardReads` from
+  `src/client/board/use-board-writes.ts`: it holds the organization's board reads while it runs,
+  and the last write to finish reads every board of the organization again.
 - `src/client/scope/` owns the organization scope of the org-level views: `ORG_VIEWS` in
   `views.ts` lists them with their routes, `orgViewHref` builds every link to a view,
   `useRepoSelection` owns the `?repos=` of insights and epics, `remembered.ts` owns the remembered
