@@ -10,6 +10,7 @@
     "src/worker",
     "src/shared",
     "src/client/format.ts",
+    "src/client/board/board-settings.ts",
     "src/client/board/board-view.ts",
     "src/client/charts/scale.ts",
     "src/client/insights/summary.ts",
