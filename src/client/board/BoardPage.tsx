@@ -126,8 +126,11 @@ const storage = {
   },
 }
 
+const collapsedKeyBeforeBoards = (org: string) => `tabulo.board.collapsed.${org.toLowerCase()}`
 const collapsedKey = (org: string, board: string) =>
-  `tabulo.board.collapsed.${org.toLowerCase()}${board === DEFAULT_BOARD_ID ? "" : `/${board}`}`
+  board === DEFAULT_BOARD_ID
+    ? collapsedKeyBeforeBoards(org)
+    : `${collapsedKeyBeforeBoards(org)}/${board}`
 const composerRepoKey = (org: string) => `tabulo.board.new-issue-repo.${org.toLowerCase()}`
 
 const readCollapsed = (key: string): ReadonlySet<string> => {
