@@ -13,10 +13,11 @@ import {
   isNotFound,
 } from "../api.ts"
 import { boardListQueryKey, boardQueryKey } from "../board/board-view.ts"
+import { useLastBoard } from "../board/use-last-board.ts"
 import { DASHBOARD } from "../Dashboard.tsx"
 import { boardCardHref } from "../epics/epics-view.ts"
 import { ORGS } from "../scope/OrgPicker.tsx"
-import { rememberedBoard, rememberedScope, useLastScope } from "../scope/remembered.ts"
+import { rememberedScope, useLastScope } from "../scope/remembered.ts"
 import {
   boardHref,
   boardIdFromPath,
@@ -175,7 +176,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
       return boardHref(viewOrg, boardId, next)
     }
   }, [viewOrg, boardId, boardData, pageSearch])
-  const lastBoard = viewOrg === undefined ? undefined : rememberedBoard(viewOrg)
+  const lastBoard = useLastBoard(viewOrg ?? "")
   const issueBoardHref = useMemo((): IssueBoardHref => {
     if (viewOrg === undefined || lastBoard === undefined) return () => null
     if (boardData === undefined || cardHref === undefined) {

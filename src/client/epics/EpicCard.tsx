@@ -14,7 +14,7 @@ import {
 } from "../ui/icons.tsx"
 import { LabelChip } from "../ui/LabelChip.tsx"
 import { buttonClass, cardClass } from "../ui/primitives.tsx"
-import { boardCardHref, completion, shortRepo } from "./epics-view.ts"
+import { boardCardHref, completion, type LinkedBoard, shortRepo } from "./epics-view.ts"
 
 const chipClass =
   "inline-flex max-w-full items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-1.5 py-px text-2xs font-medium text-zinc-700 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-300"
@@ -151,7 +151,7 @@ const ChildRow = ({
   columns,
 }: {
   org: string
-  board: string
+  board: LinkedBoard | undefined
   child: EpicChild
   columns: ReadonlyArray<BoardColumn>
 }) => {
@@ -215,7 +215,7 @@ export const EpicCard = ({
   onExpandedChange,
 }: {
   org: string
-  board: string
+  board: LinkedBoard | undefined
   epic: Epic
   columns: ReadonlyArray<BoardColumn>
   /** Labels every epic on the page carries, such as the epic label itself: not worth repeating. */
