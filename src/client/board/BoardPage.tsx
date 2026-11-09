@@ -79,6 +79,7 @@ import {
   matchesFilters,
   readFilters,
   replaceCard,
+  revertMove,
   withFilter,
 } from "./board-view.ts"
 import { CardComposer } from "./CardComposer.tsx"
@@ -535,7 +536,8 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
     }: {
       request: MoveCardRequest
       cardMove: CardMove
-      previous: Board
+      /** The card as it was before the move. */
+      before: BoardCard
       undo: CardMove | null
     }) => moveCard(request),
     onSuccess: ({ card, orderSaved }, { request, undo }) => {
@@ -565,9 +567,9 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
         ...(undo === null ? {} : { action: { label: "Undo", run: () => startMove(undo, null) } }),
       })
     },
-    onError: (error, { previous, request, cardMove, undo }) => {
-      // A partly applied move changed Forgejo, so the refetch below shows the truth; restoring
-      // the board from before the move would show a state that no longer exists.
+    onError: (error, { before, request, cardMove, undo }) => {
+      // A partly applied move changed Forgejo, so the refetch below shows the truth; putting back
+      // the card where it was would show a state that no longer exists.
       if (error instanceof RequestFailed && error.code === "move_partly_applied") {
         toast({
           tone: "error",
@@ -577,7 +579,9 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
         })
         return
       }
-      queryClient.setQueryData(boardKey, previous)
+      queryClient.setQueryData<Board>(boardKey, (current) =>
+        current === undefined ? current : revertMove(current, before),
+      )
       if (error instanceof RequestFailed && error.code === "board_changed") {
         toast({
           tone: "warning",
@@ -627,7 +631,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
     )
     move.mutate({
       cardMove,
-      previous: current,
+      before: card,
       undo: undo === undefined ? back : undo,
       request: {
         org: current.org,

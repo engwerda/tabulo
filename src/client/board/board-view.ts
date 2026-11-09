@@ -188,6 +188,25 @@ export const applyMove = (board: Board, move: CardMove, now: string): Board => {
   }))
 }
 
+/**
+ * `board` with the card back where it was before a move that failed: `before` is the card as it
+ * was then. Only what `applyMove` changed goes back, so whatever else changed meanwhile stays,
+ * such as saved settings, another card's move, or this card's assignees. A card whose column the
+ * board no longer shows leaves the board, and one that is no longer on it stays off.
+ */
+export const revertMove = (board: Board, before: BoardCard): Board => {
+  const shown = board.columns.some((column) => column.key === before.column)
+  return {
+    ...board,
+    cards: board.cards.flatMap((card) => {
+      if (card.key !== before.key) return [card]
+      if (!shown) return []
+      const { column, rank, state, closedAt } = before
+      return [{ ...card, column, rank, state, closedAt }]
+    }),
+  }
+}
+
 export const replaceCard = (board: Board, key: string, change: (card: BoardCard) => BoardCard) => ({
   ...board,
   cards: board.cards.map((card) => (card.key === key ? change(card) : card)),
