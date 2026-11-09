@@ -38,6 +38,7 @@ import {
   BoardRequestInvalid,
   BoardWriteForbidden,
   describeForgejoError,
+  FORGEJO_READ_ERRORS,
   type ForgejoError,
   ForgejoForbidden,
   ForgejoMovePartlyApplied,
@@ -343,6 +344,14 @@ type RepoCards =
   | { readonly _tag: "Unreadable" }
 
 /**
+ * A repository whose own read failed for another reason than access, so whether the user can
+ * read it, and may see its name, is not known yet. `name` is the stored, lowercased name.
+ */
+type RepoRead =
+  | RepoCards
+  | { readonly _tag: "AccessUnknown"; readonly name: string; readonly message: string }
+
+/**
  * Every label of the organization, read from `budget` (100 pages by default). Fails rather than
  * return part of them, because columns and label writes depend on all of them.
  */
@@ -392,7 +401,7 @@ export const loadBoard = (
     const closedInWindow = (issue: ForgejoRepoIssue) =>
       issue.closed_at !== null && Date.parse(issue.closed_at) >= windowStart
 
-    const repoCards = (name: string): Effect.Effect<RepoCards, ForgejoUnauthorized> => {
+    const repoCards = (name: string): Effect.Effect<RepoRead, ForgejoUnauthorized> => {
       const ref = { owner: query.org, name }
       return Effect.all(
         [
@@ -402,7 +411,7 @@ export const loadBoard = (
         ],
         { concurrency: "unbounded", mode: "result" },
       ).pipe(
-        Effect.flatMap(([repo, open, closed]): Effect.Effect<RepoCards, ForgejoUnauthorized> => {
+        Effect.flatMap(([repo, open, closed]): Effect.Effect<RepoRead, ForgejoUnauthorized> => {
           const reads = Result.all([repo, open, closed])
           if (Result.isSuccess(reads)) {
             const [forgejoRepo, openIssues, closedIssues] = reads.success
@@ -425,21 +434,34 @@ export const loadBoard = (
           ) {
             return Effect.succeed({ _tag: "Unreadable" })
           }
-          return Effect.sync((): RepoCards => {
+          return Effect.sync((): RepoRead => {
             console.warn(`Board repository ${query.org}/${name} failed`, failure)
-            return {
-              _tag: "Failed",
-              repo: Result.isSuccess(repo) ? repo.success.name : name,
-              message: describeForgejoError(failure),
-            }
+            const message = describeForgejoError(failure)
+            return Result.isSuccess(repo)
+              ? { _tag: "Failed", repo: repo.success.name, message }
+              : { _tag: "AccessUnknown", name, message }
           })
         }),
       )
     }
 
     const readStartedAt = yield* Clock.currentTimeMillis
-    const results = yield* Effect.forEach(board.repos, repoCards, {
+    const reads = yield* Effect.forEach(board.repos, repoCards, {
       concurrency: REPO_CONCURRENCY,
+    })
+    // The organization's listing shows only repositories the user can read. One listing serves
+    // every repository, and one that fails leaves them all unnamed.
+    const visible = reads.some((read) => read._tag === "AccessUnknown")
+      ? yield* (unchanged ? Effect.succeed(orgRepos) : forgejo.orgRepos(token, query.org)).pipe(
+          Effect.catchTag(FORGEJO_READ_ERRORS, () => Effect.succeed([])),
+        )
+      : []
+    const results = reads.map((read): RepoCards => {
+      if (read._tag !== "AccessUnknown") return read
+      const shown = visible.find((repo) => repo.name.toLowerCase() === read.name)
+      return shown === undefined
+        ? { _tag: "Unreadable" }
+        : { _tag: "Failed", repo: shown.name, message: read.message }
     })
     const loaded = results.flatMap((result) => (result._tag === "Loaded" ? [result] : []))
     const ranks = yield* CardRanks

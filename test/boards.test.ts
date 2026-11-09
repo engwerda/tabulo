@@ -898,6 +898,57 @@ describe("repositories a member cannot read", () => {
     expect(adaBoard.cards.map((card) => card.key).sort()).toEqual(["acme/secret#4", "acme/web#3"])
   })
 
+  it("stay unnamed when their own read fails, and are named to a member who can read them", async () => {
+    let failing = false
+    const { get, post, grace } = await session({
+      intercept: (method, path) =>
+        failing && method === "GET" && path === "/api/v1/repos/acme/secret"
+          ? new Response("unavailable", { status: 503 })
+          : undefined,
+    })
+    await storeAllThree(post)
+    failing = true
+
+    const graceResponse = await get("/api/board?org=acme", grace)
+    const graceText = await graceResponse.text()
+    const adaBoard = await answer(await get("/api/board?org=acme"))
+
+    expect(graceResponse.status).toBe(200)
+    expect(graceText).not.toMatch(/secret|Acquisition/i)
+    expect(JSON.parse(graceText)).toMatchObject({
+      board: { repos: ["api", "Web"], unreadableRepos: 1 },
+      failedRepos: [],
+    })
+    expect(adaBoard.board).toMatchObject({ repos: ["api", "secret", "Web"], unreadableRepos: 0 })
+    expect(adaBoard.failedRepos).toEqual([
+      { repo: "secret", message: "Forgejo had a problem (HTTP 503); try again in a moment" },
+    ])
+  })
+
+  it("stay unnamed when their own read and the organization's listing both fail", async () => {
+    let failing = false
+    const { get, post } = await session({
+      intercept: (method, path) =>
+        failing &&
+        method === "GET" &&
+        (path === "/api/v1/repos/acme/secret" || path === "/api/v1/orgs/acme/repos")
+          ? new Response("unavailable", { status: 503 })
+          : undefined,
+    })
+    await storeAllThree(post)
+    failing = true
+
+    const response = await get("/api/board?org=acme")
+    const text = await response.text()
+
+    expect(response.status).toBe(200)
+    expect(text).not.toMatch(/secret|Acquisition/i)
+    expect(JSON.parse(text)).toMatchObject({
+      board: { repos: ["api", "Web"], unreadableRepos: 1 },
+      failedRepos: [],
+    })
+  })
+
   it("keep their rank rows when a member who cannot read them loads the board", async () => {
     const { get, post, grace } = await session()
     await storeAllThree(post)
