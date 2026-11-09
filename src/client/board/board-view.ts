@@ -1,11 +1,12 @@
 import type { Board, BoardCard } from "../../shared/api.ts"
 import { compareCardOrder, rankForDrop } from "../../shared/card-order.ts"
 
-export const orgBoardsKey = (org: string) => ["board", org] as const
+export const everyBoardQueryKey = (org: string) => ["board", org] as const
 
-export const boardQueryKey = (org: string, board: string) => [...orgBoardsKey(org), board] as const
+export const boardQueryKey = (org: string, board: string) =>
+  [...everyBoardQueryKey(org), board] as const
 
-export const boardsQueryKey = (org: string) => ["boards", org] as const
+export const boardListQueryKey = (org: string) => ["boards", org] as const
 
 export const boardWriteKey = (org: string) => ["board-write", org] as const
 

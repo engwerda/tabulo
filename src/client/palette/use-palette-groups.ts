@@ -12,7 +12,7 @@ import {
   fetchSearch,
   isNotFound,
 } from "../api.ts"
-import { boardQueryKey, boardsQueryKey } from "../board/board-view.ts"
+import { boardListQueryKey, boardQueryKey } from "../board/board-view.ts"
 import { DASHBOARD } from "../Dashboard.tsx"
 import { boardCardHref } from "../epics/epics-view.ts"
 import { ORGS } from "../scope/OrgPicker.tsx"
@@ -139,7 +139,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
     enabled: active && org !== undefined,
   })
   const boards = useQuery({
-    queryKey: boardsQueryKey(org ?? ""),
+    queryKey: boardListQueryKey(org ?? ""),
     queryFn: () => fetchBoards(org ?? ""),
     enabled: active && org !== undefined,
   })

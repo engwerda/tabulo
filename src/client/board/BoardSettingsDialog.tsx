@@ -28,7 +28,7 @@ import {
   toCreateRequest,
   toUpdateRequest,
 } from "./board-settings.ts"
-import { boardQueryKey, boardsQueryKey } from "./board-view.ts"
+import { boardListQueryKey, boardQueryKey } from "./board-view.ts"
 import { ColumnSettings } from "./ColumnSettings.tsx"
 import { useBoardWrites } from "./use-board-writes.ts"
 
@@ -152,7 +152,7 @@ export const BoardSettingsDialog = ({
 
   const boardGone = (current: SettingsBase) => {
     forgetBoard(org, current.board.id)
-    void queryClient.invalidateQueries({ queryKey: boardsQueryKey(org) })
+    void queryClient.invalidateQueries({ queryKey: boardListQueryKey(org) })
     toast({
       tone: "warning",
       title: `${current.board.name} was deleted`,
@@ -203,7 +203,7 @@ export const BoardSettingsDialog = ({
         (error: Error) => {
           if (isCode(error, "board_not_found")) {
             forgetBoard(org, current.board.id)
-            void queryClient.invalidateQueries({ queryKey: boardsQueryKey(org) })
+            void queryClient.invalidateQueries({ queryKey: boardListQueryKey(org) })
             toast({ tone: "info", title: `${current.board.name} was already deleted` })
             openBoard(DEFAULT_BOARD_ID, true)
           } else if (isCode(error, "board_changed")) {

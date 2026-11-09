@@ -8,10 +8,10 @@ import { boardHref } from "../scope/views.ts"
 import { ErrorNotice } from "../ui/ErrorNotice.tsx"
 import { CheckIcon, PlusIcon, SlidersIcon } from "../ui/icons.tsx"
 import { Popover } from "../ui/primitives.tsx"
-import { boardsQueryKey } from "./board-view.ts"
+import { boardListQueryKey } from "./board-view.ts"
 
 export const useBoardList = (org: string) =>
-  useQuery({ queryKey: boardsQueryKey(org), queryFn: () => fetchBoards(org) })
+  useQuery({ queryKey: boardListQueryKey(org), queryFn: () => fetchBoards(org) })
 
 let refocusAfterSwitch = false
 

@@ -4,7 +4,7 @@ import { Link, Route, Switch, useLocation } from "wouter"
 import type { User } from "../shared/api.ts"
 import { Avatar } from "./Avatar.tsx"
 import { fetchBoards, fetchOrgs, signOut } from "./api.ts"
-import { boardsQueryKey } from "./board/board-view.ts"
+import { boardListQueryKey } from "./board/board-view.ts"
 import { DashboardView } from "./Dashboard.tsx"
 import { Glyph, SearchIcon } from "./palette/icons.tsx"
 import type { GlyphName } from "./palette/item.ts"
@@ -108,7 +108,7 @@ const useRouteTitle = () => {
     orgs.data?.find((candidate) => candidate.name.toLowerCase() === org?.toLowerCase())?.fullName ||
     org
   const boards = useQuery({
-    queryKey: boardsQueryKey(org ?? ""),
+    queryKey: boardListQueryKey(org ?? ""),
     queryFn: () => fetchBoards(org ?? ""),
     enabled: false,
   })
