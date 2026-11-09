@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { parseEpicChildren } from "../src/worker/epic-links.ts"
+import { parseEpicChildren, parseEpicParents } from "../src/worker/epic-links.ts"
 
 const parse = (body: string, url = "https://forgejo.example") =>
   parseEpicChildren(body, { owner: "acme", name: "api" }, url).map(({ ref }) => ref)
+
+const parents = (body: string, repository = { owner: "acme", name: "api" }) =>
+  parseEpicParents(body, repository, "https://forgejo.example").map(({ ref }) => ref)
 
 describe("epic list references", () => {
   it.each([
@@ -231,5 +234,76 @@ describe("epic list references", () => {
     )
     expect(refs).toHaveLength(200)
     expect(refs.at(-1)).toBe("acme/api#200")
+  })
+})
+
+describe("epic parent references", () => {
+  it.each([
+    ["Part of #1813, which delivers #1083.", "acme/api#1813"],
+    ["This issue is part of #930 and adds the import screen.", "acme/api#930"],
+    ["## Parent\n\n#930", "acme/api#930"],
+    ["## Parent\n\n#930 (found in the integration review of #1377)", "acme/api#930"],
+    ["Parent: #12", "acme/api#12"],
+    ["**Parent:** #12", "acme/api#12"],
+    ["**Parent**: #12", "acme/api#12"],
+    ["Epic: web#12", "acme/web#12"],
+    ["parent: other/web#12", "other/web#12"],
+    ["## Epic\n\n#12", "acme/api#12"],
+    ["Parent\n------\n\n#12", "acme/api#12"],
+    ["## Parent:\n\n- #12", "acme/api#12"],
+    ["## Part of #12", "acme/api#12"],
+    ["(Part of #12)", "acme/api#12"],
+    ["PART OF #12", "acme/api#12"],
+    ["Sync events\nPart of #12", "acme/api#12"],
+    ["Done. Part of #12", "acme/api#12"],
+    ["Part of: #12", "acme/api#12"],
+    ["**Part of:** #97", "acme/api#97"],
+    ["Part of [#12](https://forgejo.example/acme/api/issues/12)", "acme/api#12"],
+    ["Part of [the epic](https://forgejo.example/acme/web/issues/12)", "acme/web#12"],
+    ["Part of <https://forgejo.example/acme/web/issues/12>", "acme/web#12"],
+    ["Part of [the epic][e]\n\n[e]: https://forgejo.example/acme/web/issues/12", "acme/web#12"],
+  ])("finds the parent in %j", (body, ref) => expect(parents(body)).toEqual([ref]))
+
+  it.each([
+    "Document how a parent issue #930 and its child issues #931 and #932 relate.",
+    "Related to #930",
+    "Closes #931",
+    "Part of a whole: no pie, doughnut, or gauge charts. See #12.",
+    "Depends on #12",
+    "Blocked by #12",
+    "Follow-up to #12",
+    "Split from #12",
+    "This is not part of #12",
+    "No longer part of #12",
+    "It was part of #12",
+    "A counterpart of #12",
+    "`Part of #12`",
+    "Part of `api` #12",
+    "```\nPart of #12\n```",
+    "    Part of #12",
+    "> Part of #12",
+    "> ## Parent\n>\n> #12",
+    "<!-- Part of #12 -->",
+    "<div>\nPart of #12\n</div>",
+    "Parent #12",
+    "Done. Parent: #12",
+    "## Parents\n\n#12",
+    "## Parent issue\n\n#12",
+    "## Parent\n\nSee #12",
+    "## Parent\n\n---\n\n#12",
+    "## Parent\n\n> #12",
+    "Part of https://elsewhere.example/acme/api/issues/12",
+    "Part of [the epic](/acme/api/issues/12)",
+  ])("finds no parent in %j", (body) => expect(parents(body)).toEqual([]))
+
+  it("resolves a bare number in the describing issue's own repository", () => {
+    expect(parents("Part of #5", { owner: "acme", name: "web" })).toEqual(["acme/web#5"])
+  })
+
+  it("returns every parent once, in body order", () => {
+    expect(parents("Part of #5\n\n## Parent\n\nweb#6\n\nPart of ACME/API#5")).toEqual([
+      "acme/api#5",
+      "acme/web#6",
+    ])
   })
 })
