@@ -7,6 +7,7 @@ import type {
   FakeMilestone,
   FakeOrg,
   FakeRepo,
+  FakeTimelineEvent,
   FakeUser,
 } from "./fake-forgejo.ts"
 
@@ -201,6 +202,13 @@ export const boardIssue = (
   is_locked: false,
   ...fields,
 })
+
+/** The timeline events Forgejo records when `issues` reference an issue in their descriptions. */
+export const referencedBy = (...issues: ReadonlyArray<FakeIssue>): Array<FakeTimelineEvent> =>
+  issues.map((issue) => ({
+    type: issue.pull_request === null ? "issue_ref" : "pull_ref",
+    from: { owner: issue.repository.owner, repo: issue.repository.name, number: issue.number },
+  }))
 
 export const boardRepo = (name: string, fields: Partial<FakeRepo> = {}): FakeRepo => ({
   name,
