@@ -24,6 +24,7 @@
     "src/client/palette/rank.ts",
     "src/client/palette/shortcuts.ts",
     "src/client/scope/first-visit.ts",
+    "src/client/scope/remembered.ts",
     "src/client/scope/views.ts",
     "src/client/stored-data.ts",
     "test"

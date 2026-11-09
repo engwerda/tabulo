@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react"
 import { DEFAULT_BOARD_ID } from "../../shared/api.ts"
+import type { KeyValueStorage } from "../stored-data.ts"
 
 /**
  * The organization last opened in an org-level view, with its remembered repositories and the
@@ -18,10 +19,14 @@ const reposKey = (org: string) => `tabulo.repos.${org.toLowerCase()}`
 const boardReposKey = (org: string) => `tabulo.board.repos.${org.toLowerCase()}`
 const lastBoardKey = (org: string) => `tabulo.board.last.${org.toLowerCase()}`
 
+// Not `window.localStorage`: the tests run in a worker, which has no window, and put a storage on
+// `globalThis` themselves.
+const storage = () => (globalThis as { readonly localStorage?: KeyValueStorage }).localStorage
+
 // Remembering the scope is a convenience: storage can be missing or refuse writes.
 const read = (key: string) => {
   try {
-    return window.localStorage.getItem(key)
+    return storage()?.getItem(key) ?? null
   } catch {
     return null
   }
@@ -29,8 +34,8 @@ const read = (key: string) => {
 
 const write = (key: string, value: string | null) => {
   try {
-    if (value === null) window.localStorage.removeItem(key)
-    else window.localStorage.setItem(key, value)
+    if (value === null) storage()?.removeItem(key)
+    else storage()?.setItem(key, value)
   } catch {}
 }
 
