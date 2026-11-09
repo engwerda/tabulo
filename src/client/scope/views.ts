@@ -59,6 +59,25 @@ export const boardHref = (org: string, board: string, params?: URLSearchParams):
   return query === "" ? path : `${path}?${query}`
 }
 
+/**
+ * The board's own address for an address that names it another way: the default board by its id,
+ * an id in upper case, or the `repos` parameter of the time before boards. Null when `segment`
+ * and `params` already are the board's own; other parameters stay as they are.
+ */
+export const canonicalBoardHref = (
+  org: string,
+  segment: string | undefined,
+  params: URLSearchParams,
+): string | null => {
+  const board = boardIdFromPath(segment)
+  if (segment === (board === DEFAULT_BOARD_ID ? undefined : board) && !params.has("repos")) {
+    return null
+  }
+  const kept = new URLSearchParams(params)
+  kept.delete("repos")
+  return boardHref(org, board, kept)
+}
+
 /** What a view's address keeps of an organization: its board, or its chosen repositories. */
 export type OrgScope = {
   readonly org: string

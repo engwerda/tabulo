@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { boardHref, boardIdFromPath, orgViewHref } from "../src/client/scope/views.ts"
+import {
+  boardHref,
+  boardIdFromPath,
+  canonicalBoardHref,
+  orgViewHref,
+} from "../src/client/scope/views.ts"
 
 describe("board addresses", () => {
   it("names the default board by the organization alone and another board by its id", () => {
@@ -16,6 +21,35 @@ describe("board addresses", () => {
     expect(boardIdFromPath("")).toBe("default")
     expect(boardIdFromPath("DEFAULT")).toBe("default")
     expect(boardIdFromPath("K3X9Q2M7")).toBe("k3x9q2m7")
+  })
+})
+
+describe("canonicalBoardHref", () => {
+  const params = (query = "") => new URLSearchParams(query)
+
+  it("leaves a board's own address alone", () => {
+    expect(canonicalBoardHref("acme", undefined, params())).toBeNull()
+    expect(canonicalBoardHref("acme", "k3x9q2m7", params("q=login&card=web%2312"))).toBeNull()
+  })
+
+  it("names the default board by the organization alone", () => {
+    expect(canonicalBoardHref("acme", "default", params())).toBe("/board/acme")
+    expect(canonicalBoardHref("acme", "Default", params("label=Kind%2FBug"))).toBe(
+      "/board/acme?label=Kind%2FBug",
+    )
+  })
+
+  it("lowercases a board id", () => {
+    expect(canonicalBoardHref("acme", "K3X9Q2M7", params())).toBe("/board/acme/k3x9q2m7")
+  })
+
+  it("drops the repositories of the time before boards and keeps the other parameters", () => {
+    expect(
+      canonicalBoardHref("acme", undefined, params("repos=api,web&assignee=@me&card=api%2312")),
+    ).toBe("/board/acme?assignee=%40me&card=api%2312")
+    expect(canonicalBoardHref("acme", "K3X9Q2M7", params("repos=api&q=crash"))).toBe(
+      "/board/acme/k3x9q2m7?q=crash",
+    )
   })
 })
 

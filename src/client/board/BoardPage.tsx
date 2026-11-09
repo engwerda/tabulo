@@ -39,7 +39,13 @@ import { ShortcutsDialog, usePageShortcuts } from "../palette/ShortcutsDialog.ts
 import { usePageCommands } from "../palette/use-palette-groups.ts"
 import { ORGS, OrgSwitcher } from "../scope/OrgPicker.tsx"
 import { forgetBoard, rememberBoard } from "../scope/remembered.ts"
-import { boardHref, boardIdFromPath, type OrgViewParams, orgViewHref } from "../scope/views.ts"
+import {
+  boardHref,
+  boardIdFromPath,
+  canonicalBoardHref,
+  type OrgViewParams,
+  orgViewHref,
+} from "../scope/views.ts"
 import { useViewer } from "../session.ts"
 import { ErrorNotice, sentence } from "../ui/ErrorNotice.tsx"
 import { IssueRef } from "../ui/IssueRef.tsx"
@@ -388,22 +394,15 @@ const BoardMenu = ({
   </Popover>
 )
 
-/**
- * The board an address names. An address that names the default board by its id, an id in upper
- * case, or the repositories of the time before boards is replaced by the board's own address.
- */
+/** The board an address names; an address that names it another way becomes the board's own. */
 export const BoardPage = ({ org, board }: OrgViewParams) => {
-  const boardId = boardIdFromPath(board)
   const [params] = useSearchParams()
   const [, navigate] = useLocation()
-  const outdated =
-    board !== (boardId === DEFAULT_BOARD_ID ? undefined : boardId) || params.has("repos")
+  const canonical = canonicalBoardHref(org, board, params)
   useEffect(() => {
-    if (!outdated) return
-    const next = new URLSearchParams(window.location.search)
-    next.delete("repos")
-    navigate(boardHref(org, boardId, next), { replace: true })
-  }, [outdated, org, boardId, navigate])
+    if (canonical !== null) navigate(canonical, { replace: true })
+  }, [canonical, navigate])
+  const boardId = boardIdFromPath(board)
   return <BoardView key={boardId} org={org} boardId={boardId} />
 }
 
