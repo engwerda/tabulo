@@ -154,11 +154,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
   const boardView = orgView("board")
   const [onBoard, boardRoute] = useRoute<OrgViewParams>(`${boardView.path}${boardView.route}`)
   const [onOrgPage, route] = useRoute("/:view/:org")
-  const view = onBoard
-    ? boardView
-    : onOrgPage
-      ? ORG_VIEWS.find(({ path }) => path === `/${route.view}`)
-      : undefined
+  const view = onOrgPage ? ORG_VIEWS.find(({ path }) => path === `/${route.view}`) : undefined
   const viewOrg = onBoard ? boardRoute.org : view === undefined ? undefined : route?.org
   const boardId = onBoard ? boardIdFromPath(boardRoute.board) : undefined
   const [params] = useSearchParams()
