@@ -54,8 +54,14 @@ major version.
   the server and the client's optimistic update share.
 - `src/client/board/board-view.ts` holds the client's pure board logic (column order, filters,
   drop neighbours, the rollback of a failed move), and `board-settings.ts` the board settings
-  dialog's (the draft, its requests, and the rebase after a 409). The worker tsconfig includes
-  both so tests can import them.
+  dialog's (the draft, its requests, and the rebase after a 409). The column drag on the board
+  builds its order there too, with `dropColumn`, `placeColumnAsIn` for Undo and Retry, and
+  `withColumnOrder`. The worker tsconfig includes both so tests can import them.
+- `src/client/board/BoardColumns.tsx` runs card and column drags in one `DndContext`, because
+  the cards' context must wrap every column. Each kind's collisions, keyboard moves,
+  announcements, drag-over, drop, and overlay are its entry in a
+  `Record<DragKind, DragBehaviour>`. While a card is held the column sortables are not drop
+  targets, so card drags see only lists and cards.
 - A client write that changes what boards show (a card move, new issue, card edit, comment,
   board settings, or board delete) runs under `boardWriteKey(org)`. `syncBoardsWithWrites` in
   `src/client/board/board-sync.ts` then stops the organization's board reads when it starts,

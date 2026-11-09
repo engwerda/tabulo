@@ -31,7 +31,7 @@ Forgejo stays the single source of truth: Tabulo stores only what Forgejo cannot
 | View | Milestone | Contents |
 |---|---|---|
 | My dashboard | 1 | My contribution calendar, review requests, open issues and pull requests assigned to me, mentions, items I created, and unread notifications. |
-| Board | 2, 4 | Shared boards per organization, each with its own repositories, column order, and hidden columns. Columns come from exclusive scoped labels. A drag changes the issue's status label or closes or reopens it. |
+| Board | 2, 4 | Shared boards per organization, each with its own repositories, column order, and hidden columns. Columns come from exclusive scoped labels. A card drag changes the issue's status label or closes or reopens it. |
 | Insights | 2 | Throughput, backlog, merge time, CI health, needs attention, and repository health for chosen repositories. |
 | Epics | 3 | Each epic with its child issues and progress. |
 
@@ -119,6 +119,9 @@ the board.
   a label added in Forgejo shows on every board. A label in the order that the organization
   does not have is skipped. A board can hide any column, Todo and Done included. A hidden
   column's cards are left off that board, and nothing changes in Forgejo or in the card order.
+  A member sets the column order and the hidden columns in the board's settings, or drags a
+  column by the grip in its header to move it. Either way the order is saved for the board, for
+  everyone.
 - **Card column.** A closed issue is in Done if it was closed within `BOARD_DONE_DAYS`, and is
   left off the board otherwise. An open issue with a label named like a status column is in
   that column, whether the label is the organization's or the repository's own. Every other

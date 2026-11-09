@@ -229,6 +229,9 @@ repositories you cannot read. Tabulo counts them without naming them and keeps t
 save, unless you ask it to remove them, which frees the place of a repository that was deleted.
 **Delete board…** deletes any board but the default one; its cards and their order stay.
 
+A member can also drag a column on the board itself, by the grip that shows in its header.
+**Undo** in the notice that follows puts it back.
+
 Drag a card with the mouse, or press and hold it on a touch screen. The column under it opens a
 gap where the card will land. With the keyboard, Tab moves from column to column and the arrow
 keys from card to card. Space picks a card up, the arrow keys move it, and Space drops it; Enter
