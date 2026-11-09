@@ -1,4 +1,5 @@
-// Runs Tabulo's dashboard composition against a real Forgejo instance, read-only.
+// Runs Tabulo's dashboard composition and its organization read against a real Forgejo
+// instance, read-only.
 // Usage: FORGEJO_URL=https://forgejo.example FORGEJO_TOKEN=<token> npm run check:forgejo
 import { Cause, Effect, Exit, Redacted } from "effect"
 import { loadDashboardSections } from "../src/worker/dashboard.ts"
@@ -21,7 +22,9 @@ const accessToken = Redacted.make(token)
 const program = Effect.gen(function* () {
   const user = yield* forgejo.currentUser(accessToken)
   const sections = yield* loadDashboardSections(accessToken)
-  return { user, sections }
+  const [first] = yield* forgejo.userOrgs(accessToken)
+  const org = first === undefined ? undefined : yield* forgejo.org(accessToken, first.name)
+  return { user, sections, org }
 }).pipe(Effect.provideService(ForgejoClient, forgejo))
 
 const exit = await Effect.runPromiseExit(program)
@@ -30,8 +33,13 @@ if (Exit.isFailure(exit)) {
   process.exit(1)
 }
 
-const { user, sections } = exit.value
+const { user, sections, org } = exit.value
 console.log(`Signed in as ${user.login} (${user.full_name || "no full name"}) on ${baseUrl}\n`)
+console.log(
+  org === undefined
+    ? "organization: none to read"
+    : `organization: ${org.name} (${org.full_name || "no full name"})`,
+)
 for (const [name, section] of Object.entries(sections)) {
   if (section._tag === "Failed") {
     console.log(`${name}: FAILED (${section.message})`)

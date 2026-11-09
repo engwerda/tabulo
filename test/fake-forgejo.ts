@@ -132,6 +132,11 @@ export type FakeOrg = {
   full_name: string
   avatar_url: string
   members: ReadonlyArray<string>
+  /**
+   * Logins Forgejo does not show the organization to, as with a private organization they are
+   * not a member of: the organization, its labels, its repositories, and their listing answer 404.
+   */
+  hiddenFrom?: ReadonlyArray<string>
   publicMembers?: ReadonlyArray<string>
   labels: ReadonlyArray<FakeLabel>
   repos: Array<FakeRepo>
@@ -342,6 +347,10 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     orgs.find((org) => org.name.toLowerCase() === name.toLowerCase())
   const findRepo = (owner: string, name: string) =>
     findOrg(owner)?.repos.find((repo) => repo.name.toLowerCase() === name.toLowerCase())
+  const shownOrg = (name: string, login: string) => {
+    const org = findOrg(name)
+    return org?.hiddenFrom?.includes(login) === true ? undefined : org
+  }
 
   const repoJson = (owner: string, repo: FakeRepo, login: string) => ({
     id: 100,
@@ -633,7 +642,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     const repoRead = /^\/api\/v1\/repos\/([^/]+)\/([^/]+)\/(actions\/runs|languages)$/.exec(path)
     if (repoRead === null) return undefined
     const [, owner = "", name = "", what] = repoRead
-    const repo = findRepo(owner, name)
+    const repo = shownOrg(owner, login) === undefined ? undefined : findRepo(owner, name)
     if (repo === undefined || repo.hiddenFrom?.includes(login)) return notFound()
     if (what === "languages") return json(repo.languages ?? {})
     if (repo.actionRuns === undefined) return notFound()
@@ -726,10 +735,23 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
         ? new Response(null, { status: 204 })
         : notFound()
     }
+    const orgOnly = /^\/api\/v1\/orgs\/([^/]+)$/.exec(path)
+    if (orgOnly !== null) {
+      const org = shownOrg(orgOnly[1] ?? "", login)
+      if (org === undefined) return notFound()
+      return json({
+        id: 1,
+        name: org.name,
+        username: org.name,
+        full_name: org.full_name,
+        avatar_url: org.avatar_url,
+        visibility: org.hiddenFrom === undefined ? "public" : "private",
+      })
+    }
     const orgPath = /^\/api\/v1\/orgs\/([^/]+)\/(repos|labels)$/.exec(path)
     if (orgPath !== null) {
       const [, orgName = "", what] = orgPath
-      const org = findOrg(orgName)
+      const org = shownOrg(orgName, login)
       if (org === undefined) return notFound()
       return what === "labels"
         ? paged(org.labels, query)
@@ -745,7 +767,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     const repoPath = /^\/api\/v1\/repos\/([^/]+)\/([^/]+)(\/.*)?$/.exec(path)
     if (repoPath !== null) {
       const [, owner = "", name = "", rest = ""] = repoPath
-      const org = findOrg(owner)
+      const org = shownOrg(owner, login)
       const repo = findRepo(owner, name)
       if (org === undefined || repo === undefined) return notFound()
       if (repo.hiddenFrom?.includes(login)) return notFound()
