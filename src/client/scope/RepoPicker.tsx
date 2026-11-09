@@ -80,19 +80,22 @@ export const RepoChecklist = ({
   const [search, setSearch] = useState("")
   const selectAll = useRef<HTMLInputElement>(null)
 
-  const chosen = new Set(selected)
+  // A selection can spell a name otherwise than the organization's list, as `?repos=API` does;
+  // Forgejo compares repository names without regard to case.
+  const chosen = new Set(selected.map((name) => name.toLowerCase()))
+  const isChosen = (name: string) => chosen.has(name.toLowerCase())
   const visible = repos.filter((repo) => repo.name.toLowerCase().includes(search.toLowerCase()))
-  const visibleChosen = visible.filter((repo) => chosen.has(repo.name)).length
+  const visibleChosen = visible.filter((repo) => isChosen(repo.name)).length
   const allVisibleChosen = visible.length > 0 && visibleChosen === visible.length
 
   // Keeps the organization's repository order stable whatever order the user clicks in.
-  const choose = (isChosen: (name: string) => boolean) =>
-    onChange(repos.map((repo) => repo.name).filter(isChosen))
+  const choose = (keep: (name: string) => boolean) =>
+    onChange(repos.map((repo) => repo.name).filter(keep))
   const toggle = (name: string) =>
-    choose((candidate) => (candidate === name ? !chosen.has(name) : chosen.has(candidate)))
+    choose((candidate) => (candidate === name ? !isChosen(name) : isChosen(candidate)))
   const toggleVisible = () => {
     const shown = new Set(visible.map((repo) => repo.name))
-    choose((candidate) => (shown.has(candidate) ? !allVisibleChosen : chosen.has(candidate)))
+    choose((candidate) => (shown.has(candidate) ? !allVisibleChosen : isChosen(candidate)))
   }
 
   useEffect(() => {
@@ -139,11 +142,11 @@ export const RepoChecklist = ({
             <label key={repo.name} className={`${rowClass} h-8 pointer-coarse:h-11`}>
               <input
                 type="checkbox"
-                checked={chosen.has(repo.name)}
+                checked={isChosen(repo.name)}
                 onChange={() => toggle(repo.name)}
                 className={checkboxClass}
               />
-              <RepoDot repo={repo.name} chosen={chosen.has(repo.name)} />
+              <RepoDot repo={repo.name} chosen={isChosen(repo.name)} />
               <span
                 className={`truncate ${repo.archived ? "text-zinc-500 dark:text-zinc-400" : "text-zinc-800 dark:text-zinc-200"}`}
               >
