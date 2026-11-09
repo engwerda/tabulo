@@ -409,9 +409,9 @@ epics closed within `BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
   named `x` does not change `[x]`. Every list counts, whatever heading it is under, except that
   the issue a `Parent` heading or a `Parent:` line names is the epic's own parent, not its child,
   so a sub-epic that lists its parent does not count it; that issue is left out before the cap.
-  `part of` and an `Epic` heading do not count there, because an epic's own description uses
-  them for other things. Write related or blocking issues as sentences, not as list items that
-  start with the reference.
+  `part of` does not count there, because an epic's own description uses it for other things.
+  Write related or blocking issues as sentences, not as list items that start with the
+  reference.
 - **References.** The first word after the list marker and checkbox, in the same source text,
   is `#12`, `repo#12`, `owner/repo#12`, or an issue or pull request URL on `FORGEJO_URL`, bare or
   as an autolink. It may be wrapped in `(`, `<`, `[`, `*`, or `_` and followed by punctuation,
@@ -430,14 +430,16 @@ epics closed within `BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
   and block quotes name no parent. Case is ignored. A description names a parent in three ways.
   - `part of`, with an optional colon, and a reference, where `part` opens a line, follows a word
     that ends in `.`, `!`, `?`, or `:`, or follows the word `is`. `(part of #12)` and
-    `**Part of:** #12` count. `Part of #1813, which delivers
-    #1083.` names only #1813. `not part of #12`, `no longer part of #12`, `counterpart of #12`,
-    and `part of a whole` name none.
+    `**Part of:** #12` count. `Part of #1813, which delivers #1083.` names only #1813.
+    `not part of #12`, `no longer part of #12`, `counterpart of #12`, and `part of a whole` name
+    none.
   - A line that starts with `Parent:` or `Epic:` and a reference. Emphasis does not matter, so
     `**Parent:** #12` counts.
-  - A heading whose whole text is `Parent` or `Epic`, with an optional colon, followed by a
-    paragraph that starts with a reference, or by a list whose first item does. HTML blocks
-    between them, such as a template's comment, are skipped, and so is the item's checkbox.
+  - A heading whose whole text is `Parent`, with an optional colon, followed by a paragraph that
+    starts with a reference, or by a list whose first item does. HTML blocks between them, such
+    as a template's comment, are skipped, and so is the item's checkbox, read from the source as
+    a listed child's is. An `Epic` heading does not count, because an epic's own description
+    lists its children under one.
 
   A reference is a word as in **References**, or a link, which counts by the first word of its
   text and then by an absolute `http` or `https` destination on `FORGEJO_URL`. An opening `(`,
@@ -488,10 +490,10 @@ epics closed within `BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
   timelines take one page each from the rest as they read it, until their empty page, their
   20th page (1,000 events), or until no pages are left. The set-aside pages then go back, and
   each child lookup takes one page when it starts. A listing that runs out of pages is named in
-  `incomplete.listings`, and epics in its unread part are missing. An epic
-  whose timeline Tabulo did not read to its empty page, because the pages ran out, it reached 20
-  pages, or the timeline failed, is named in `incomplete.backlinks`; children that name it as
-  their parent may be missing. `incomplete.children` counts the listed child references that
+  `incomplete.listings`, and epics in its unread part are missing. An epic whose timeline Tabulo
+  did not read to its empty page, because the pages ran out, it reached 20 pages, or the
+  timeline failed, is named in `incomplete.backlinks`; children that name it as their parent may
+  be missing. `incomplete.children` counts the listed child references that
   were not looked up. With at most 20 repositories read on each of two attempts and one token
   refresh, a request makes at most 842 Forgejo requests.
 - **Display.** Each epic exposes its issue details and board column, progress segments and

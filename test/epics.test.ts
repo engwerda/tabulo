@@ -459,6 +459,35 @@ describe("GET /api/epics", () => {
     expect(reads.length).toBeLessThan(1000)
   })
 
+  it("gives back the pages kept for lookups when a timeline 401 refreshes the token", async () => {
+    // Labels take 3 pages and listings 320, so two attempts fit in 800 only if the 100 pages kept
+    // for r0#1's listed children come back after the first attempt's timeline is rejected.
+    const { names, org } = crowdedOrg(30, 0, 100)
+    let rejected = false
+    const forgejo = createFakeForgejo({
+      orgs: [org],
+      maxPageSize: 2,
+      intercept: (_, path) => {
+        if (rejected || !path.endsWith("/timeline")) return undefined
+        rejected = true
+        return new Response(null, { status: 401 })
+      },
+    })
+    const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
+    const cookie = await signIn(call, forgejo)
+    const before = forgejo.requests.length
+
+    const response = await call(`/api/epics?org=acme&repos=${names.join(",")}`, {
+      headers: { cookie },
+    })
+
+    expect(response.status).toBe(200)
+    const data = Schema.decodeUnknownSync(Epics)(await response.json())
+    const reads = forgejo.requests.slice(before)
+    expect(reads.filter(({ path }) => path === "/login/oauth/access_token")).toHaveLength(1)
+    expect(data.incomplete).toEqual({ listings: [], children: 0, backlinks: [] })
+  })
+
   it.each([
     // Labels take 100 of the 800 pages, so listings stop at 700 and the 780th never runs.
     { at: 780, status: 200, refreshes: 0 },

@@ -320,14 +320,15 @@ Or name the epic in each child's own description: write `Part of #12`, a line `P
 a `## Parent` heading followed by `#12`. Tabulo finds these children through the epic's
 timeline in Forgejo, so they show even when the epic's description does not list them. A child
 in another repository writes `Part of owner/repo#12` or the epic's URL: Forgejo records no
-reference for `repo#12`, so Tabulo cannot find that form. Only the
-child's current description counts, outside quotes and code, and `not part of #12`,
-`Related to #12`, and pull requests do not make a child.
+reference for `repo#12`, so Tabulo cannot find that form. Only the child's current description
+counts, outside quotes and code, and `not part of #12`, `Related to #12`, and pull requests do
+not make a child.
 
 A bare number belongs to the repository of the issue that writes it; `web#34` belongs to the
 same organization. In the epic's description, only the first reference of a list item counts,
 and pull request references count too. Every list counts, so write related or blocking issues
-as sentences, not as items that start with the reference. Write a checkbox plainly, as Forgejo
+as sentences, not as items that start with the reference. The one exception is a sub-epic's own
+parent: the issue a `## Parent` heading or a `Parent:` line names is not its child. Write a checkbox plainly, as Forgejo
 shows a checkbox only then: `\[ ]` and `**[ ]**` are text, so their items list nothing. Tabulo
 reads descriptions as CommonMark, as Forgejo renders them, so code, HTML comments, and Forgejo
 dependencies do not create links. An HTML comment that starts a line and is never closed hides
