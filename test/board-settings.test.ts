@@ -261,6 +261,39 @@ describe("rebaseDraft after someone else saved first", () => {
     expect(stillThere.draft.dropUnreadable).toBe(true)
   })
 
+  it("saves a rebased draft against their stored board and version", () => {
+    const loaded = base()
+    const theirs = base(
+      {
+        columns: ["Status/Gone", "done", "todo", "Status/In Progress", "Status/Review"],
+        hidden: ["Status/Review", "Status/Gone"],
+        version: 7,
+      },
+      [DONE, TODO, PROGRESS, REVIEW],
+    )
+    const renamed = rebaseDraft(loaded, theirs, { ...draftOf(loaded), name: "Mine" }).draft
+    expect(toUpdateRequest("acme", theirs, renamed)).toEqual({
+      org: "acme",
+      board: "k3x9q2m7",
+      version: 7,
+      name: "Mine",
+      repos: ["web", "mobile"],
+      columns: ["Status/Gone", "done", "todo", "Status/In Progress", "Status/Review"],
+      hidden: ["Status/Review", "Status/Gone"],
+      dropUnreadable: false,
+    })
+    const reordered = rebaseDraft(
+      loaded,
+      theirs,
+      moveColumn(draftOf(loaded), "Status/Review", 0),
+    ).draft
+    expect(toUpdateRequest("acme", theirs, reordered)).toMatchObject({
+      version: 7,
+      columns: ["Status/Review", "todo", "Status/In Progress", "done", "Status/Gone"],
+      hidden: ["Status/Review", "Status/Gone"],
+    })
+  })
+
   it("names the changed fields in words", () => {
     expect(describeFields(["name"])).toBe("the name")
     expect(describeFields(["name", "hidden"])).toBe("the name and the hidden columns")
@@ -319,6 +352,21 @@ describe("applySavedBoard", () => {
     expect(keys(shown.columns)).toEqual(keys(loaded.columns))
     expect(shown.cards.map((each) => each.number)).toEqual([1, 2])
     expect(shown.failedRepos).toEqual([])
+  })
+
+  it("keeps a column that appeared after the order was arranged, after the column it follows", () => {
+    // The dialog's order is from when it opened; Blocked has come to the board since.
+    const grown = { ...loaded, columns: [TODO, BLOCKED, PROGRESS, REVIEW, DONE] }
+    const now = { ...grown, allColumns: grown.columns }
+    const shown = applySavedBoard(now, saved({ version: 5 }), [
+      "done",
+      "todo",
+      "Status/In Progress",
+      "Status/Review",
+    ])
+    const expected = ["done", "todo", "Status/Blocked", "Status/In Progress", "Status/Review"]
+    expect(keys(shown.allColumns)).toEqual(expected)
+    expect(keys(shown.columns)).toEqual(expected)
   })
 
   it("shows a column that was hidden, whose cards come with the next read", () => {
