@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import type { GlyphName } from "./item.ts"
 
 const Icon = ({ children, className }: { children: ReactNode; className?: string }) => (
   <svg
@@ -152,9 +153,7 @@ const GLYPHS = {
       <circle cx="8" cy="14" r="2" />
     </>
   ),
-} as const
-
-export type GlyphName = keyof typeof GLYPHS
+} as const satisfies Record<GlyphName, ReactNode>
 
 export const Glyph = ({ name, className }: { name: GlyphName; className?: string }) => (
   <Icon {...(className === undefined ? {} : { className })}>{GLYPHS[name]}</Icon>

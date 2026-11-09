@@ -1,6 +1,6 @@
 import type { BoardCard } from "../../shared/api.ts"
+import type { PaletteItem } from "../palette/item.ts"
 import type { GroupSpec } from "../palette/rank.ts"
-import type { PaletteItem } from "../palette/use-palette-groups.ts"
 import { type BoardFilters, filterChoices, ME, NONE, toggled } from "./board-view.ts"
 
 /** What the board's commands in the command menu read and do; the N, M, R, and / keys do the same. */
