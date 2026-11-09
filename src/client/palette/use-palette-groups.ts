@@ -10,6 +10,7 @@ import {
   fetchOrgRepos,
   fetchOrgs,
   fetchSearch,
+  isNotFound,
 } from "../api.ts"
 import { boardQueryKey, boardsQueryKey } from "../board/board-view.ts"
 import { DASHBOARD } from "../Dashboard.tsx"
@@ -172,7 +173,7 @@ export const usePaletteGroups = (query: string, active: boolean) => {
     queryFn: () => fetchBoard(viewOrg ?? "", boardId),
     enabled: false,
   })
-  const boardData = boardId === undefined ? undefined : board.data
+  const boardData = boardId === undefined || isNotFound(board.error) ? undefined : board.data
   const pageSearch = params.toString()
   // A card of the board on screen opens in its side panel and keeps the board's filters.
   const cardHref = useMemo(() => {

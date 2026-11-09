@@ -30,6 +30,7 @@ import {
   fetchBoard,
   fetchOrgRepos,
   fetchOrgs,
+  isNotFound,
   moveCard,
   RequestFailed,
   setAssignee,
@@ -742,7 +743,8 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
   )
 
   const visible = (card: BoardCard) => matchesFilters(card, boardFilters, viewer.login)
-  const data = board.data
+  // A board that answered 404 keeps its last answer in the cache, which nothing may act on.
+  const data = isNotFound(board.error) ? undefined : board.data
   const archived = new Set(
     (repos.data ?? []).filter((repo) => repo.archived).map((repo) => repo.name),
   )
@@ -925,8 +927,12 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
   const orgTitle =
     orgs.data?.find((candidate) => candidate.name.toLowerCase() === org.toLowerCase())?.fullName ||
     org
-  const canChangeBoards = data?.viewerCanArrange === true
-  const canEditBoard = canChangeBoards && !boardMissing
+  // Without a board to say whether the viewer is a member, the organizations they belong to do,
+  // so a member can still add a board from one that is gone.
+  const canChangeBoards =
+    data?.viewerCanArrange ??
+    orgs.data?.some((candidate) => candidate.name.toLowerCase() === org.toLowerCase()) === true
+  const canEditBoard = data?.viewerCanArrange === true
   const editBoard = (focus?: "repos" | "columns") => {
     if (data !== undefined) setSettings({ _tag: "Edit", board: data, ...(focus ? { focus } : {}) })
   }
@@ -1111,7 +1117,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
           </p>
         </div>
 
-        {refreshFailed && !boardMissing && (
+        {refreshFailed && (
           <ErrorNotice
             tone="warning"
             title="Could not refresh the board"
@@ -1150,13 +1156,13 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
               />
             </ErrorNotice>
           )}
-        {data !== undefined && !boardMissing && !data.viewerCanArrange && (
+        {data !== undefined && !data.viewerCanArrange && (
           <Notice>
             You can view this board. Only members of {data.org} can move cards, add issues, and
             change boards.
           </Notice>
         )}
-        {onlyDefaultColumns && !boardMissing && (
+        {onlyDefaultColumns && (
           <Notice>
             <span className="flex items-center gap-1.5">
               <ColumnsIcon className="size-4 text-zinc-400" />
