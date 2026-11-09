@@ -56,8 +56,11 @@ const loaded: Board = {
   failedRepos: [],
 }
 
-const find = (board: Board, number: number) =>
-  board.cards.find((each) => each.number === number) as BoardCard
+const find = (board: Board, number: number) => {
+  const found = board.cards.find((each) => each.number === number)
+  if (found === undefined) throw new Error(`no card ${number}`)
+  return found
+}
 const original = (number: number) => find(loaded, number)
 const move = (board: Board, number: number, toColumn: string) =>
   applyMove(board, { key: `acme/api#${number}`, toColumn, afterKey: null, beforeKey: null }, NOW)
