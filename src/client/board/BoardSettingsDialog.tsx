@@ -107,7 +107,16 @@ export const BoardSettingsDialog = ({
   const unreadable = base?.board.unreadableRepos ?? 0
   const kept = draft.dropUnreadable ? 0 : unreadable
   const problem = draftProblem(draft, unreadable)
-  const pending = writes.create.isPending || writes.update.isPending || writes.remove.isPending
+  // A write in flight keeps the dialog open: its answer opens the new board, leaves a deleted one,
+  // or shows why it was refused.
+  const busy = writes.create.isPending
+    ? "Wait until the board is created"
+    : writes.update.isPending
+      ? "Wait until the board is saved"
+      : writes.remove.isPending
+        ? "Wait until the board is deleted"
+        : null
+  const pending = busy !== null
   const dirty =
     base === null ? draft.name.trim() !== "" || draft.repos.length > 0 : isDirty(base, draft)
 
@@ -126,9 +135,23 @@ export const BoardSettingsDialog = ({
   }, [])
 
   const close = () => dialog.current?.close()
+  const dismiss = () => {
+    if (!pending) close()
+  }
+  // A write's answer comes from its `mutateAsync` promise, which settles after the dialog is gone
+  // too, where callbacks given to `mutate` would not run. Back or Forward can take the dialog away
+  // while a write is in flight; its answer then shows as a toast and opens no board.
+  const isOpen = () => dialog.current?.open === true
+
+  /** Why a write failed: in the dialog, or in a toast once the dialog is gone. */
+  const fail = (title: string, message: string) => {
+    if (isOpen()) setFailure(sentence(message))
+    else toast({ tone: "error", title, detail: sentence(message) })
+  }
 
   /** Closes the dialog for another board, whose switcher then takes focus. */
   const openBoard = (board: string, replace: boolean) => {
+    if (!isOpen()) return
     focusNextBoardSwitcher()
     close()
     navigate(boardHref(org, board), { replace })
@@ -147,6 +170,10 @@ export const BoardSettingsDialog = ({
 
   /** Loads the board as someone else saved it and moves the user's changes onto it. */
   const rebase = async (current: SettingsBase, during: "save" | "delete") => {
+    if (!isOpen()) {
+      fail(`Could not ${during} ${current.board.name}`, "Someone else changed it meanwhile")
+      return
+    }
     const key = boardQueryKey(org, current.board.id)
     try {
       await queryClient.cancelQueries({ queryKey: key })
@@ -170,10 +197,10 @@ export const BoardSettingsDialog = ({
   const remove = (current: SettingsBase) => {
     if (pending) return
     setFailure(null)
-    writes.remove.mutate(
-      { org, board: current.board.id, version: current.board.version },
-      {
-        onSuccess: () => {
+    writes.remove
+      .mutateAsync({ org, board: current.board.id, version: current.board.version })
+      .then(
+        () => {
           toast({
             tone: "success",
             title: `Deleted ${current.board.name}`,
@@ -181,7 +208,7 @@ export const BoardSettingsDialog = ({
           })
           openBoard(DEFAULT_BOARD_ID, true)
         },
-        onError: (error) => {
+        (error: Error) => {
           if (isCode(error, "board_not_found")) {
             forgetBoard(org, current.board.id)
             void queryClient.invalidateQueries({ queryKey: boardsQueryKey(org) })
@@ -191,11 +218,10 @@ export const BoardSettingsDialog = ({
             setConfirmingDelete(false)
             void rebase(current, "delete")
           } else {
-            setFailure(sentence(error.message))
+            fail(`Could not delete ${current.board.name}`, error.message)
           }
         },
-      },
-    )
+      )
   }
 
   const focusField = (field: "name" | "repos") => {
@@ -213,45 +239,48 @@ export const BoardSettingsDialog = ({
     }
     setFailure(null)
     if (base === null) {
-      writes.create.mutate(toCreateRequest(org, draft), {
-        onSuccess: (saved) => {
+      writes.create.mutateAsync(toCreateRequest(org, draft)).then(
+        (saved) => {
           toast({ tone: "success", title: `Created ${saved.name}` })
           openBoard(saved.id, false)
         },
-        onError: (error) => setFailure(sentence(error.message)),
-      })
+        (error: Error) => fail("Could not create the board", error.message),
+      )
       return
     }
     if (!isDirty(base, draft)) {
       close()
       return
     }
-    writes.update.mutate(
-      { request: toUpdateRequest(org, base, draft), order: draft.order },
-      {
-        onSuccess: (saved) => {
+    writes.update
+      .mutateAsync({ request: toUpdateRequest(org, base, draft), order: draft.order })
+      .then(
+        (saved) => {
           toast({ tone: "success", title: `Saved ${saved.name}` })
           close()
         },
-        onError: (error) => {
+        (error: Error) => {
           if (isCode(error, "board_changed")) void rebase(base, "save")
           else if (isCode(error, "board_not_found")) boardGone(base)
-          else setFailure(sentence(error.message))
+          else fail(`Could not save ${base.board.name}`, error.message)
         },
-      },
-    )
+      )
   }
 
   const chosen = draft.repos.length + kept
   const rows = base === null ? [] : columnRows(base.allColumns, draft)
   const shown = rows.filter((row) => !row.hidden).length
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a modal dialog natively; the click is on the backdrop
     <dialog
       ref={dialog}
       aria-labelledby={`${id}-title`}
+      // Chrome lets a second Escape in a row close the dialog although its cancel event is
+      // prevented; preventing the key press keeps it open.
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && pending) event.preventDefault()
+      }}
       onCancel={(event) => {
-        if (dragging.current) event.preventDefault()
+        if (dragging.current || pending) event.preventDefault()
         // Escape backs out of the confirmation before it closes the dialog.
         else if (confirmingDelete) {
           event.preventDefault()
@@ -293,10 +322,12 @@ export const BoardSettingsDialog = ({
           </h2>
           <button
             type="button"
-            onClick={close}
+            onClick={dismiss}
             aria-label="Close"
-            title="Close (Esc)"
-            className={`${buttonClass.iconSmall} -mr-1.5`}
+            title={busy ?? "Close (Esc)"}
+            aria-disabled={pending || undefined}
+            aria-describedby={pending ? `${id}-busy` : undefined}
+            className={`${buttonClass.iconSmall} -mr-1.5 aria-disabled:opacity-50`}
           >
             <XIcon className="size-4" />
           </button>
@@ -474,6 +505,11 @@ export const BoardSettingsDialog = ({
               {failure}
             </p>
           )}
+          {busy !== null && (
+            <span id={`${id}-busy`} hidden>
+              {busy}
+            </span>
+          )}
           {confirmingDelete && base !== null ? (
             <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2">
               <p id={`${id}-delete`} className="mr-auto text-sm text-zinc-700 dark:text-zinc-300">
@@ -486,9 +522,12 @@ export const BoardSettingsDialog = ({
                 <button
                   ref={keepButton}
                   type="button"
-                  aria-describedby={`${id}-delete`}
-                  onClick={() => setConfirmingDelete(false)}
-                  className={buttonClass.secondary}
+                  aria-describedby={pending ? `${id}-busy` : `${id}-delete`}
+                  aria-disabled={pending || undefined}
+                  onClick={() => {
+                    if (!pending) setConfirmingDelete(false)
+                  }}
+                  className={`${buttonClass.secondary} aria-disabled:opacity-60`}
                 >
                   Keep it
                 </button>
@@ -529,7 +568,14 @@ export const BoardSettingsDialog = ({
                   </p>
                 )}
                 <div className="flex gap-2">
-                  <button type="button" onClick={close} className={buttonClass.secondary}>
+                  <button
+                    type="button"
+                    onClick={dismiss}
+                    title={busy ?? undefined}
+                    aria-disabled={pending || undefined}
+                    aria-describedby={pending ? `${id}-busy` : undefined}
+                    className={`${buttonClass.secondary} aria-disabled:opacity-60`}
+                  >
                     Cancel
                   </button>
                   <button
