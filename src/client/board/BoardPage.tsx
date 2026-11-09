@@ -92,6 +92,10 @@ import { useBoardReads, useBoardWrites } from "./use-board-writes.ts"
 const REFRESH_MS = 60_000
 const NO_COMMANDS: ReturnType<typeof boardCommands> = []
 
+// The command menu gives focus back to where it was as it closes, after its command runs, so a
+// command that moves focus waits until the menu has closed.
+const afterPaletteCloses = (run: () => void) => () => void window.setTimeout(run)
+
 /**
  * A change to a card's assignees, labels, or milestone. `done` says what happened in the toast
  * ("Added Kind/Bug to api#3"), `issue` names the issue if it fails, and `undo` reverses it.
@@ -1008,15 +1012,14 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
           setFilter: (filter, values) =>
             setParams((current) => withFilter(current, filter, values), { replace: true }),
           clearFilters,
-          // The command menu gives focus back to where it was as it closes, after this runs.
-          focusSearch: () => window.setTimeout(() => searchInput.current?.focus()),
+          focusSearch: afterPaletteCloses(() => searchInput.current?.focus()),
           refresh: () => void board.refetch(),
           updated: updated ?? "",
           boardName: data.board.name,
-          editBoard: canEditBoard ? () => window.setTimeout(() => editBoard()) : null,
+          editBoard: canEditBoard ? afterPaletteCloses(() => editBoard()) : null,
           newBoard:
             canChangeBoards && !atBoardLimit
-              ? () => window.setTimeout(() => setSettings({ _tag: "Create" }))
+              ? afterPaletteCloses(() => setSettings({ _tag: "Create" }))
               : null,
         }),
   )
