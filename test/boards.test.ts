@@ -429,6 +429,34 @@ describe("POST /api/boards/update", () => {
     expect(await storedBoards()).toEqual([expect.objectContaining({ id: "default", version: 1 })])
   })
 
+  it("lets only one of two members change a stored board from the same version", async () => {
+    const forgejo = createFakeForgejo({ orgs: [boardsOrg()], otherUsers: [grace] })
+    const clock = createFakeClock().clock
+    const plain = tabulo(forgejo.fetch, { clock })
+    const ada = await signIn(plain, forgejo)
+    const graceCookie = await signIn(plain, forgejo, "grace")
+    const stored = await postJson(plain, ada, "/api/boards/update", update("default", 0))
+    expect(stored.status).toBe(200)
+    // Both requests read version 1 before either writes.
+    const racing = tabulo(forgejo.fetch, {
+      clock,
+      vars: { DB: holdStatements(env.DB, "UPDATE boards", barrier(2)) },
+    })
+
+    const responses = await Promise.all([
+      postJson(racing, ada, "/api/boards/update", update("default", 1, { name: "Ada's" })),
+      postJson(
+        racing,
+        graceCookie,
+        "/api/boards/update",
+        update("default", 1, { name: "Grace's" }),
+      ),
+    ])
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409])
+    expect(await storedBoards()).toEqual([expect.objectContaining({ id: "default", version: 2 })])
+  })
+
   it("answers 404 board_not_found to an update that a delete got to first", async () => {
     const forgejo = createFakeForgejo({ orgs: [boardsOrg()], otherUsers: [grace] })
     const clock = createFakeClock().clock
