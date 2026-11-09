@@ -393,7 +393,7 @@ organization's chosen repositories with insights. Its columns are the default bo
 board's order, hidden ones included, so progress counts every child. It shows open epics and
 epics closed within `BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
 
-- **Children.** `parseEpicChildren` in `src/worker/epics.ts` parses the body as CommonMark
+- **Children.** `parseEpicChildren` in `src/worker/epic-links.ts` parses the body as CommonMark
   with the reference parser, as Forgejo renders it, to find its list items: bullet (`-`, `*`,
   `+`) and ordered (`1.`, `1)`) items at any nesting depth, in block quotes too. Code blocks,
   HTML blocks, and HTML comments hold no list items, so they add no children. An item is a task

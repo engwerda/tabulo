@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { parseEpicChildren } from "../src/worker/epics.ts"
+import { parseEpicChildren } from "../src/worker/epic-links.ts"
 
 const parse = (body: string, url = "https://forgejo.example") =>
   parseEpicChildren(body, { owner: "acme", name: "api" }, url).map(({ ref }) => ref)
