@@ -15,30 +15,35 @@ Forgejo stays the single source of truth: Tabulo stores only what Forgejo cannot
 ## Principles
 
 1. **Forgejo is the source of truth.** Board columns, epics, and assignments are Forgejo labels,
-   issue references, and issue fields. Removing Tabulo loses only card order and saved views.
+   issue references, and issue fields. Removing Tabulo loses only card order and boards, which
+   are saved views.
 2. **Act as the signed-in user.** Every Forgejo API call uses that user's OAuth token. Forgejo
    permissions apply unchanged, and the issue history attributes each change to the person who
    made it.
 3. **Instance specifics are configuration.** The Forgejo URL, column labels, and epic marker are
    settings. The code contains no organization names.
+4. **The organization owns its labels.** Tabulo never creates, renames, or deletes a label. A
+   board picks its columns from the status labels the organization already has, so the people
+   who manage the organization in Forgejo decide how many labels there are.
 
 ## Views
 
 | View | Milestone | Contents |
 |---|---|---|
 | My dashboard | 1 | My contribution calendar, review requests, open issues and pull requests assigned to me, mentions, items I created, and unread notifications. |
-| Board | 2 | Columns from exclusive scoped labels across chosen repositories. A drag changes the issue's status label or closes or reopens it. |
+| Board | 2, 4 | Shared boards per organization, each with its own repositories, column order, and hidden columns. Columns come from exclusive scoped labels. A drag changes the issue's status label or closes or reopens it. |
 | Insights | 2 | Throughput, backlog, merge time, CI health, needs attention, and repository health for chosen repositories. |
 | Epics | 3 | Each epic with its child issues and progress. |
 
-The board, insights, and epics are views of one organization. They share its chosen
-repositories, which the address holds in `?repos=a,b`. The browser remembers each
-organization's repositories and the last organization, so switching views keeps both. An
-organization opened for the first time, with at most 20 repositories that are not archived,
-starts with all of them chosen; clearing the choice is remembered too. Browser storage records
-the Forgejo user id it belongs to. Signing out clears it, except the theme and the address to
-return to after sign-in, and so does another user's sign-in in the same browser; a tab whose
-session changes to another user reloads.
+The board, insights, and epics are views of one organization. Insights and epics share its
+chosen repositories, which the address holds in `?repos=a,b`. A board stores its own
+repositories, so everyone who opens it sees the same board. The browser remembers each
+organization's chosen repositories, its last board, and the last organization, so switching
+views keeps them. An organization opened for the first time, with at most 20 repositories that
+are not archived, starts with all of them chosen; clearing the choice is remembered too.
+Browser storage records the Forgejo user id it belongs to. Signing out clears it, except the
+theme and the address to return to after sign-in, and so does another user's sign-in in the same
+browser; a tab whose session changes to another user reloads.
 
 ## Data rules
 
@@ -50,16 +55,20 @@ session changes to another user reloads.
   issue URL). Forgejo dependencies are not epic links, because teams already use them for
   ordering.
 - **Card order.** Forgejo has no rank field, so Tabulo stores the order of cards within a column.
-  The order belongs to the organization, so everyone sees the same order.
+  The order belongs to the organization, so everyone sees the same order on every board.
+- **Boards.** A board is a saved view of one organization: a name, at most 20 of its
+  repositories, a column order, and the columns it hides. Every organization has a default
+  board. Boards are shared, and any member of the organization may change them. Their cards
+  stay Forgejo issues, and every board shows the same status labels as the same columns.
 
 ## Architecture
 
 - One Cloudflare Worker serves the API and the React single-page app.
 - The server uses Hono for HTTP and Effect for the Forgejo client, storage, and errors.
   Forgejo responses are decoded with Effect Schema at the boundary.
-- D1 (SQLite) stores sessions and card order, and caches later. D1 is strongly consistent,
-  so a refreshed token is never read stale. A Docker build with a SQLite file can replace D1
-  later through the same storage service.
+- D1 (SQLite) stores sessions, card order, and boards, and caches later. D1 is strongly
+  consistent, so a refreshed token is never read stale. A Docker build with a SQLite file can
+  replace D1 later through the same storage service.
 - The client uses React, TanStack Query, Tailwind CSS, wouter for routing, and dnd-kit for drag
   and drop.
 
@@ -92,13 +101,24 @@ session changes to another user reloads.
 
 ### Board
 
-A board shows the issues of chosen repositories in one organization. Pull requests are not on
+A board shows the issues of its repositories in one organization. Pull requests are not on
 the board.
 
+- **Boards.** Every organization has a default board with the id `default` and the name
+  "Board". Until a member changes it, Tabulo stores nothing for it. Its columns then follow
+  `BOARD_COLUMNS`, it hides none, and its repositories are the organization's repositories
+  that are not archived when there are at most 20, and none otherwise. A board without
+  repositories asks a member to choose them. A member may add up to 49 more boards. A new
+  board's id is 8 random lowercase letters and digits, and it starts with the default board's
+  column order and hidden columns. A name is trimmed text of 1 to 60 characters. The default
+  board can be renamed but not deleted. Deleting a board deletes only the board; the card
+  order stays.
 - **Columns.** The status labels are the organization's exclusive, non-archived labels whose
   name starts with `BOARD_STATUS_SCOPE`. The columns are Todo, the status labels, and Done, in
-  the order of `BOARD_COLUMNS`. Status labels it does not list come before Done in name order.
-  A configured label that the organization does not have is skipped.
+  the board's order. Status labels the order does not list come before Done in name order, so
+  a label added in Forgejo shows on every board. A label in the order that the organization
+  does not have is skipped. A board can hide any column, Todo and Done included. A hidden
+  column's cards are left off that board, and nothing changes in Forgejo or in the card order.
 - **Card column.** A closed issue is in Done if it was closed within `BOARD_DONE_DAYS`, and is
   left off the board otherwise. An open issue with a label named like a status column is in
   that column, whether the label is the organization's or the repository's own. Every other
@@ -106,20 +126,27 @@ the board.
   as a repository's `Status/Abandoned`, show as ordinary labels. `boardLayout` in
   `src/worker/board.ts` is the only code that applies this rule.
 - **Card order.** Every card has a rank, compared by code unit, and the order belongs to the
-  organization, across all its repositories. Cards sort by rank, then by key. Two moves that
-  land in the same gap at the same moment can store equal ranks; the key then orders them the
-  same way for everyone, and a later move places a card after both. Ranks span repositories
+  organization, across all its repositories and boards. Cards sort by rank, then by key. Two
+  moves that land in the same gap at the same moment can store equal ranks; the key then orders
+  them the same way for everyone, and a later move places a card after both. Ranks span repositories
   that different users can read, so the ranks a user sees can show that cards they cannot read
   lie between two of theirs, though never which issues those are.
-- **Who arranges.** Only members of the organization may move, reorder, or add cards, as
-  `/user/orgs` lists them for the user's token. Anyone
+- **Who arranges.** Only members of the organization may move, reorder, or add cards, and add,
+  change, or delete boards, as `/user/orgs` lists them for the user's token. Anyone
   may change a card's labels, milestone, or assignees, or comment; Forgejo decides. Forgejo
   authorizes each issue write as the user, so Tabulo does not check push access. Cards of
   archived repositories cannot be moved, added, edited, or commented on.
-- **Address.** `/board/<org>` takes `repos` (comma-separated names), and the client-side
-  filters `q` (title words, or `#number` for one issue number), `assignee` (a login, `@me` for
-  the viewer, or `@none`), `label` (a full label name or `@none`), and `milestone` (a title or
-  `@none`). `assignee` and `label` can repeat; a card matches any of their values.
+- **Repository access.** Forgejo decides which of a board's repositories each user can read. A
+  repository the user cannot read is left out of the board without being named, so a board
+  does not reveal the names of private repositories. A change to a board keeps the stored
+  repositories the user cannot read, so members with different access can share one board.
+  Only users who can see the organization in Forgejo can list or read its boards.
+- **Address.** `/board/<org>` opens the default board and `/board/<org>/<id>` another board.
+  An address with the old `repos` parameter opens the board and ignores it. Both take the
+  client-side filters `q` (title words, or `#number` for one issue number), `assignee` (a
+  login, `@me` for the viewer, or `@none`), `label` (a full label name or `@none`), and
+  `milestone` (a title or `@none`). `assignee` and `label` can repeat; a card matches any of
+  their values.
   `card=<repo>#<number>` opens that card's details. Logins cannot contain `@`; a milestone
   titled `@none` cannot be chosen by name.
 
@@ -127,7 +154,11 @@ the board.
 |---|---|
 | `GET /api/orgs` | The organizations the user belongs to. |
 | `GET /api/orgs/:org/repos` | The organization's repositories the user can see, with `archived`. |
-| `GET /api/board?org=&repos=a,b` | Columns, cards, `viewerCanArrange`, and `failedRepos`. At most 20 repositories. |
+| `GET /api/boards?org=` | The organization's boards, `{ boards }`, each with `id` and `name`, the default board first and the others by name. |
+| `POST /api/boards` | Adds a board and answers with `{ board }`. |
+| `POST /api/boards/update` | Changes a board and answers with `{ board }`. |
+| `POST /api/boards/delete` | Deletes a board and answers with `{}`. |
+| `GET /api/board?org=&board=` | The board, its columns, cards, `viewerCanArrange`, and `failedRepos`. `board` is a board id and defaults to `default`. |
 | `POST /api/board/move` | Moves one card and answers with `{ card, orderSaved }`. |
 | `POST /api/board/issues` | Creates an issue in a column and answers with `{ card, orderSaved }`. |
 | `POST /api/board/assignees` | Adds or removes one assignee and answers with `{ card }`. |
@@ -138,11 +169,35 @@ the board.
 | `GET /api/board/issue-options?org=&repo=` | The labels, open milestones, and assignable users a card of the repository can take, `{ labels, milestones, assignees }`. |
 | `GET /api/epics?org=&repos=a,b` | Epic cards, children, progress, board columns, `failedRepos`, and `incomplete`. At most 20 repositories. |
 
-`GET /api/board` reads the organization's labels and whether the user is a member, then for each
-repository the repository, its open issues, and the issues closed since the start of the Done
-window. A repository that fails to load is listed in `failedRepos` with a message, and the
-other repositories still show. The columns depend on every label, so when the labels need more
-than 100 pages, the board and `POST /api/board/move` answer HTTP 503 with
+A board in an answer is `{ id, name, repos, columns, hidden, version }`. `repos` holds only the
+repositories the user can read. `columns` is the full column order as column keys, and `hidden`
+the keys of the hidden columns. Board ids are compared without regard to case.
+
+`POST /api/boards` takes `{ org, name, repos }`. `POST /api/boards/update` takes
+`{ org, board, version, name, repos, columns, hidden }` and replaces those fields. `POST
+/api/boards/delete` takes `{ org, board, version }`. `repos` is 1 to 20 repository names
+without duplicates. `columns` and `hidden` are column keys without duplicates, at most 200
+characters each; a key the organization has no column for is kept and skipped when the board is
+read. The server:
+
+1. Answers 400 to an invalid name, repository name, or key, to a 51st board of the
+   organization, and to deleting the default board.
+2. Answers 403 unless the user is a member of the organization, and 404 when the organization
+   has no such board.
+3. Answers 409 and changes nothing when `version` is not the board's current version, because
+   someone changed the board since the user loaded it. The default board's version is 0 until
+   it is first stored. Every change adds 1.
+4. Keeps, in an update, the stored repositories the user cannot read, in addition to `repos`,
+   and answers 400 when the two together are more than 20.
+
+`GET /api/boards` and `GET /api/board` answer 404 when Forgejo does not show the organization
+to the user, and `GET /api/board` also when the organization has no such board. It reads the
+board, the organization's labels, and whether the user is a member, then for each of the
+board's repositories the repository, its open issues, and the issues closed since the start of
+the Done window. A repository the user cannot read is left out, unnamed. Another repository
+that fails to load is listed in `failedRepos` with a message, and the other repositories still
+show. The columns depend on every label, so when the labels need more than 100 pages, the
+board and `POST /api/board/move` answer HTTP 503 with
 `{ error: "Too many Forgejo pages for one request; choose fewer repositories" }` instead of
 using part of them. Before it answers, it stores ranks in one D1 batch:
 
@@ -154,6 +209,10 @@ using part of them. Before it answers, it stores ranks in one D1 batch:
   repository whose issues need more than 100 pages, are kept.
 - Neither step touches a row written after the read started. Such a row comes from a move made
   while this read's Forgejo listing was already out of date.
+
+Cards in hidden columns are ranked like the others, then left out of the answer, so hiding a
+column never deletes a rank. Moves, new issues, and card edits do not name a board. A move
+changes the issue's column on every board.
 
 `POST /api/board/move` takes `{ org, repo, number, fromColumn, toColumn, afterKey, beforeKey }`.
 `fromColumn` is the column the client showed the card in. `afterKey`
@@ -190,8 +249,8 @@ characters. The server:
 
 1. Answers 400 to an invalid name or title, and 403 unless the user is a member of the
    organization or if the repository is archived.
-2. Answers 400 if `column` is Done, and 409 if it is no column of the current board, such as a
-   status label removed since the user's board was loaded.
+2. Answers 400 if `column` is Done, and 409 if it is no current column, such as a status label
+   removed since the user's board was loaded.
 3. Creates the issue in Forgejo as the user, with the column's status label for a status
    column. Forgejo drops the label without an error when the user cannot write the
    repository's issues; the card then lands in Todo. A Forgejo refusal answers with its status.
@@ -317,9 +376,10 @@ streak that has no contribution yet today still counts until the day ends.
 
 ### Epics
 
-An epic is an issue bearing the full `EPIC_LABEL` name. The Epics view shares the board's
-organization and repository selection. It shows open epics and epics closed within
-`BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
+An epic is an issue bearing the full `EPIC_LABEL` name. The Epics view shares the
+organization's chosen repositories with insights. Its columns are the default board's, in that
+board's order, hidden ones included, so progress counts every child. It shows open epics and
+epics closed within `BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
 
 - **Children.** `parseEpicChildren` in `src/worker/epics.ts` parses the body as CommonMark
   with the reference parser, as Forgejo renders it, to find its list items: bullet (`-`, `*`,
@@ -380,8 +440,8 @@ organization and repository selection. It shows open epics and epics closed with
 
 ### Search
 
-The command menu searches issues and pull requests, and finds repositories and views on the
-client.
+The command menu searches issues and pull requests, and finds repositories, views, and the
+boards of the last organization on the client.
 
 | Endpoint | Result |
 |---|---|
@@ -400,8 +460,9 @@ the last key.
 
 `Cmd` or `Ctrl` with `K` opens the menu, `?` opens the shortcut list, and `g` followed within a
 second by `d`, `b`, `i`, or `e` goes to the dashboard, board, insights, or epics, using the last
-organization and its remembered repositories. Keys without `Cmd` or `Ctrl` do nothing while the
-focus is in an input, textarea, select, or editable element, or while a modal dialog is open.
+organization, its last board, and its remembered repositories. Keys without `Cmd` or `Ctrl` do
+nothing while the focus is in an input, textarea, select, or editable element, or while a modal
+dialog is open.
 The shortcuts are one list in `src/client/palette/shortcuts.ts`, which the key handler and the
 shortcut list both read. On the board, `?` opens the board's own list in
 `src/client/board/ShortcutsDialog.tsx`, which includes these; the board handles its single-key
@@ -417,7 +478,7 @@ shortcuts first, so they win over a sequence that starts with the same key.
 | `FORGEJO_CLIENT_SECRET` | secret | OAuth2 application client secret. |
 | `SESSION_ENCRYPTION_KEY` | secret | 32 random bytes, base64. Encrypts stored tokens. |
 | `BOARD_STATUS_SCOPE` | var | Prefix of the status labels, ending in `/`. Default `Status/`. |
-| `BOARD_COLUMNS` | var | Optional column order: full status label names and the reserved words `Todo` and `Done`, comma-separated. Unlisted status labels come before Done in name order. A missing Todo goes first and a missing Done goes last. |
+| `BOARD_COLUMNS` | var | Optional column order of a default board that no member has changed: full status label names and the reserved words `Todo` and `Done`, comma-separated. Unlisted status labels come before Done in name order. A missing Todo goes first and a missing Done goes last. |
 | `BOARD_DONE_DAYS` | var | Days a closed issue stays in Done, 1 to 365. Default 14. |
 | `EPIC_LABEL` | var | Full label name that marks an epic. Default `Type/Epic`. |
 
@@ -426,6 +487,8 @@ shortcuts first, so they win over a sequence that starts with the same key.
 1. **Sign-in and my dashboard.** Read-only. Deployable to Cloudflare.
 2. **Board.** Columns, drag and drop with writes as the user, card order in D1, filters.
 3. **Epics and live updates.** Epics view, Forgejo webhooks, Docker image.
+4. **Boards.** Shared boards per organization, each with its own repositories, column order,
+   and hidden columns.
 
 ## Non-goals
 
