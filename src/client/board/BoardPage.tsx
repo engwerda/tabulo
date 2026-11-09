@@ -993,7 +993,8 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
           ? `Refresh failed, last loaded ${relativeTime(loadedAt, now)}`
           : `Updated ${relativeTime(loadedAt, now)}`
   // On a phone the board's options sit beside Filters, which leaves the organization's name room.
-  const filtersShown = data !== undefined && !allFailed
+  const filtersShown =
+    data !== undefined && !allFailed && data.board.repos.length > 0 && data.columns.length > 0
 
   const atBoardLimit = (boards.data?.boards.length ?? 0) >= MAX_BOARDS
   usePageCommands(
