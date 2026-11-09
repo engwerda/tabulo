@@ -13,18 +13,22 @@ import { useToast } from "../ui/toast.tsx"
 import { focusNextBoardSwitcher } from "./BoardSwitcher.tsx"
 import {
   type BoardDraft,
+  columnRows,
   type DraftField,
   describeFields,
   draftOf,
   draftProblem,
   isDirty,
+  moveColumn,
   NEW_BOARD_DRAFT,
   rebaseDraft,
   type SettingsBase,
+  setColumnHidden,
   toCreateRequest,
   toUpdateRequest,
 } from "./board-settings.ts"
 import { boardQueryKey, boardsQueryKey } from "./board-view.ts"
+import { ColumnSettings } from "./ColumnSettings.tsx"
 import { useBoardWrites } from "./use-board-writes.ts"
 
 export type SettingsMode =
@@ -34,7 +38,7 @@ export type SettingsMode =
       /** The board as it was on screen when the dialog opened. */
       readonly board: Board
       /** The section to start at, as an empty board asks for its repositories. */
-      readonly focus?: "repos"
+      readonly focus?: "repos" | "columns"
     }
 
 const isCode = (error: unknown, code: string) =>
@@ -63,6 +67,10 @@ export const BoardSettingsDialog = ({
   const nameInput = useRef<HTMLInputElement>(null)
   const reposSection = useRef<HTMLElement>(null)
   const repoSearch = useRef<HTMLInputElement>(null)
+  const firstColumnBox = useRef<HTMLInputElement>(null)
+  // A drag that Escape cancels must not close the dialog too.
+  const dragging = useRef(false)
+  const [announcer, setAnnouncer] = useState<HTMLDialogElement | null>(null)
   const startAt = useRef(mode._tag === "Edit" ? mode.focus : undefined)
   const queryClient = useQueryClient()
   const toast = useToast()
@@ -90,8 +98,11 @@ export const BoardSettingsDialog = ({
     const element = dialog.current
     if (element === null || element.open) return
     element.showModal()
+    setAnnouncer(element)
     if (startAt.current === "repos") {
       ;(repoSearch.current ?? reposSection.current)?.focus()
+    } else if (startAt.current === "columns") {
+      firstColumnBox.current?.focus()
     } else {
       nameInput.current?.focus()
     }
@@ -184,11 +195,16 @@ export const BoardSettingsDialog = ({
   }
 
   const chosen = draft.repos.length + kept
+  const rows = base === null ? [] : columnRows(base.allColumns, draft)
+  const shown = rows.filter((row) => !row.hidden).length
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a modal dialog natively; the click is on the backdrop
     <dialog
       ref={dialog}
       aria-labelledby={`${id}-title`}
+      onCancel={(event) => {
+        if (dragging.current) event.preventDefault()
+      }}
       onClose={() => {
         onClose()
         // The browser gives focus back to what had it, or leaves it on <body> when that is gone,
@@ -348,6 +364,43 @@ export const BoardSettingsDialog = ({
               </div>
             )}
           </section>
+          {base !== null && (
+            <section aria-labelledby={`${id}-columns`}>
+              <div className="flex items-baseline justify-between gap-3">
+                <h3 id={`${id}-columns`} className={sectionTitle}>
+                  Columns
+                </h3>
+                <span className="text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
+                  {shown} of {rows.length} shown
+                </span>
+              </div>
+              <p className={sectionHint}>
+                Drag a column by its handle to move it. The board leaves out the cards of a hidden
+                column; nothing changes in Forgejo.
+              </p>
+              <div className="mt-2 rounded-xl border border-zinc-200 p-1.5 dark:border-zinc-800">
+                <ColumnSettings
+                  rows={rows}
+                  onMove={(key, index) => setDraft((current) => moveColumn(current, key, index))}
+                  onHiddenChange={(key, hidden) =>
+                    setDraft((current) => setColumnHidden(current, key, hidden))
+                  }
+                  onDraggingChange={(now) => {
+                    if (now) dragging.current = true
+                    // The cancel event of Escape comes after the drag has ended.
+                    else window.setTimeout(() => (dragging.current = false))
+                  }}
+                  announcer={announcer}
+                  firstCheckboxRef={firstColumnBox}
+                />
+              </div>
+              {shown === 0 && rows.length > 0 && (
+                <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+                  The board shows no cards while every column is hidden.
+                </p>
+              )}
+            </section>
+          )}
           {base === null && (
             <p className={sectionHint}>
               The board starts with the default board's columns. Arrange them once it exists.

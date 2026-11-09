@@ -931,7 +931,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
     orgs.data?.find((candidate) => candidate.name.toLowerCase() === org.toLowerCase())?.fullName ||
     org
   const canChangeBoards = data?.viewerCanArrange === true
-  const editBoard = (focus?: "repos") => {
+  const editBoard = (focus?: "repos" | "columns") => {
     if (data !== undefined) setSettings({ _tag: "Edit", board: data, ...(focus ? { focus } : {}) })
   }
   const removeFailed = () => {
@@ -1254,7 +1254,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
                 canChangeBoards && (
                   <button
                     type="button"
-                    onClick={() => editBoard()}
+                    onClick={() => editBoard("columns")}
                     className={`${buttonClass.primary} mt-6`}
                   >
                     Edit board
