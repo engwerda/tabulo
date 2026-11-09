@@ -20,7 +20,6 @@ import {
   ForgejoClient,
   type Listing,
   type PageBudget,
-  type RepoRef,
   sharePages,
 } from "./forgejo/client.ts"
 import type {
@@ -53,23 +52,17 @@ const issueReference = (issue: ForgejoReferringIssue): EpicReference => {
 }
 
 /**
- * An epic's children: the issues its body lists, in body order, except one it names as its own
- * parent, then the `referrers` whose current description names the epic as their parent, oldest
- * first with the key breaking ties. Each issue once, listed ones first.
+ * An epic's children: the issues its body lists, in body order, then the `referrers` whose
+ * current description names the epic as their parent, oldest first with the key breaking ties.
+ * Each issue once, listed ones first.
  */
 const epicChildren = (
   epic: string,
-  body: string,
-  repository: RepoRef,
+  listed: ReadonlyArray<EpicReference>,
   referrers: ReadonlyArray<ForgejoReferringIssue>,
   forgejoUrl: string,
 ) => {
-  const parents = new Set(parseEpicParents(body, repository, forgejoUrl).map(({ ref }) => ref))
-  const children = new Map(
-    parseEpicChildren(body, repository, forgejoUrl)
-      .filter(({ ref }) => !parents.has(ref))
-      .map((reference) => [reference.ref, reference]),
-  )
+  const children = new Map(listed.map((reference) => [reference.ref, reference]))
   const linked = referrers
     .filter((issue) =>
       parseEpicParents(issue.body ?? "", issue.repository, forgejoUrl).some(
@@ -156,30 +149,55 @@ export const loadEpics = Effect.fn("loadEpics")(function* (
         found.push({ repo, issue })
     }
   }
-  const timelines = yield* Effect.forEach(
-    found,
-    ({ repo, issue }) =>
-      forgejo
-        .referencingIssues(token, { owner: query.org, name: repo.name }, issue.number, pool)
-        .pipe(
-          Effect.catchTag(FORGEJO_READ_ERRORS, () =>
-            Effect.succeed<Listing<ForgejoReferringIssue>>({ items: [], complete: false }),
+  const listed = found.map(({ repo, issue }) =>
+    parseEpicChildren(issue.body ?? "", { owner: query.org, name: repo.name }, forgejo.baseUrl),
+  )
+  // Listed children the listings did not resolve keep the lookups they had before timelines were
+  // read, so the timelines read only from the pages left.
+  const kept = Math.min(
+    MAX_CHILD_LOOKUPS,
+    new Set(listed.flatMap((refs) => refs.map(({ ref }) => ref)).filter((ref) => !known.has(ref)))
+      .size,
+    pool.remaining,
+  )
+  const timelines = yield* Effect.suspend(() => {
+    pool.remaining -= kept
+    return Effect.forEach(
+      found,
+      ({ repo, issue }, i) =>
+        forgejo
+          .referencingIssues(token, { owner: query.org, name: repo.name }, issue.number, pool)
+          .pipe(
+            Effect.catchTag(FORGEJO_READ_ERRORS, (error) =>
+              Effect.sync((): Listing<ForgejoReferringIssue> => {
+                console.warn(
+                  `Epic timeline ${query.org}/${repo.name}#${issue.number} failed`,
+                  error,
+                )
+                return { items: [], complete: false }
+              }),
+            ),
+            Effect.map((timeline) => ({ repo, issue, listed: listed[i] ?? [], timeline })),
           ),
-          Effect.map((timeline) => ({ repo, issue, timeline })),
-        ),
-    { concurrency: READ_CONCURRENCY },
+      { concurrency: READ_CONCURRENCY },
+    )
+  }).pipe(
+    Effect.ensuring(
+      Effect.sync(() => {
+        pool.remaining += kept
+      }),
+    ),
   )
   for (const referrer of timelines.flatMap(({ timeline }) => timeline.items)) {
     const { ref } = issueReference(referrer)
     if (!known.has(ref)) known.set(ref, referrer)
   }
-  const epics = timelines.map(({ repo, issue, timeline }) => ({
+  const epics = timelines.map(({ repo, issue, listed, timeline }) => ({
     repo,
     issue,
     refs: epicChildren(
       cardKey(query.org, repo.name, issue.number),
-      issue.body ?? "",
-      { owner: query.org, name: repo.name },
+      listed,
       timeline.items,
       forgejo.baseUrl,
     ),

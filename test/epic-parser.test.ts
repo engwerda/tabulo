@@ -235,6 +235,26 @@ describe("epic list references", () => {
     expect(refs).toHaveLength(200)
     expect(refs.at(-1)).toBe("acme/api#200")
   })
+
+  it("leaves out the parent a Parent heading or line names, before the cap", () => {
+    const tasks = Array.from({ length: 200 }, (_, i) => `- [ ] #${i + 201}`).join("\n")
+    const refs = parse(`## Parent\n\n- #100\n\n## Tasks\n\n${tasks}`)
+    expect(refs).toHaveLength(200)
+    expect(refs[0]).toBe("acme/api#201")
+    expect(refs.at(-1)).toBe("acme/api#400")
+    expect(parse("Parent: #100\n\n- #100\n- #101")).toEqual(["acme/api#101"])
+  })
+
+  it.each([
+    ["## Epic\n\n1. #1814 API\n2. #1815 UI", ["acme/api#1814", "acme/api#1815"]],
+    ["- #1814\n- #1815\n\nPart of #1814 shipped last week.", ["acme/api#1814", "acme/api#1815"]],
+    [
+      "Status: blocked. Part of #1815 waits on infra.\n\n- #1814\n- #1815",
+      ["acme/api#1814", "acme/api#1815"],
+    ],
+  ])("keeps a listed child that only an Epic heading or part of names, in %j", (body, refs) =>
+    expect(parse(body)).toEqual(refs),
+  )
 })
 
 describe("epic parent references", () => {
@@ -263,6 +283,8 @@ describe("epic parent references", () => {
     ["## Parent\n<!-- e.g. #123 -->\n#12", "acme/api#12"],
     ["## Parent\n\n- [ ] #12", "acme/api#12"],
     ["## Parent\n\n- [x] #12", "acme/api#12"],
+    ["## Parent\n\n- [x] #12\n\n[x]: https://example.org", "acme/api#12"],
+    ["## Parent\n\n- [x] #12\n\n[x]: https://forgejo.example/acme/api/issues/99", "acme/api#12"],
     ["**Part of:** #97", "acme/api#97"],
     ["Part of [#12](https://forgejo.example/acme/api/issues/12)", "acme/api#12"],
     ["Part of [the epic](https://forgejo.example/acme/web/issues/12)", "acme/web#12"],

@@ -10,6 +10,7 @@ const ISSUE_PATH = new RegExp(`^/(${NAME})/(${NAME})/(?:issues|pulls)/([1-9][0-9
 // Forgejo's Goldmark task list extension reads the checkbox from the source of the item's first
 // line, so escapes, emphasis, and link definitions there make it plain text.
 const CHECKBOX = /^\[[ xX]\][\t ]+/
+const LINE = /\r\n|\r|\n/
 const firstWord = (text: string) => /^\S*/.exec(text.trimStart())?.[0] ?? ""
 
 type Token =
@@ -117,32 +118,10 @@ const tokenReference = (
   )
 }
 
-/**
- * The issues that the list items of an epic's body reference, in body order. The body is parsed
- * as CommonMark, as Forgejo renders it, so code and HTML never hold list items. The reference
- * comes from the source text of each item's first line, after an optional task checkbox. A
- * leading inline link names its issue by its text or, failing that, its destination.
- */
-export const parseEpicChildren = (
-  body: string,
-  repository: RepoRef,
-  forgejoUrl: string,
-): ReadonlyArray<EpicReference> => {
-  const named = referenceReader(repository, forgejoUrl)
-  const children = new Map<string, EpicReference>()
-  const lines = body.split(/\r\n|\r|\n/)
-  const walker = new Parser().parse(body).walker()
-  for (let step = walker.next(); step !== null; step = walker.next()) {
-    const paragraph = step.node.firstChild
-    if (!step.entering || step.node.type !== "item" || paragraph?.type !== "paragraph") continue
-    const [[line, column]] = paragraph.sourcepos
-    const text = (lines[line - 1]?.slice(column - 1) ?? "").replace(CHECKBOX, "")
-    const reference = tokenReference(leadingToken(text), named)
-    if (reference === undefined) continue
-    children.set(reference.ref, reference)
-    if (children.size === MAX_CHILDREN) break
-  }
-  return [...children.values()]
+/** The token a list item's first line starts with, after its checkbox, read from the source. */
+const itemToken = (paragraph: Node, lines: ReadonlyArray<string>) => {
+  const [[line, column]] = paragraph.sourcepos
+  return leadingToken((lines[line - 1]?.slice(column - 1) ?? "").replace(CHECKBOX, ""))
 }
 
 const word = (token: Token | undefined) =>
@@ -154,35 +133,32 @@ const referenceToken = (tokens: ReadonlyArray<Token>, i: number) => {
   return token?._tag === "Word" && /^[(<[*_]+$/.test(token.text) ? tokens[i + 1] : token
 }
 
-const isParentHeading = (tokens: ReadonlyArray<Token>) =>
+const isParentHeading = (tokens: ReadonlyArray<Token>, words: ReadonlyArray<string>) =>
   tokens.every((token) => token._tag === "Word") &&
-  ["parent", "epic"].includes(tokens.map(word).join(" ").replace(/:$/, ""))
+  words.includes(tokens.map(word).join(" ").replace(/:$/, ""))
 
-const openingToken = (block: Node | null) => {
+const openingToken = (block: Node | null, lines: ReadonlyArray<string>) => {
   let next = block
   while (next?.type === "html_block") next = next.next
-  const paragraph = next?.type === "list" ? next.firstChild?.firstChild : next
-  if (paragraph?.type !== "paragraph") return undefined
-  const tokens = inlineTokens(paragraph)
-  const checkbox =
-    word(tokens[0]) === "[" && word(tokens[1]) === "]" ? 2 : word(tokens[0]) === "[x]" ? 1 : 0
-  return referenceToken(tokens, checkbox)
+  if (next?.type === "list") {
+    const paragraph = next.firstChild?.firstChild
+    return paragraph?.type === "paragraph" ? itemToken(paragraph, lines) : undefined
+  }
+  return next?.type === "paragraph" ? referenceToken(inlineTokens(next), 0) : undefined
 }
 
-/**
- * The issues that an issue's description names as its parent, in body order, each once.
- * `repository` is the describing issue's own, so `#12` means its #12. The forms are `part of
- * <ref>` or `part of: <ref>` (opening a line, after a sentence end, or after "is"), a line that
- * starts `Parent:` or `Epic:` and a reference, and a `Parent` or `Epic` heading whose next block
- * starts with a reference. Code, HTML, and block quotes name no parent; a quote is someone
- * else's words.
- */
-export const parseEpicParents = (
+/** The words of the heading and line forms, and whether `part of` counts. */
+type ParentForms = { readonly words: ReadonlyArray<string>; readonly phrase: boolean }
+
+const parentsNamed = (
   body: string,
   repository: RepoRef,
   forgejoUrl: string,
+  { words, phrase }: ParentForms,
 ): ReadonlyArray<EpicReference> => {
   const named = referenceReader(repository, forgejoUrl)
+  const labels = words.map((label) => `${label}:`)
+  const lines = body.split(LINE)
   const parents = new Map<string, EpicReference>()
   const add = (token: Token | undefined) => {
     const reference = tokenReference(token, named)
@@ -197,13 +173,14 @@ export const parseEpicParents = (
     if (node.type !== "paragraph" && node.type !== "heading") continue
     walker.resumeAt(node, false)
     const tokens = inlineTokens(node)
-    if (node.type === "heading" && isParentHeading(tokens)) add(openingToken(node.next))
+    if (node.type === "heading" && isParentHeading(tokens, words))
+      add(openingToken(node.next, lines))
     tokens.forEach((token, i) => {
       const before = tokens[i - 1]
       const lineStart = before === undefined || before._tag === "Break"
-      if (lineStart && (word(token) === "parent:" || word(token) === "epic:"))
-        add(referenceToken(tokens, i + 1))
+      if (lineStart && labels.includes(word(token) ?? "")) add(referenceToken(tokens, i + 1))
       if (
+        phrase &&
         (word(token) === "part" || word(token) === "(part") &&
         (word(tokens[i + 1]) === "of" || word(tokens[i + 1]) === "of:") &&
         (lineStart || /[.!?:]$/.test(word(before) ?? "") || word(before) === "is")
@@ -213,3 +190,52 @@ export const parseEpicParents = (
   }
   return [...parents.values()]
 }
+
+/**
+ * The issues that the list items of an epic's body reference, in body order. The body is parsed
+ * as CommonMark, as Forgejo renders it, so code and HTML never hold list items. The reference
+ * comes from the source text of each item's first line, after an optional task checkbox. A
+ * leading inline link names its issue by its text or, failing that, its destination. The issue a
+ * `Parent` heading or `Parent:` line names is the epic's own parent, not its child; `part of` and
+ * an `Epic` heading do not count here, because an epic's own description uses them for other
+ * things.
+ */
+export const parseEpicChildren = (
+  body: string,
+  repository: RepoRef,
+  forgejoUrl: string,
+): ReadonlyArray<EpicReference> => {
+  const named = referenceReader(repository, forgejoUrl)
+  const parents = new Set(
+    parentsNamed(body, repository, forgejoUrl, { words: ["parent"], phrase: false }).map(
+      ({ ref }) => ref,
+    ),
+  )
+  const children = new Map<string, EpicReference>()
+  const lines = body.split(LINE)
+  const walker = new Parser().parse(body).walker()
+  for (let step = walker.next(); step !== null; step = walker.next()) {
+    const paragraph = step.node.firstChild
+    if (!step.entering || step.node.type !== "item" || paragraph?.type !== "paragraph") continue
+    const reference = tokenReference(itemToken(paragraph, lines), named)
+    if (reference === undefined || parents.has(reference.ref)) continue
+    children.set(reference.ref, reference)
+    if (children.size === MAX_CHILDREN) break
+  }
+  return [...children.values()]
+}
+
+/**
+ * The issues that an issue's description names as its parent, in body order, each once.
+ * `repository` is the describing issue's own, so `#12` means its #12. The forms are `part of
+ * <ref>` or `part of: <ref>` (opening a line, after a sentence end, or after "is"), a line that
+ * starts `Parent:` or `Epic:` and a reference, and a `Parent` or `Epic` heading whose next block
+ * starts with a reference. Code, HTML, and block quotes name no parent; a quote is someone
+ * else's words.
+ */
+export const parseEpicParents = (
+  body: string,
+  repository: RepoRef,
+  forgejoUrl: string,
+): ReadonlyArray<EpicReference> =>
+  parentsNamed(body, repository, forgejoUrl, { words: ["parent", "epic"], phrase: true })

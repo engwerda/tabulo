@@ -320,7 +320,7 @@ Or name the epic in each child's own description: write `Part of #12`, a line `P
 a `## Parent` heading followed by `#12`. Tabulo finds these children through the epic's
 timeline in Forgejo, so they show even when the epic's description does not list them. A child
 in another repository writes `Part of owner/repo#12` or the epic's URL: Forgejo records no
-reference for `repo#12` from another repository, so Tabulo cannot find that form. Only the
+reference for `repo#12`, so Tabulo cannot find that form. Only the
 child's current description counts, outside quotes and code, and `not part of #12`,
 `Related to #12`, and pull requests do not make a child.
 

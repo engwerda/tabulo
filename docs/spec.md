@@ -396,9 +396,8 @@ epics closed within `BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
 
 - **Children.** An epic's children are its listed children in body order, then its linked
   children from oldest to newest, with the key breaking ties. An issue that is both keeps its
-  listed place. An issue the epic's own description names as its parent is not its child, so a
-  sub-epic that lists its parent under a `Parent` heading does not count it. Each issue counts
-  once, and an epic has at most 200 children. Listed children fill the cap first.
+  listed place. Each issue counts once, and an epic has at most 200 children. Listed children
+  fill the cap first.
 - **Listed children.** `parseEpicChildren` in `src/worker/epic-links.ts` parses the body as
   CommonMark with the reference parser, as Forgejo renders it, to find its list items: bullet
   (`-`, `*`, `+`) and ordered (`1.`, `1)`) items at any nesting depth, in block quotes too. Code
@@ -407,8 +406,12 @@ epics closed within `BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
   checkbox, starts with a reference. A checkbox is `[ ]`, `[x]`, or `[X]` and a space or tab,
   read from the source as Forgejo's task list extension reads it. An escaped (`\[ ]`) or
   emphasized (`**[ ]**`) checkbox is plain text, so its item lists nothing, and a link definition
-  named `x` does not change `[x]`. Every list counts, whatever heading it is under. Write related
-  or blocking issues as sentences, not as list items that start with the reference.
+  named `x` does not change `[x]`. Every list counts, whatever heading it is under, except that
+  the issue a `Parent` heading or a `Parent:` line names is the epic's own parent, not its child,
+  so a sub-epic that lists its parent does not count it; that issue is left out before the cap.
+  `part of` and an `Epic` heading do not count there, because an epic's own description uses
+  them for other things. Write related or blocking issues as sentences, not as list items that
+  start with the reference.
 - **References.** The first word after the list marker and checkbox, in the same source text,
   is `#12`, `repo#12`, `owner/repo#12`, or an issue or pull request URL on `FORGEJO_URL`, bare or
   as an autolink. It may be wrapped in `(`, `<`, `[`, `*`, or `_` and followed by punctuation,
@@ -440,9 +443,9 @@ epics closed within `BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
   text and then by an absolute `http` or `https` destination on `FORGEJO_URL`. An opening `(`,
   `<`, `[`, `*`, or `_` that CommonMark parses apart from a link, as in `(<https://…/issues/12>)`,
   is skipped. A bare number refers to the describing issue's own repository, a repo-only
-  reference to its organization. Forgejo records a reference from another repository only for
-  `owner/repo#12` or an issue URL, not for `repo#12`, so a child in another repository is found
-  only when it names the epic one of those ways.
+  reference to its organization. Forgejo records a reference only for `#12`, `owner/repo#12`, or
+  an issue URL, never for `repo#12`, so a linked child is found only when it names the epic one
+  of those ways: `#12` from the epic's own repository, `owner/repo#12` or the URL from any.
   `Related to`, `Depends on`, `Blocked by`, `Follow-up to`, `Split from`, `Closes`, and
   `parent issue #12` name no parent. The endpoint finds candidates in the epic's Forgejo
   timeline. Each `issue_ref` event carries the issue whose description references the epic, as
@@ -480,9 +483,12 @@ epics closed within `BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
   fit in the pages left, the request fails with HTTP 503 and
   `{ error: "Too many Forgejo pages for one request; choose fewer repositories" }`. A
   repository takes an equal share of the pages left when it starts and gives back what it does
-  not use. Timelines then take one page each as they read it, until their empty page, their
-  20th page (1,000 events), or until no pages are left. Each child lookup takes one page when it starts. A listing that runs out
-  of pages is named in `incomplete.listings`, and epics in its unread part are missing. An epic
+  not use. Then one page is set aside for each listed child reference that the listings did not
+  resolve, up to 200, so the lookups keep the pages they had before timelines were read. The
+  timelines take one page each from the rest as they read it, until their empty page, their
+  20th page (1,000 events), or until no pages are left. The set-aside pages then go back, and
+  each child lookup takes one page when it starts. A listing that runs out of pages is named in
+  `incomplete.listings`, and epics in its unread part are missing. An epic
   whose timeline Tabulo did not read to its empty page, because the pages ran out, it reached 20
   pages, or the timeline failed, is named in `incomplete.backlinks`; children that name it as
   their parent may be missing. `incomplete.children` counts the listed child references that

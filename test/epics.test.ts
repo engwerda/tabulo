@@ -109,7 +109,7 @@ const filler = (count: number) =>
   Array.from({ length: count }, (_, i) => label(1000 + i, `Area/${i}`, "ededed", false))
 
 /** Twenty repositories of `open` and `closed` issues; r0#1 is an epic with 200 external children. */
-const crowdedOrg = (open: number, closed: number) => {
+const crowdedOrg = (open: number, closed: number, listed = 200) => {
   const names = Array.from({ length: 20 }, (_, i) => `r${i}`)
   const repos = names.map((name) =>
     boardRepo(name, {
@@ -131,7 +131,7 @@ const crowdedOrg = (open: number, closed: number) => {
   const epic = repos[0]?.issues[0]
   if (epic !== undefined) {
     epic.labels = [epicLabel]
-    epic.body = Array.from({ length: 200 }, (_, i) => `- [ ] external#${i + 1}`).join("\n")
+    epic.body = Array.from({ length: listed }, (_, i) => `- [ ] external#${i + 1}`).join("\n")
   }
   return { names, org: acme(repos) }
 }
@@ -428,13 +428,13 @@ describe("GET /api/epics", () => {
   it.each([
     // 600 of the 800 pages go to listings before Forgejo rejects the token.
     { read: "listing", closed: 60, rejects: /^\/api\/v1\/repos\/acme\/r\d+\/issues$/, at: 600 },
-    // Labels and listings take 623 pages, leaving one for the timeline and 176 child lookups;
-    // the 150th lookup is rejected.
-    { read: "child lookup", closed: 0, rejects: /\/external\/issues\//, at: 150 },
-    // The first attempt rejects r0#1's timeline once labels and listings have taken 623 pages.
-    { read: "timeline", closed: 0, rejects: /\/timeline$/, at: 1 },
+    // Labels and listings take 623 pages, and the 177 left are kept for child lookups; the 150th
+    // lookup is rejected.
+    { read: "child lookup", closed: 0, listed: 200, rejects: /\/external\/issues\//, at: 150 },
+    // With 100 lookups kept back, r0#1's timeline reads from the other 77 pages and is rejected.
+    { read: "timeline", closed: 0, listed: 100, rejects: /\/timeline$/, at: 1 },
   ])("keeps one page budget when a late $read 401 refreshes the token", async (scenario) => {
-    const { names, org } = crowdedOrg(60, scenario.closed)
+    const { names, org } = crowdedOrg(60, scenario.closed, scenario.listed)
     let matched = 0
     const forgejo = createFakeForgejo({
       orgs: [org],
@@ -727,7 +727,7 @@ describe("GET /api/epics, children that name their epic", () => {
   })
 
   it("resolves a listed child from another epic's timeline without looking it up", async () => {
-    const external = boardIssue("other", 5, { body: "Uses api#2 for its data." })
+    const external = boardIssue("other", 5, { body: "Uses acme/api#2 for its data." })
     const lister = boardIssue("api", 1, { labels: [epicLabel], body: "- [ ] other#5" })
     const referenced = boardIssue("api", 2, {
       labels: [epicLabel],
@@ -745,18 +745,44 @@ describe("GET /api/epics, children that name their epic", () => {
     expect(forgejo.requests.filter(({ path }) => path.endsWith("/other/issues/5"))).toHaveLength(0)
   })
 
-  it("reads epic timelines before child lookups within the page budget", async () => {
-    const { names, org } = crowdedOrg(60, 0)
-
-    const { data, forgejo } = await loadEpicsOf({ orgs: [org], maxPageSize: 2 }, names.join(","))
-
+  it.each([
     // Labels take 3 pages, and each of 20 repositories 30 open pages and one empty closed page.
-    // That leaves 177 of 800: one for r0#1's empty timeline, then 176 lookups.
-    expect(timelineReads(forgejo, "r0/issues/1")).toHaveLength(1)
-    expect(forgejo.requests.filter(({ path }) => path.includes("/external/issues/"))).toHaveLength(
-      176,
-    )
-    expect(data.incomplete.children).toBe(24)
+    // That leaves 177 of 800, all kept for the 200 listed children, so the timeline reads none.
+    { listed: 200, timeline: 0, lookups: 177, unread: [{ repo: "r0", number: 1 }] },
+    // 100 lookups are kept back, and the timeline reads its empty page from the 77 others.
+    { listed: 100, timeline: 1, lookups: 100, unread: [] },
+  ])(
+    "keeps pages for the lookups of $listed listed children before reading timelines",
+    async ({ listed, timeline, lookups, unread }) => {
+      const { names, org } = crowdedOrg(60, 0, listed)
+
+      const { data, forgejo } = await loadEpicsOf({ orgs: [org], maxPageSize: 2 }, names.join(","))
+
+      expect(timelineReads(forgejo, "r0/issues/1")).toHaveLength(timeline)
+      expect(
+        forgejo.requests.filter(({ path }) => path.includes("/external/issues/")),
+      ).toHaveLength(lookups)
+      expect(data.incomplete.children).toBe(listed - lookups)
+      expect(data.incomplete.backlinks).toEqual(unread)
+    },
+  )
+
+  it("keeps at most 200 children, listed first, then the oldest linked ones", async () => {
+    const listed = Array.from({ length: 199 }, (_, i) => boardIssue("api", i + 2))
+    const older = boardIssue("api", 300, { body: "Part of #1", created_at: "2026-09-01T00:00:00Z" })
+    const newer = boardIssue("api", 301, { body: "Part of #1", created_at: "2026-09-02T00:00:00Z" })
+    const epic = boardIssue("api", 1, {
+      labels: [epicLabel],
+      body: listed.map(({ number }) => `- #${number}`).join("\n"),
+      timeline: referencedBy(newer, older),
+    })
+
+    const { data } = await loadEpicsOf({ orgs: [linkedOrg([epic, ...listed, older, newer])] })
+
+    const keys = childKeys(data.epics[0]) ?? []
+    expect(keys).toHaveLength(200)
+    expect(keys.at(-2)).toBe("acme/api#200")
+    expect(keys.at(-1)).toBe("acme/api#300")
   })
 
   it.each([403, 404])(
