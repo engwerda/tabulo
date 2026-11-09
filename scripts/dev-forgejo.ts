@@ -764,12 +764,13 @@ const closedPast = (history: ReadonlyArray<Seed>, count: number) =>
     .map((seed) => seed.title)
 
 /**
- * An epic in `home` whose task list names `children`. Children in other repositories alternate
- * between the `web#3` and `acme/web#3` reference forms, and closed children are ticked.
+ * An epic in `home` whose body lists `children`, as a task list with closed children ticked or
+ * as a numbered list. Children in other repositories alternate between the `web#3` and
+ * `acme/web#3` reference forms.
  */
 const epic = (
   home: RepoName,
-  seed: Omit<Seed, "body"> & { readonly intro: string },
+  seed: Omit<Seed, "body"> & { readonly intro: string; readonly numbered?: boolean },
   children: ReadonlyArray<readonly [RepoName, string]>,
 ): Seed => {
   const items = children.map(([name, title], index) => {
@@ -780,9 +781,11 @@ const epic = (
         : index % 2 === 0
           ? `${name}#${child.number}`
           : `acme/${name}#${child.number}`
-    return `- [${child.seed.closed === undefined ? " " : "x"}] ${ref} ${title}`
+    return seed.numbered
+      ? `${index + 1}. ${ref} ${title}`
+      : `- [${child.seed.closed === undefined ? " " : "x"}] ${ref} ${title}`
   })
-  const { intro, ...rest } = seed
+  const { intro, numbered: _numbered, ...rest } = seed
   return {
     ...rest,
     labels: [L.epic, ...(seed.labels ?? [])],
@@ -822,6 +825,7 @@ const epics: Record<RepoName, Array<Seed>> = {
       {
         title: "Accessible board",
         intro: "Everything on the board works with a keyboard and a screen reader, in both themes.",
+        numbered: true,
         labels: [L.ux],
         assignees: [katherine],
         milestone: 2,
@@ -835,8 +839,6 @@ const epics: Record<RepoName, Array<Seed>> = {
         ["web", "Dark mode flickers on first load"],
         ["web", "Empty states for every view"],
         ...closedPast(webHistory, 2).map((title) => ["web", title] as const),
-        ["mobile", "Haptic feedback on drop"],
-        ["mobile", "Push notification opt-in screen"],
       ],
     ),
   ],
@@ -884,6 +886,37 @@ const repos = [
     { archived: true, languages: { PHP: 302_000, JavaScript: 88_000 } },
   ),
 ]
+
+/**
+ * Makes `children` name the epic titled `title` in `home` with `Part of` in their own
+ * description, as a team does when the epic does not list them, and records the references in
+ * the epic's timeline as Forgejo does.
+ */
+const linkChildren = (
+  home: RepoName,
+  title: string,
+  children: ReadonlyArray<readonly [RepoName, string]>,
+) => {
+  const find = (name: RepoName, issueTitle: string) => {
+    const issue = repos
+      .find((candidate) => candidate.name === name)
+      ?.issues.find(
+        (candidate) => candidate.title === issueTitle && candidate.pull_request === null,
+      )
+    if (issue === undefined) throw new Error(`acme/${name} has no issue titled "${issueTitle}"`)
+    return issue
+  }
+  const parent = find(home, title)
+  parent.timeline = children.map(([name, childTitle]) => {
+    const child = find(name, childTitle)
+    child.body = `Part of acme/${home}#${parent.number}\n\n${child.body ?? ""}`
+    return { type: "issue_ref", from: { owner: "acme", repo: name, number: child.number } }
+  })
+}
+linkChildren("web", "Accessible board", [
+  ["mobile", "Haptic feedback on drop"],
+  ["mobile", "Push notification opt-in screen"],
+])
 
 // DEMO_EXTRA=300 adds that many issues to a "load" repository, to try a large board.
 const extra = Number(process.env.DEMO_EXTRA ?? 0)
