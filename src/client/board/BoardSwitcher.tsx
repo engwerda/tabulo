@@ -102,7 +102,8 @@ export const BoardSwitcher = ({
   const actions = onEdit !== undefined || onCreate !== undefined
 
   return (
-    <div ref={wrapper} className="flex min-w-0">
+    // The board on screen keeps its name when the row is short; the organization truncates first.
+    <div ref={wrapper} className="flex max-w-[60%] min-w-0 shrink-0">
       <Popover
         containerClass="relative min-w-0"
         triggerClass="flex w-full min-w-0 items-center gap-2 rounded-lg py-1 pr-1.5 pl-1.5 text-left pointer-coarse:min-h-11 transition hover:bg-zinc-100 dark:hover:bg-zinc-800/70"
