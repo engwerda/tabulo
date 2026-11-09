@@ -132,12 +132,9 @@ export const BoardSettingsDialog = ({
   }, [])
 
   const close = () => dialog.current?.close()
-  const dismiss = () => {
-    if (!pending) close()
-  }
   // A write's answer comes from its `mutateAsync` promise, which settles after the dialog is gone
-  // too, where callbacks given to `mutate` would not run. Back or Forward can take the dialog away
-  // while a write is in flight; its answer then shows as a toast and opens no board.
+  // too, where callbacks given to `mutate` would not run. The dialog can close while a write is in
+  // flight; its answer then shows as a toast and opens no board.
   const isOpen = () => dialog.current?.open === true
 
   const fail = (title: string, message: string) => {
@@ -164,14 +161,13 @@ export const BoardSettingsDialog = ({
   }
 
   const rebase = async (current: SettingsBase, during: "save" | "delete") => {
-    if (!isOpen()) {
-      fail(`Could not ${during} ${current.board.name}`, "Someone else changed it meanwhile")
-      return
-    }
+    const title = `Could not ${during} ${current.board.name}`
+    if (!isOpen()) return fail(title, "Someone else changed it meanwhile")
     try {
       // Not through the board's cache: a card move may still be pending, and the boards are read
       // again once the organization's writes end.
       const theirs = await fetchBoard(org, current.board.id)
+      if (!isOpen()) return fail(title, "Someone else changed it meanwhile")
       setClash({ theirChanges: rebaseDraft(current, theirs, draft).theirChanges, during })
       setDraft((mine) => rebaseDraft(current, theirs, mine).draft)
       setBase(theirs)
@@ -179,8 +175,9 @@ export const BoardSettingsDialog = ({
     } catch (error) {
       if (isCode(error, "board_not_found")) boardGone(current)
       else
-        setFailure(
-          `Someone else changed this board, and it could not be loaded again: ${sentence(error instanceof Error ? error.message : String(error))}`,
+        fail(
+          title,
+          `Someone else changed this board, and it could not be loaded again: ${error instanceof Error ? error.message : String(error)}`,
         )
     }
   }
@@ -271,17 +268,13 @@ export const BoardSettingsDialog = ({
   const rows = base === null ? [] : columnRows(base.allColumns, draft)
   const shown = rows.filter((row) => !row.hidden).length
   return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a modal dialog natively; the click is on the backdrop
     <dialog
       ref={dialog}
       aria-labelledby={`${id}-title`}
-      // Chrome lets a second Escape in a row close the dialog although its cancel event is
-      // prevented; preventing the key press keeps it open.
-      onKeyDown={(event) => {
-        if (event.key === "Escape" && pending) event.preventDefault()
-      }}
       onCancel={(event) => {
-        if (dragging.current || pending) event.preventDefault()
-        else if (confirmingDelete) {
+        if (dragging.current) event.preventDefault()
+        else if (confirmingDelete && !writes.remove.isPending) {
           event.preventDefault()
           setConfirmingDelete(false)
         }
@@ -296,7 +289,7 @@ export const BoardSettingsDialog = ({
         })
       }}
       onClick={(event) => {
-        if (event.target === dialog.current && !dirty && !pending) close()
+        if (event.target === dialog.current && !dirty) close()
       }}
       className="m-auto max-h-[calc(100dvh-2rem)] w-[min(34rem,calc(100vw-1.5rem))] animate-palette-in overflow-hidden rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-pop outline-none backdrop:bg-zinc-950/40 backdrop:backdrop-blur-[3px] dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:backdrop:bg-black/60"
     >
@@ -321,12 +314,10 @@ export const BoardSettingsDialog = ({
           </h2>
           <button
             type="button"
-            onClick={dismiss}
+            onClick={close}
             aria-label="Close"
-            title={busy ?? "Close (Esc)"}
-            aria-disabled={pending || undefined}
-            aria-describedby={pending ? `${id}-busy` : undefined}
-            className={`${buttonClass.iconSmall} -mr-1.5 aria-disabled:opacity-50`}
+            title="Close (Esc)"
+            className={`${buttonClass.iconSmall} -mr-1.5`}
           >
             <XIcon className="size-4" />
           </button>
@@ -564,14 +555,7 @@ export const BoardSettingsDialog = ({
                   </p>
                 )}
                 <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={dismiss}
-                    title={busy ?? undefined}
-                    aria-disabled={pending || undefined}
-                    aria-describedby={pending ? `${id}-busy` : undefined}
-                    className={`${buttonClass.secondary} aria-disabled:opacity-60`}
-                  >
+                  <button type="button" onClick={close} className={buttonClass.secondary}>
                     Cancel
                   </button>
                   <button
