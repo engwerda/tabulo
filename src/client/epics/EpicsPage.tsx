@@ -23,6 +23,7 @@ import { SearchField } from "../ui/SearchField.tsx"
 import { useToast } from "../ui/toast.tsx"
 import { EpicCard } from "./EpicCard.tsx"
 import {
+  backlinksRead,
   epicSummary,
   incompleteNotice,
   readEpicFilters,
@@ -31,7 +32,7 @@ import {
   withEpicOpen,
 } from "./epics-view.ts"
 
-const CHILD_EXAMPLE = "- [ ] #12\n- [ ] repo#34\n- [ ] owner/repo#56"
+const CHILD_EXAMPLE = "- #12\n- repo#34\n- owner/repo#56"
 
 const STATES = [
   { value: "", label: "All" },
@@ -150,7 +151,7 @@ const NoEpics = ({ org, selected }: { org: string; selected: ReadonlyArray<strin
               Type/Epic
             </code>{" "}
             label, or the label your <code className="font-mono text-xs">EPIC_LABEL</code> setting
-            names. List its children in the body as a task list:
+            names. List its children in its description, one per line:
           </p>
           <div className="mt-3 flex items-start justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 py-1.5 pr-1.5 pl-3 dark:border-zinc-800 dark:bg-zinc-950/50">
             <pre className="overflow-x-auto py-1 font-mono text-xs leading-5 text-zinc-700 dark:text-zinc-300">
@@ -167,7 +168,8 @@ const NoEpics = ({ org, selected }: { org: string; selected: ReadonlyArray<strin
             </button>
           </div>
           <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-            Progress follows each child's state in Forgejo.
+            Or write <code className="font-mono">Part of #N</code> in each child's description,
+            where #N is the epic. Progress follows each child's state in Forgejo.
           </p>
           {newIssue !== undefined && (
             <a
@@ -286,7 +288,11 @@ export const EpicsPage = ({ org }: { org: string }) => {
           </ErrorNotice>
         )}
         {hasSelection && notice !== "" && (
-          <ErrorNotice tone="warning" title="Some epics may be missing" className="mb-4">
+          <ErrorNotice
+            tone="warning"
+            title="Some epics or children may be missing"
+            className="mb-4"
+          >
             {notice}
           </ErrorNotice>
         )}
@@ -426,6 +432,7 @@ export const EpicsPage = ({ org }: { org: string }) => {
                     org={org}
                     board={lastBoard}
                     epic={epic}
+                    backlinksRead={backlinksRead(epics.data.incomplete, epic)}
                     columns={epics.data.columns}
                     sharedLabels={sharedLabels}
                     expanded={openEpics.has(epic.key)}
