@@ -5,6 +5,8 @@ import { type BoardFilters, filterChoices, ME, NONE, toggled } from "./board-vie
 
 /** What the board's commands in the command menu read and do; the N, M, R, and / keys do the same. */
 export type BoardCommandsInput = {
+  /** False while the board shows no filters, as when none of its repositories loaded. */
+  readonly filtersShown: boolean
   readonly cards: ReadonlyArray<BoardCard>
   readonly filters: BoardFilters
   /** The column a new issue goes to, or null when the viewer cannot add one. */
@@ -20,6 +22,12 @@ export type BoardCommandsInput = {
   readonly refresh: () => void
   /** When the board was last read, in words. */
   readonly updated: string
+  /** The board on screen, by name. */
+  readonly boardName: string
+  /** Opens the board's settings; null when the viewer cannot change boards. */
+  readonly editBoard: (() => void) | null
+  /** Opens a new board's settings; null when the viewer cannot add one. */
+  readonly newBoard: (() => void) | null
 }
 
 const BROWSE = {
@@ -53,6 +61,44 @@ export const boardCommands = (input: BoardCommandsInput): ReadonlyArray<GroupSpe
     remember: false,
     run: ({ browse }) => browse(BROWSE[filter]),
   })
+
+  const refresh: PaletteItem = {
+    id: "board:refresh",
+    title: "Refresh the board",
+    subtitle: input.updated,
+    keywords: "reload update",
+    icon: "refresh",
+    keys: ["R"],
+    remember: false,
+    run: input.refresh,
+  }
+  const settings: ReadonlyArray<PaletteItem> = [
+    ...(input.editBoard === null
+      ? []
+      : [
+          {
+            id: "board:edit",
+            title: "Edit board",
+            subtitle: input.boardName,
+            keywords: "settings rename repositories columns hide order",
+            icon: "settings",
+            remember: false,
+            run: input.editBoard,
+          } satisfies PaletteItem,
+        ]),
+    ...(input.newBoard === null
+      ? []
+      : [
+          {
+            id: "board:new",
+            title: "New board",
+            keywords: "add create",
+            icon: "plus",
+            remember: false,
+            run: input.newBoard,
+          } satisfies PaletteItem,
+        ]),
+  ]
 
   const actions: ReadonlyArray<PaletteItem> = [
     ...(input.newIssueColumn === null
@@ -104,16 +150,8 @@ export const boardCommands = (input: BoardCommandsInput): ReadonlyArray<GroupSpe
       remember: false,
       run: input.focusSearch,
     },
-    {
-      id: "board:refresh",
-      title: "Refresh the board",
-      subtitle: input.updated,
-      keywords: "reload update",
-      icon: "refresh",
-      keys: ["R"],
-      remember: false,
-      run: input.refresh,
-    },
+    refresh,
+    ...settings,
   ]
 
   const toggle = (filter: "assignee" | "label", value: string) => () =>
@@ -194,16 +232,18 @@ export const boardCommands = (input: BoardCommandsInput): ReadonlyArray<GroupSpe
     filter: true,
   })
 
+  const board: GroupSpec<PaletteItem> = {
+    id: "board",
+    heading: "Board",
+    items: input.filtersShown ? actions : [refresh, ...settings],
+    limit: 8,
+    emptyLimit: 8,
+    filter: true,
+    contextual: true,
+  }
+  if (!input.filtersShown) return [board]
   return [
-    {
-      id: "board",
-      heading: "Board",
-      items: actions,
-      limit: 8,
-      emptyLimit: 8,
-      filter: true,
-      contextual: true,
-    },
+    board,
     filterGroup("label", "Filter by label", labels),
     filterGroup("assignee", "Filter by assignee", assignees),
     filterGroup("milestone", "Filter by milestone", milestones),

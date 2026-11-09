@@ -22,6 +22,7 @@ import {
   type CardUpdateResult,
   DEFAULT_BOARD_ID,
   DEFAULT_BOARD_NAME,
+  MAX_BOARDS,
   type MoveCardRequest,
 } from "../../shared/api.ts"
 import {
@@ -994,10 +995,12 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
   // On a phone the board's options sit beside Filters, which leaves the organization's name room.
   const filtersShown = data !== undefined && !allFailed
 
+  const atBoardLimit = (boards.data?.boards.length ?? 0) >= MAX_BOARDS
   usePageCommands(
-    data === undefined || allFailed
+    data === undefined
       ? NO_COMMANDS
       : boardCommands({
+          filtersShown,
           cards: data.cards,
           filters,
           newIssueColumn:
@@ -1013,6 +1016,13 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
           focusSearch: () => window.setTimeout(() => searchInput.current?.focus()),
           refresh: () => void board.refetch(),
           updated: updated ?? "",
+          boardName: data.board.name,
+          // Opened after the menu has closed and given focus back, which the dialog returns to.
+          editBoard: canChangeBoards ? () => window.setTimeout(() => editBoard()) : null,
+          newBoard:
+            canChangeBoards && !atBoardLimit
+              ? () => window.setTimeout(() => setSettings({ _tag: "Create" }))
+              : null,
         }),
   )
 
