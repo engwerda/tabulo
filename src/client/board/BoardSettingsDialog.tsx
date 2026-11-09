@@ -1,0 +1,391 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { type FormEvent, useId, useLayoutEffect, useRef, useState } from "react"
+import { useLocation } from "wouter"
+import { type Board, DEFAULT_BOARD_ID, MAX_BOARD_NAME, MAX_REPOS } from "../../shared/api.ts"
+import { fetchBoard, fetchOrgRepos, RequestFailed } from "../api.ts"
+import { RepoChecklist } from "../scope/RepoPicker.tsx"
+import { forgetBoard } from "../scope/remembered.ts"
+import { boardHref } from "../scope/views.ts"
+import { ErrorNotice, sentence } from "../ui/ErrorNotice.tsx"
+import { LockIcon, XIcon } from "../ui/icons.tsx"
+import { buttonClass, inputClass } from "../ui/primitives.tsx"
+import { useToast } from "../ui/toast.tsx"
+import { focusNextBoardSwitcher } from "./BoardSwitcher.tsx"
+import {
+  type BoardDraft,
+  type DraftField,
+  describeFields,
+  draftOf,
+  draftProblem,
+  isDirty,
+  NEW_BOARD_DRAFT,
+  rebaseDraft,
+  type SettingsBase,
+  toCreateRequest,
+  toUpdateRequest,
+} from "./board-settings.ts"
+import { boardQueryKey, boardsQueryKey } from "./board-view.ts"
+import { useBoardWrites } from "./use-board-writes.ts"
+
+export type SettingsMode =
+  | { readonly _tag: "Create" }
+  | {
+      readonly _tag: "Edit"
+      /** The board as it was on screen when the dialog opened. */
+      readonly board: Board
+      /** The section to start at, as an empty board asks for its repositories. */
+      readonly focus?: "repos"
+    }
+
+const isCode = (error: unknown, code: string) =>
+  error instanceof RequestFailed && error.code === code
+
+const sectionTitle = "text-sm font-medium text-zinc-900 dark:text-zinc-50"
+const sectionHint = "mt-0.5 text-xs text-zinc-500 dark:text-zinc-400"
+
+/**
+ * A board's settings, or a new board's, with one Save: the update replaces every field under one
+ * version, so the form saves them together. When someone else saved first, the dialog keeps the
+ * user's changes on top of theirs and says what they changed.
+ */
+export const BoardSettingsDialog = ({
+  org,
+  mode,
+  onClose,
+}: {
+  readonly org: string
+  readonly mode: SettingsMode
+  readonly onClose: () => void
+}) => {
+  const id = useId()
+  const dialog = useRef<HTMLDialogElement>(null)
+  const body = useRef<HTMLDivElement>(null)
+  const nameInput = useRef<HTMLInputElement>(null)
+  const reposSection = useRef<HTMLElement>(null)
+  const repoSearch = useRef<HTMLInputElement>(null)
+  const startAt = useRef(mode._tag === "Edit" ? mode.focus : undefined)
+  const queryClient = useQueryClient()
+  const toast = useToast()
+  const [, navigate] = useLocation()
+  const writes = useBoardWrites(org)
+  const orgRepos = useQuery({ queryKey: ["org-repos", org], queryFn: () => fetchOrgRepos(org) })
+
+  const [base, setBase] = useState<SettingsBase | null>(mode._tag === "Edit" ? mode.board : null)
+  const [draft, setDraft] = useState<BoardDraft>(() =>
+    base === null ? NEW_BOARD_DRAFT : draftOf(base),
+  )
+  /** What someone else changed when their save beat the user's; null before any such clash. */
+  const [theirChanges, setTheirChanges] = useState<ReadonlyArray<DraftField> | null>(null)
+  const [failure, setFailure] = useState<string | null>(null)
+  const [problemShown, setProblemShown] = useState(false)
+
+  const unreadable = base?.board.unreadableRepos ?? 0
+  const kept = draft.dropUnreadable ? 0 : unreadable
+  const problem = draftProblem(draft, unreadable)
+  const pending = writes.create.isPending || writes.update.isPending
+  const dirty =
+    base === null ? draft.name.trim() !== "" || draft.repos.length > 0 : isDirty(base, draft)
+
+  useLayoutEffect(() => {
+    const element = dialog.current
+    if (element === null || element.open) return
+    element.showModal()
+    if (startAt.current === "repos") {
+      ;(repoSearch.current ?? reposSection.current)?.focus()
+    } else {
+      nameInput.current?.focus()
+    }
+  }, [])
+
+  const close = () => dialog.current?.close()
+
+  /** Closes the dialog for another board, whose switcher then takes focus. */
+  const openBoard = (board: string, replace: boolean) => {
+    focusNextBoardSwitcher()
+    close()
+    navigate(boardHref(org, board), { replace })
+  }
+
+  const boardGone = (current: SettingsBase) => {
+    forgetBoard(org, current.board.id)
+    void queryClient.invalidateQueries({ queryKey: boardsQueryKey(org) })
+    toast({
+      tone: "warning",
+      title: `${current.board.name} was deleted`,
+      detail: "Someone deleted it while you edited it, so your changes were not saved.",
+    })
+    openBoard(DEFAULT_BOARD_ID, true)
+  }
+
+  /** Loads the board as someone else saved it and moves the user's changes onto it. */
+  const rebase = async (current: SettingsBase) => {
+    const key = boardQueryKey(org, current.board.id)
+    try {
+      await queryClient.cancelQueries({ queryKey: key })
+      const theirs = await queryClient.fetchQuery({
+        queryKey: key,
+        queryFn: () => fetchBoard(org, current.board.id),
+      })
+      setTheirChanges(rebaseDraft(current, theirs, draft).theirChanges)
+      setDraft((mine) => rebaseDraft(current, theirs, mine).draft)
+      setBase(theirs)
+      body.current?.scrollTo({ top: 0 })
+    } catch (error) {
+      if (isCode(error, "board_not_found")) boardGone(current)
+      else
+        setFailure(
+          `Someone else changed this board, and it could not be loaded again: ${sentence(error instanceof Error ? error.message : String(error))}`,
+        )
+    }
+  }
+
+  const focusField = (field: "name" | "repos") => {
+    if (field === "name") nameInput.current?.focus()
+    else (repoSearch.current ?? reposSection.current)?.focus()
+  }
+
+  const save = (event: FormEvent) => {
+    event.preventDefault()
+    if (pending) return
+    if (problem !== null) {
+      setProblemShown(true)
+      focusField(problem.field)
+      return
+    }
+    setFailure(null)
+    if (base === null) {
+      writes.create.mutate(toCreateRequest(org, draft), {
+        onSuccess: (saved) => {
+          toast({ tone: "success", title: `Created ${saved.name}` })
+          openBoard(saved.id, false)
+        },
+        onError: (error) => setFailure(sentence(error.message)),
+      })
+      return
+    }
+    if (!isDirty(base, draft)) {
+      close()
+      return
+    }
+    writes.update.mutate(
+      { request: toUpdateRequest(org, base, draft), order: draft.order },
+      {
+        onSuccess: (saved) => {
+          toast({ tone: "success", title: `Saved ${saved.name}` })
+          close()
+        },
+        onError: (error) => {
+          if (isCode(error, "board_changed")) void rebase(base)
+          else if (isCode(error, "board_not_found")) boardGone(base)
+          else setFailure(sentence(error.message))
+        },
+      },
+    )
+  }
+
+  const chosen = draft.repos.length + kept
+  return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a modal dialog natively; the click is on the backdrop
+    <dialog
+      ref={dialog}
+      aria-labelledby={`${id}-title`}
+      onClose={() => {
+        onClose()
+        // The browser gives focus back to what had it, or leaves it on <body> when that is gone,
+        // such as the button of an empty board that now has repositories.
+        window.setTimeout(() => {
+          if (document.activeElement !== document.body) return
+          document.querySelector<HTMLElement>('button[aria-label^="Board: "]')?.focus()
+        })
+      }}
+      onClick={(event) => {
+        if (event.target === dialog.current && !dirty && !pending) close()
+      }}
+      className="m-auto max-h-[calc(100dvh-2rem)] w-[min(34rem,calc(100vw-1.5rem))] animate-palette-in overflow-hidden rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-pop outline-none backdrop:bg-zinc-950/40 backdrop:backdrop-blur-[3px] dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:backdrop:bg-black/60"
+    >
+      <form
+        onSubmit={save}
+        // Enter submits from the name only; in the repository search or on a box it would save
+        // the form before the user is done with it.
+        onKeyDown={(event) => {
+          if (
+            event.key === "Enter" &&
+            event.target instanceof HTMLInputElement &&
+            event.target !== nameInput.current
+          ) {
+            event.preventDefault()
+          }
+        }}
+        className="flex max-h-[calc(100dvh-2rem)] flex-col"
+      >
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
+          <h2 id={`${id}-title`} className="text-[0.9375rem] font-semibold tracking-tight">
+            {base === null ? "New board" : `Edit ${base.board.name}`}
+          </h2>
+          <button
+            type="button"
+            onClick={close}
+            aria-label="Close"
+            title="Close (Esc)"
+            className={`${buttonClass.iconSmall} -mr-1.5`}
+          >
+            <XIcon className="size-4" />
+          </button>
+        </div>
+
+        <div ref={body} className="scroll-thin min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-4">
+          {theirChanges !== null && (
+            <ErrorNotice tone="warning" title="Someone else saved this board while you edited it">
+              {theirChanges.length === 0
+                ? "Your changes are kept. Check them and save again."
+                : `They changed ${describeFields(theirChanges)}. Your changes are kept; check them and save again.`}
+            </ErrorNotice>
+          )}
+
+          <div>
+            <label htmlFor={`${id}-name`} className={sectionTitle}>
+              Name
+            </label>
+            <input
+              ref={nameInput}
+              id={`${id}-name`}
+              value={draft.name}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, name: event.target.value }))
+              }
+              maxLength={MAX_BOARD_NAME}
+              autoComplete="off"
+              placeholder="For example, Design"
+              aria-invalid={(problemShown && problem?.field === "name") || undefined}
+              aria-describedby={
+                problemShown && problem?.field === "name" ? `${id}-problem` : undefined
+              }
+              className={`${inputClass} mt-1.5`}
+            />
+          </div>
+
+          <section
+            ref={reposSection}
+            tabIndex={-1}
+            aria-labelledby={`${id}-repos`}
+            className="focus:outline-none"
+          >
+            <div className="flex items-baseline justify-between gap-3">
+              <h3 id={`${id}-repos`} className={sectionTitle}>
+                Repositories
+              </h3>
+              <span
+                className={`text-xs tabular-nums ${
+                  chosen > MAX_REPOS
+                    ? "font-medium text-red-600 dark:text-red-400"
+                    : "text-zinc-500 dark:text-zinc-400"
+                }`}
+              >
+                {chosen} of {MAX_REPOS}
+                <span className="sr-only"> repositories at most</span>
+              </span>
+            </div>
+            <p className={sectionHint}>
+              Everyone who opens the board sees the issues of these repositories that they can read.
+            </p>
+            <div className="mt-2 rounded-xl border border-zinc-200 p-1.5 dark:border-zinc-800">
+              {orgRepos.isError ? (
+                <ErrorNotice
+                  bare
+                  title="Could not load the repositories"
+                  onRetry={() => void orgRepos.refetch()}
+                  retrying={orgRepos.isFetching}
+                  className="p-2"
+                >
+                  {orgRepos.error.message}
+                </ErrorNotice>
+              ) : orgRepos.data === undefined ? (
+                <div role="status" className="space-y-1.5 p-1">
+                  <span className="sr-only">Loading the repositories</span>
+                  {[0, 1, 2, 3].map((index) => (
+                    <div
+                      key={index}
+                      aria-hidden="true"
+                      className="h-7 animate-shimmer rounded-lg bg-zinc-100 dark:bg-zinc-800/70"
+                    />
+                  ))}
+                </div>
+              ) : (
+                <RepoChecklist
+                  repos={orgRepos.data}
+                  selected={draft.repos}
+                  onChange={(repos) => setDraft((current) => ({ ...current, repos }))}
+                  legend="Repositories of the board"
+                  searchRef={repoSearch}
+                />
+              )}
+            </div>
+            {unreadable > 0 && (
+              <div className="mt-3 flex items-start gap-2.5 rounded-xl bg-zinc-50 px-3 py-2.5 text-sm text-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-300">
+                <LockIcon className="mt-0.5 size-4 shrink-0 text-zinc-500 dark:text-zinc-400" />
+                <div className="min-w-0">
+                  <p>
+                    This board also has{" "}
+                    {unreadable === 1 ? "1 repository" : `${unreadable} repositories`} you cannot
+                    read. Members who can read {unreadable === 1 ? "it" : "them"} still see{" "}
+                    {unreadable === 1 ? "it" : "them"}.
+                  </p>
+                  <label className="mt-2 flex cursor-pointer items-center gap-2 pointer-coarse:min-h-11">
+                    <input
+                      type="checkbox"
+                      checked={draft.dropUnreadable}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          dropUnreadable: event.target.checked,
+                        }))
+                      }
+                      className="size-4 shrink-0 cursor-pointer rounded accent-indigo-600"
+                    />
+                    Remove {unreadable === 1 ? "it" : "them"} when I save
+                  </label>
+                </div>
+              </div>
+            )}
+          </section>
+          {base === null && (
+            <p className={sectionHint}>
+              The board starts with the default board's columns. Arrange them once it exists.
+            </p>
+          )}
+        </div>
+
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-x-3 gap-y-2 border-t border-zinc-100 px-5 py-3 dark:border-zinc-800">
+          {failure !== null && (
+            <p role="alert" className="w-full text-sm text-red-600 dark:text-red-400">
+              {failure}
+            </p>
+          )}
+          {problem !== null && (
+            <p
+              id={`${id}-problem`}
+              className={`mr-auto text-sm ${
+                problemShown ? "text-red-600 dark:text-red-400" : "text-zinc-500 dark:text-zinc-400"
+              }`}
+            >
+              {sentence(problem.message)}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <button type="button" onClick={close} className={buttonClass.secondary}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              aria-disabled={problem !== null || pending || undefined}
+              aria-describedby={problem !== null ? `${id}-problem` : undefined}
+              className={`${buttonClass.primary} aria-disabled:opacity-60`}
+            >
+              {pending ? "Saving…" : base === null ? "Create board" : "Save"}
+            </button>
+          </div>
+        </div>
+      </form>
+    </dialog>
+  )
+}

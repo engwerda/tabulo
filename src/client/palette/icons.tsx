@@ -145,6 +145,13 @@ const GLYPHS = {
       <path d="m13.5 13.5 3 3m0-3-3 3" />
     </>
   ),
+  settings: (
+    <>
+      <path d="M3.5 6h6.5M14 6h2.5M3.5 14h2.5M10 14h6.5" />
+      <circle cx="12" cy="6" r="2" />
+      <circle cx="8" cy="14" r="2" />
+    </>
+  ),
 } as const
 
 export type GlyphName = keyof typeof GLYPHS

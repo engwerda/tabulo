@@ -56,8 +56,10 @@ import { useToast } from "../ui/toast.tsx"
 import type { CardActions } from "./BoardCardView.tsx"
 import { BoardColumns } from "./BoardColumns.tsx"
 import { BoardFiltersBar } from "./BoardFiltersBar.tsx"
+import { BoardSettingsDialog, type SettingsMode } from "./BoardSettingsDialog.tsx"
 import { BoardSwitcher, useBoardList } from "./BoardSwitcher.tsx"
 import { boardCommands } from "./board-commands.ts"
+import { draftOf, toUpdateRequest } from "./board-settings.ts"
 import {
   applyMove,
   boardQueryKey,
@@ -76,6 +78,7 @@ import { CardComposer } from "./CardComposer.tsx"
 import { CardPanel } from "./CardPanel.tsx"
 import { drafts, titleDraftKey } from "./drafts.ts"
 import { BOARD_SHORTCUTS } from "./shortcuts.ts"
+import { useBoardWrites } from "./use-board-writes.ts"
 
 const REFRESH_MS = 60_000
 const NO_COMMANDS: ReturnType<typeof boardCommands> = []
@@ -250,35 +253,35 @@ const inlineAction =
   "relative font-medium pointer-coarse:before:absolute pointer-coarse:before:inset-x-0 pointer-coarse:before:-inset-y-3 text-zinc-700 underline decoration-zinc-300 underline-offset-2 transition hover:text-zinc-900 hover:decoration-zinc-500 dark:text-zinc-300 dark:decoration-zinc-600 dark:hover:text-zinc-100"
 
 /**
- * Why repositories could not be loaded, with the action that takes them off the board for members.
- * A title that already names the one repository leaves only its reason here.
+ * Why repositories could not be loaded, with what a member can do about it, such as taking them
+ * off the board. A title that already names the one repository leaves only its reason here.
  */
 const FailedRepos = ({
   failures,
   named = false,
-  onRemove,
+  action,
   onDismiss,
 }: {
   failures: ReadonlyArray<{ readonly repo: string; readonly message: string }>
   named?: boolean
-  onRemove?: (() => void) | undefined
+  action?: { readonly label: string; readonly run: () => void } | undefined
   onDismiss?: () => void
 }) => (
   <>
     {named
       ? sentence(failures[0]?.message ?? "")
       : `${failures.map((failure) => `${failure.repo} (${failure.message})`).join(", ")}.`}
-    {onRemove !== undefined && (
+    {action !== undefined && (
       <>
         {" "}
-        <button type="button" onClick={onRemove} className={inlineAction}>
-          Remove {failures.length === 1 ? "it" : "them"} from the board
+        <button type="button" onClick={action.run} className={inlineAction}>
+          {action.label}
         </button>
       </>
     )}
     {onDismiss !== undefined && (
       <>
-        {onRemove === undefined ? " " : <span aria-hidden="true"> · </span>}
+        {action === undefined ? " " : <span aria-hidden="true"> · </span>}
         <button type="button" onClick={onDismiss} className={inlineAction}>
           Hide this
         </button>
@@ -418,6 +421,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
   const [dragging, setDragging] = useState(false)
   const [dismissedFailures, setDismissedFailures] = useState<string | null>(null)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [settings, setSettings] = useState<SettingsMode | null>(null)
   const [collapsed, setCollapsed] = useState(() => readCollapsed(collapsedKey(org, boardId)))
   const [composing, setComposing] = useState<string | null>(null)
   const [composerRepo, setComposerRepo] = useState(() => storage.read(composerRepoKey(org)))
@@ -437,6 +441,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
   const repos = useQuery({ queryKey: ["org-repos", org], queryFn: () => fetchOrgRepos(org) })
   const orgs = useQuery({ queryKey: ORGS, queryFn: fetchOrgs })
   const boards = useBoardList(org)
+  const boardWrites = useBoardWrites(org)
 
   const boardKey = boardQueryKey(org, boardId)
   const writeKey = boardWriteKey(org, boardId)
@@ -925,6 +930,37 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
   const orgTitle =
     orgs.data?.find((candidate) => candidate.name.toLowerCase() === org.toLowerCase())?.fullName ||
     org
+  const canChangeBoards = data?.viewerCanArrange === true
+  const editBoard = (focus?: "repos") => {
+    if (data !== undefined) setSettings({ _tag: "Edit", board: data, ...(focus ? { focus } : {}) })
+  }
+  const removeFailed = () => {
+    if (data === undefined) return
+    const failed = new Set(failures.map((failure) => failure.repo.toLowerCase()))
+    const repos = data.board.repos.filter((repo) => !failed.has(repo.toLowerCase()))
+    boardWrites.update.mutate(
+      { request: toUpdateRequest(org, data, { ...draftOf(data), repos }) },
+      {
+        onSuccess: (saved) =>
+          toast({
+            tone: "success",
+            title: `Removed ${failures.length === 1 ? failures[0]?.repo : `${failures.length} repositories`} from ${saved.name}`,
+          }),
+        onError: (error) => {
+          if (error instanceof RequestFailed && error.code === "board_changed") {
+            void board.refetch()
+            toast({
+              tone: "warning",
+              title: "Someone changed the board meanwhile",
+              detail: "Nothing was removed. The board has been reloaded; try again.",
+            })
+          } else {
+            toast({ tone: "error", title: "Could not change the board", detail: error.message })
+          }
+        },
+      },
+    )
+  }
   const clearFilters = () =>
     setParams(
       (current) => {
@@ -1001,7 +1037,13 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
             <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-700">
               /
             </span>
-            <BoardSwitcher org={org} boardId={boardId} name={data?.board.name} />
+            <BoardSwitcher
+              org={org}
+              boardId={boardId}
+              name={data?.board.name}
+              onEdit={canChangeBoards ? () => editBoard() : undefined}
+              onCreate={canChangeBoards ? () => setSettings({ _tag: "Create" }) : undefined}
+            />
           </div>
           {filtersShown && (
             <>
@@ -1084,7 +1126,18 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
               retrying={board.isFetching}
               className="mx-4 mb-3 sm:mx-6"
             >
-              <FailedRepos failures={failures} onDismiss={() => setDismissedFailures(failureId)} />
+              <FailedRepos
+                failures={failures}
+                action={
+                  canChangeBoards
+                    ? {
+                        label: `Remove ${failures.length === 1 ? "it" : "them"} from the board`,
+                        run: removeFailed,
+                      }
+                    : undefined
+                }
+                onDismiss={() => setDismissedFailures(failureId)}
+              />
             </ErrorNotice>
           )}
         {data !== undefined && !boardMissing && !data.viewerCanArrange && (
@@ -1142,11 +1195,32 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
               retrying={board.isFetching}
               className="mx-4 sm:mx-6"
             >
-              <FailedRepos failures={data.failedRepos} named={data.failedRepos.length === 1} />
+              <FailedRepos
+                failures={data.failedRepos}
+                named={data.failedRepos.length === 1}
+                action={
+                  canChangeBoards
+                    ? { label: "Choose other repositories", run: () => editBoard("repos") }
+                    : undefined
+                }
+              />
             </ErrorNotice>
           ) : data.board.repos.length === 0 ? (
             data.board.unreadableRepos > 0 ? (
-              <EmptyBoard title="You cannot read this board's repositories">
+              <EmptyBoard
+                title="You cannot read this board's repositories"
+                action={
+                  canChangeBoards && (
+                    <button
+                      type="button"
+                      onClick={() => editBoard("repos")}
+                      className={`${buttonClass.secondary} mt-6`}
+                    >
+                      Edit board
+                    </button>
+                  )
+                }
+              >
                 {data.board.name} shows{" "}
                 {data.board.unreadableRepos === 1
                   ? "1 repository"
@@ -1154,16 +1228,42 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
                 that your Forgejo account cannot read.
               </EmptyBoard>
             ) : (
-              <EmptyBoard title="This board has no repositories yet">
-                {data.viewerCanArrange
-                  ? `Choose the repositories of ${data.board.name}. Everyone who opens it sees them.`
+              <EmptyBoard
+                title="This board has no repositories yet"
+                action={
+                  canChangeBoards && (
+                    <button
+                      type="button"
+                      onClick={() => editBoard("repos")}
+                      className={`${buttonClass.primary} mt-6`}
+                    >
+                      Choose repositories
+                    </button>
+                  )
+                }
+              >
+                {canChangeBoards
+                  ? `Choose the repositories of ${data.board.name}. Everyone who opens it sees their issues.`
                   : `A member of ${orgTitle} can choose its repositories.`}
               </EmptyBoard>
             )
           ) : data.columns.length === 0 ? (
-            <EmptyBoard title="Every column of this board is hidden">
-              {data.viewerCanArrange
-                ? "Show columns in the board's settings."
+            <EmptyBoard
+              title="Every column of this board is hidden"
+              action={
+                canChangeBoards && (
+                  <button
+                    type="button"
+                    onClick={() => editBoard()}
+                    className={`${buttonClass.primary} mt-6`}
+                  >
+                    Edit board
+                  </button>
+                )
+              }
+            >
+              {canChangeBoards
+                ? "Show at least one column in the board's settings."
                 : `A member of ${orgTitle} can show them again.`}
             </EmptyBoard>
           ) : filtered && shownCount === 0 && data.cards.length > 0 ? (
@@ -1256,6 +1356,9 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
             />
           )}
         </div>
+        {settings !== null && (
+          <BoardSettingsDialog org={org} mode={settings} onClose={() => setSettings(null)} />
+        )}
         <ShortcutsDialog
           open={shortcutsOpen}
           onClose={() => setShortcutsOpen(false)}

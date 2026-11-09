@@ -14,9 +14,14 @@ import { boardsQueryKey } from "./board-view.ts"
 export const useBoardList = (org: string) =>
   useQuery({ queryKey: boardsQueryKey(org), queryFn: () => fetchBoards(org) })
 
-// Choosing a board replaces the page, and with it the trigger that had focus, so the next page's
-// switcher takes focus back.
+// Opening another board replaces the page, and with it the control that had focus, so the next
+// page's switcher takes focus.
 let refocusAfterSwitch = false
+
+/** Gives focus to the switcher of the board that opens next, as after adding a board. */
+export const focusNextBoardSwitcher = () => {
+  refocusAfterSwitch = true
+}
 
 const menuItem =
   "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm text-zinc-700 transition pointer-coarse:min-h-11 hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none aria-disabled:cursor-default aria-disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800 dark:aria-disabled:hover:bg-transparent"

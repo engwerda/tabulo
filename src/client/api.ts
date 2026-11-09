@@ -7,10 +7,12 @@ import {
   BoardList,
   CardDetail,
   CardUpdateResult,
+  type CreateBoardRequest,
   type CreateCardRequest,
   CreateCardResult,
   Dashboard,
   DEFAULT_BOARD_ID,
+  type DeleteBoardRequest,
   Epics,
   type InsightDays,
   Insights,
@@ -20,10 +22,13 @@ import {
   MoveCardResult,
   Org,
   OrgRepo,
+  type SavedBoard,
+  SavedBoardResult,
   SearchResults,
   type SetAssigneeRequest,
   type SetLabelRequest,
   type SetMilestoneRequest,
+  type UpdateBoardRequest,
   User,
 } from "../shared/api.ts"
 
@@ -52,6 +57,7 @@ const decodeOrgs = Schema.decodeUnknownPromise(Schema.Array(Org))
 const decodeOrgRepos = Schema.decodeUnknownPromise(Schema.Array(OrgRepo))
 const decodeBoard = Schema.decodeUnknownPromise(Board)
 const decodeBoardList = Schema.decodeUnknownPromise(BoardList)
+const decodeSavedBoardResult = Schema.decodeUnknownPromise(SavedBoardResult)
 const decodeEpics = Schema.decodeUnknownPromise(Epics)
 const decodeMoveCardResult = Schema.decodeUnknownPromise(MoveCardResult)
 const decodeCreateCardResult = Schema.decodeUnknownPromise(CreateCardResult)
@@ -112,6 +118,17 @@ const postJson = (path: string, body: unknown) =>
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   })
+
+export const createBoard = async (request: CreateBoardRequest): Promise<SavedBoard> =>
+  (await decodeSavedBoardResult(await postJson("/api/boards", request))).board
+
+/** Fails with `board_changed` when the board is no longer at `request.version`. */
+export const updateBoard = async (request: UpdateBoardRequest): Promise<SavedBoard> =>
+  (await decodeSavedBoardResult(await postJson("/api/boards/update", request))).board
+
+export const deleteBoard = async (request: DeleteBoardRequest): Promise<void> => {
+  await postJson("/api/boards/delete", request)
+}
 
 export const moveCard = async (move: MoveCardRequest): Promise<MoveCardResult> =>
   decodeMoveCardResult(await postJson("/api/board/move", move))
