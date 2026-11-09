@@ -7,7 +7,6 @@ import { compareCardOrder, rankForDrop } from "../../shared/card-order.ts"
  */
 export const boardQueryKey = (org: string, board: string) => ["board", org, board] as const
 
-/** The organization's list of boards. */
 export const boardsQueryKey = (org: string) => ["boards", org] as const
 
 /** Card writes from one board wait for each other, and the board's reads hold off meanwhile. */

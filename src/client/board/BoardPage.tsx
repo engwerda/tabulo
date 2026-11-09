@@ -470,7 +470,9 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
   // is gone; a board deleted while it is on screen says so instead.
   const loadedBefore = board.data !== undefined
   useEffect(() => {
-    if (!boardMissing || !forgetBoard(org, boardId) || loadedBefore) return
+    if (!boardMissing) return
+    const wasLast = forgetBoard(org, boardId)
+    if (!wasLast || loadedBefore) return
     toast({
       tone: "info",
       title: "The board you used last is gone",
@@ -932,15 +934,16 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
     orgs.data?.find((candidate) => candidate.name.toLowerCase() === org.toLowerCase())?.fullName ||
     org
   const canChangeBoards = data?.viewerCanArrange === true
+  const canEditBoard = canChangeBoards && !boardMissing
   const editBoard = (focus?: "repos" | "columns") => {
     if (data !== undefined) setSettings({ _tag: "Edit", board: data, ...(focus ? { focus } : {}) })
   }
   const removeFailed = () => {
     if (data === undefined) return
     const failed = new Set(failures.map((failure) => failure.repo.toLowerCase()))
-    const repos = data.board.repos.filter((repo) => !failed.has(repo.toLowerCase()))
+    const loading = data.board.repos.filter((repo) => !failed.has(repo.toLowerCase()))
     boardWrites.update.mutate(
-      { request: toUpdateRequest(org, data, { ...draftOf(data), repos }) },
+      { request: toUpdateRequest(org, data, { ...draftOf(data), repos: loading }) },
       {
         onSuccess: (saved) =>
           toast({
@@ -1019,7 +1022,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
           updated: updated ?? "",
           boardName: data.board.name,
           // Opened after the menu has closed and given focus back, which the dialog returns to.
-          editBoard: canChangeBoards ? () => window.setTimeout(() => editBoard()) : null,
+          editBoard: canEditBoard ? () => window.setTimeout(() => editBoard()) : null,
           newBoard:
             canChangeBoards && !atBoardLimit
               ? () => window.setTimeout(() => setSettings({ _tag: "Create" }))
@@ -1045,16 +1048,20 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
         >
           <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-1.5">
             <OrgSwitcher org={org} view="board" />
-            <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-700">
-              /
-            </span>
-            <BoardSwitcher
-              org={org}
-              boardId={boardId}
-              name={data?.board.name}
-              onEdit={canChangeBoards ? () => editBoard() : undefined}
-              onCreate={canChangeBoards ? () => setSettings({ _tag: "Create" }) : undefined}
-            />
+            {!orgMissing && (
+              <>
+                <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-700">
+                  /
+                </span>
+                <BoardSwitcher
+                  org={org}
+                  boardId={boardId}
+                  name={boardMissing ? "No such board" : data?.board.name}
+                  onEdit={canEditBoard ? () => editBoard() : undefined}
+                  onCreate={canChangeBoards ? () => setSettings({ _tag: "Create" }) : undefined}
+                />
+              </>
+            )}
           </div>
           {filtersShown && (
             <>

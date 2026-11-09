@@ -88,8 +88,11 @@ export const BoardSettingsDialog = ({
   const [draft, setDraft] = useState<BoardDraft>(() =>
     base === null ? NEW_BOARD_DRAFT : draftOf(base),
   )
-  /** What someone else changed when their save beat the user's; null before any such clash. */
-  const [theirChanges, setTheirChanges] = useState<ReadonlyArray<DraftField> | null>(null)
+  /** What someone else changed when their save beat the user's save or delete. */
+  const [clash, setClash] = useState<{
+    readonly theirChanges: ReadonlyArray<DraftField>
+    readonly during: "save" | "delete"
+  } | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   const [problemShown, setProblemShown] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -143,7 +146,7 @@ export const BoardSettingsDialog = ({
   }
 
   /** Loads the board as someone else saved it and moves the user's changes onto it. */
-  const rebase = async (current: SettingsBase) => {
+  const rebase = async (current: SettingsBase, during: "save" | "delete") => {
     const key = boardQueryKey(org, current.board.id)
     try {
       await queryClient.cancelQueries({ queryKey: key })
@@ -151,7 +154,7 @@ export const BoardSettingsDialog = ({
         queryKey: key,
         queryFn: () => fetchBoard(org, current.board.id),
       })
-      setTheirChanges(rebaseDraft(current, theirs, draft).theirChanges)
+      setClash({ theirChanges: rebaseDraft(current, theirs, draft).theirChanges, during })
       setDraft((mine) => rebaseDraft(current, theirs, mine).draft)
       setBase(theirs)
       body.current?.scrollTo({ top: 0 })
@@ -186,7 +189,7 @@ export const BoardSettingsDialog = ({
             openBoard(DEFAULT_BOARD_ID, true)
           } else if (isCode(error, "board_changed")) {
             setConfirmingDelete(false)
-            void rebase(current)
+            void rebase(current, "delete")
           } else {
             setFailure(sentence(error.message))
           }
@@ -231,7 +234,7 @@ export const BoardSettingsDialog = ({
           close()
         },
         onError: (error) => {
-          if (isCode(error, "board_changed")) void rebase(base)
+          if (isCode(error, "board_changed")) void rebase(base, "save")
           else if (isCode(error, "board_not_found")) boardGone(base)
           else setFailure(sentence(error.message))
         },
@@ -300,11 +303,18 @@ export const BoardSettingsDialog = ({
         </div>
 
         <div ref={body} className="scroll-thin min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-4">
-          {theirChanges !== null && (
+          {clash !== null && (
             <ErrorNotice tone="warning" title="Someone else saved this board while you edited it">
-              {theirChanges.length === 0
-                ? "Your changes are kept. Check them and save again."
-                : `They changed ${describeFields(theirChanges)}. Your changes are kept; check them and save again.`}
+              {[
+                clash.theirChanges.length === 0
+                  ? ""
+                  : `They changed ${describeFields(clash.theirChanges)}.`,
+                clash.during === "save"
+                  ? "Your changes are kept; check them and save again."
+                  : "Check the board, and delete it again if you still want to.",
+              ]
+                .filter((part) => part !== "")
+                .join(" ")}
             </ErrorNotice>
           )}
 
@@ -528,7 +538,13 @@ export const BoardSettingsDialog = ({
                     aria-describedby={problem !== null ? `${id}-problem` : undefined}
                     className={`${buttonClass.primary} aria-disabled:opacity-60`}
                   >
-                    {pending ? "Saving…" : base === null ? "Create board" : "Save"}
+                    {base === null
+                      ? pending
+                        ? "Creating…"
+                        : "Create board"
+                      : pending
+                        ? "Saving…"
+                        : "Save"}
                   </button>
                 </div>
               </div>
