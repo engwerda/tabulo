@@ -10,7 +10,13 @@ import { ShortcutKeys } from "./palette/keys.tsx"
 import { PaletteProvider, usePalette } from "./palette/PaletteProvider.tsx"
 import { ORGS, OrgPicker } from "./scope/OrgPicker.tsx"
 import { useLastScope } from "./scope/remembered.ts"
-import { isOrgViewPath, ORG_VIEWS, type OrgViewId, orgViewHref } from "./scope/views.ts"
+import {
+  isOrgViewPath,
+  ORG_VIEWS,
+  type OrgViewId,
+  type OrgViewParams,
+  orgViewHref,
+} from "./scope/views.ts"
 import { forgetSignedInUser, SESSION_USER, useSession } from "./session.ts"
 import { RETURN_KEY } from "./stored-data.ts"
 import { ThemeControl } from "./ThemeControl.tsx"
@@ -197,7 +203,7 @@ const SignInPage = () => (
 )
 
 // Each view loads on first visit, so the dashboard does not download drag and drop or charts.
-const ORG_VIEW_PAGES: Record<OrgViewId, ComponentType<{ org: string }>> = {
+const ORG_VIEW_PAGES: Record<OrgViewId, ComponentType<OrgViewParams>> = {
   board: lazy(() => import("./board/BoardPage.tsx").then((m) => ({ default: m.BoardPage }))),
   insights: lazy(() =>
     import("./insights/InsightsPage.tsx").then((m) => ({ default: m.InsightsPage })),
@@ -212,14 +218,17 @@ type NavItem = {
   readonly active: boolean
 }
 
-/** The header's links; an organization view returns to the last organization and its repositories. */
+/**
+ * The header's links; an organization view returns to the last organization, its last board, and
+ * its repositories.
+ */
 const useNav = (): ReadonlyArray<NavItem> => {
   const [path] = useLocation()
   const lastScope = useLastScope()
   return [
     { href: "/", label: "Dashboard", icon: "dashboard", active: path === "/" },
     ...ORG_VIEWS.map((view) => ({
-      href: orgViewHref(view.id, lastScope?.org, lastScope?.repos),
+      href: orgViewHref(view.id, lastScope ?? undefined),
       label: view.label,
       icon: view.icon,
       active: isOrgViewPath(view, path),
@@ -468,14 +477,14 @@ const SignedIn = ({ user }: { user: User }) => {
             <Suspense fallback={<ViewLoading />}>
               <Switch>
                 <Route path="/" component={DashboardView} />
-                {ORG_VIEWS.map(({ id, path }) => {
+                {ORG_VIEWS.map(({ id, path, route }) => {
                   const Page = ORG_VIEW_PAGES[id]
                   return [
                     <Route key={id} path={path}>
                       <OrgPicker view={id} />
                     </Route>,
-                    <Route key={`${id}/:org`} path={`${path}/:org`}>
-                      {({ org }) => <Page key={org} org={org} />}
+                    <Route<OrgViewParams> key={`${id}${route}`} path={`${path}${route}`}>
+                      {({ org, board }) => <Page key={org} org={org} board={board} />}
                     </Route>,
                   ]
                 })}

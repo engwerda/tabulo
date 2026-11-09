@@ -5,6 +5,7 @@ import { Avatar } from "../Avatar.tsx"
 import { fetchEpics, fetchInstance, fetchOrgRepos } from "../api.ts"
 import { Glyph } from "../palette/icons.tsx"
 import { ChooseRepos } from "../scope/ChooseRepos.tsx"
+import { rememberedBoard } from "../scope/remembered.ts"
 import { ScopeBar } from "../scope/ScopeBar.tsx"
 import { useRepoSelection } from "../scope/use-repo-selection.ts"
 import { ErrorNotice } from "../ui/ErrorNotice.tsx"
@@ -422,7 +423,7 @@ export const EpicsPage = ({ org }: { org: string }) => {
                   <EpicCard
                     key={epic.key}
                     org={org}
-                    selected={repoSelection.selected}
+                    board={rememberedBoard(org)}
                     epic={epic}
                     columns={epics.data.columns}
                     sharedLabels={sharedLabels}

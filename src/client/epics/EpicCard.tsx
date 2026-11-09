@@ -146,12 +146,12 @@ const ForgejoMark = ({ className }: { className: string }) => (
 
 const ChildRow = ({
   org,
-  selected,
+  board,
   child,
   columns,
 }: {
   org: string
-  selected: ReadonlyArray<string>
+  board: string
   child: EpicChild
   columns: ReadonlyArray<BoardColumn>
 }) => {
@@ -170,14 +170,14 @@ const ChildRow = ({
     )
   }
   const repo = shortRepo(org, child.repo)
-  const board = boardCardHref(org, selected, child)
+  const cardHref = boardCardHref(org, board, child)
   return (
     // The title's link stretches over the row, so the whole row is one target.
     <li className="group/row relative flex items-start gap-3 px-4 py-2.5 transition hover:bg-zinc-100/60 sm:px-5 dark:hover:bg-zinc-800/40">
       <ChildIcon child={child} />
       <div className="min-w-0 flex-1">
         <IssueLink
-          board={board}
+          board={cardHref}
           url={child.url}
           className="block rounded-sm text-sm font-medium wrap-anywhere text-zinc-900 before:absolute before:inset-0 hover:text-indigo-700 dark:text-zinc-100 dark:hover:text-indigo-300"
         >
@@ -196,7 +196,7 @@ const ChildRow = ({
         </div>
       </div>
       {child.assignees.length > 0 && <AvatarStack people={child.assignees} size="xs" />}
-      {board === null ? (
+      {cardHref === null ? (
         <ForgejoMark className="-my-1" />
       ) : (
         <ForgejoLink url={child.url} name={`${repo}#${child.number}`} className="-my-1" />
@@ -207,7 +207,7 @@ const ChildRow = ({
 
 export const EpicCard = ({
   org,
-  selected,
+  board,
   epic,
   columns,
   sharedLabels,
@@ -215,8 +215,8 @@ export const EpicCard = ({
   onExpandedChange,
 }: {
   org: string
-  /** The page's chosen repositories: issues of these open on their board. */
-  selected: ReadonlyArray<string>
+  /** The organization's last board, whose details panel opens an open issue. */
+  board: string
   epic: Epic
   columns: ReadonlyArray<BoardColumn>
   /** Labels every epic on the page carries, such as the epic label itself: not worth repeating. */
@@ -261,7 +261,7 @@ export const EpicCard = ({
   const filled = segments.filter(({ count }) => count > 0)
   const percent = completion(epic.progress)
   const count = epic.children.length
-  const epicBoard = boardCardHref(org, selected, epic)
+  const epicBoard = boardCardHref(org, board, epic)
   return (
     <article aria-labelledby={headingId} className={`${cardClass} min-w-0 overflow-hidden`}>
       <div className="p-4 sm:p-5">
@@ -402,7 +402,7 @@ export const EpicCard = ({
             {epic.children.map((child) => (
               <ChildRow
                 org={org}
-                selected={selected}
+                board={board}
                 key={child._tag === "Issue" ? child.key : child.ref}
                 child={child}
                 columns={columns}

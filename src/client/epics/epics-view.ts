@@ -1,17 +1,19 @@
 import type { Epic, Epics } from "../../shared/api.ts"
+import { boardHref } from "../scope/views.ts"
 
 /** A repository of the page's organization by its bare name, as the epic and the board name it. */
 export const shortRepo = (org: string, repo: string) =>
   repo.toLowerCase().startsWith(`${org.toLowerCase()}/`) ? repo.slice(org.length + 1) : repo
 
 /**
- * The board address that opens an issue in the board's side panel, when the board of the same
- * repositories shows it: an open issue of a chosen repository. A closed issue may have left the
- * Done column and a pull request is never a card, so those have no board address.
+ * The address that opens an issue in the details panel of `board`, the organization's last board:
+ * an open issue of the organization. A closed issue may have left the Done column and a pull
+ * request is never a card, so those have no board address. Whether the board shows the issue is
+ * not known here; the board says so when it does not.
  */
 export const boardCardHref = (
   org: string,
-  selected: ReadonlyArray<string>,
+  board: string,
   issue: {
     readonly repo: string
     readonly number: number
@@ -20,10 +22,8 @@ export const boardCardHref = (
   },
 ): string | null => {
   const repo = shortRepo(org, issue.repo)
-  if (issue.state !== "open" || issue.kind === "pull") return null
-  if (!selected.some((name) => name.toLowerCase() === repo.toLowerCase())) return null
-  const params = new URLSearchParams({ repos: selected.join(","), card: `${repo}#${issue.number}` })
-  return `/board/${encodeURIComponent(org)}?${params}`
+  if (issue.state !== "open" || issue.kind === "pull" || repo.includes("/")) return null
+  return boardHref(org, board, new URLSearchParams({ card: `${repo}#${issue.number}` }))
 }
 
 export const completion = ({ total, done }: Pick<Epic["progress"], "total" | "done">) =>

@@ -83,7 +83,7 @@ export const PaletteProvider = ({
         default: {
           const view = GO_VIEWS[result.shortcut]
           if (view !== undefined) {
-            current.navigate(orgViewHref(view, current.lastScope?.org, current.lastScope?.repos))
+            current.navigate(orgViewHref(view, current.lastScope ?? undefined))
           }
         }
       }

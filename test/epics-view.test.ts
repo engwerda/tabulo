@@ -93,31 +93,25 @@ describe("boardCardHref", () => {
   const card = (href: string | null) => {
     if (href === null) return null
     const url = new URL(href, "https://tabulo.example")
-    return {
-      path: url.pathname,
-      repos: url.searchParams.get("repos"),
-      card: url.searchParams.get("card"),
-    }
+    return { path: url.pathname, query: [...url.searchParams] }
   }
 
-  it("opens an open issue of a chosen repository in the board's panel", () => {
+  it("opens an open issue of the organization in its last board's panel", () => {
     const open = { repo: "acme/Web", number: 12, state: "open", kind: "issue" } as const
-    expect(card(boardCardHref("Acme", ["api", "web"], open))).toEqual({
-      path: "/board/Acme",
-      repos: "api,web",
-      card: "Web#12",
+    expect(card(boardCardHref("Acme", "k3x9q2m7", open))).toEqual({
+      path: "/board/Acme/k3x9q2m7",
+      query: [["card", "Web#12"]],
     })
-    expect(card(boardCardHref("acme", ["api"], { repo: "api", number: 3, state: "open" }))).toEqual(
-      { path: "/board/acme", repos: "api", card: "api#3" },
-    )
+    expect(
+      card(boardCardHref("acme", "default", { repo: "api", number: 3, state: "open" })),
+    ).toEqual({ path: "/board/acme", query: [["card", "api#3"]] })
   })
 
-  it("has no board address for what the board may not show", () => {
+  it("has no board address for what no board shows", () => {
     const issue = { repo: "acme/web", number: 12, state: "open", kind: "issue" } as const
-    expect(boardCardHref("acme", ["api"], issue)).toBeNull()
-    expect(boardCardHref("acme", ["web"], { ...issue, repo: "other/web" })).toBeNull()
-    expect(boardCardHref("acme", ["web"], { ...issue, state: "closed" })).toBeNull()
-    expect(boardCardHref("acme", ["web"], { ...issue, kind: "pull" })).toBeNull()
+    expect(boardCardHref("acme", "default", { ...issue, repo: "other/web" })).toBeNull()
+    expect(boardCardHref("acme", "default", { ...issue, state: "closed" })).toBeNull()
+    expect(boardCardHref("acme", "default", { ...issue, kind: "pull" })).toBeNull()
   })
 })
 

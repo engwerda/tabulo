@@ -2,10 +2,16 @@ import type { Board, BoardCard } from "../../shared/api.ts"
 import { compareCardOrder, rankForDrop } from "../../shared/card-order.ts"
 
 /**
- * The board's query: the organization and its chosen repositories as `useRepoSelection` joins
- * them. The command palette reads the same entry to open cards in the board's panel.
+ * One board's query, by its id as `boardIdFromPath` gives it. The command palette reads the same
+ * entry to open cards in the board's panel.
  */
-export const boardQueryKey = (org: string, selection: string) => ["board", org, selection] as const
+export const boardQueryKey = (org: string, board: string) => ["board", org, board] as const
+
+/** The organization's list of boards. */
+export const boardsQueryKey = (org: string) => ["boards", org] as const
+
+/** Card writes from one board wait for each other, and the board's reads hold off meanwhile. */
+export const boardWriteKey = (org: string, board: string) => ["board-write", org, board] as const
 
 /** Every card of a column in board order. */
 export const columnCards = (cards: ReadonlyArray<BoardCard>, column: string) =>

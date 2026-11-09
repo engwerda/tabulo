@@ -1,12 +1,22 @@
 import { useSyncExternalStore } from "react"
+import { DEFAULT_BOARD_ID } from "../../shared/api.ts"
 
-/** The organization last opened in an org-level view, with its remembered repositories. */
-export type LastScope = { readonly org: string; readonly repos: ReadonlyArray<string> }
+/**
+ * The organization last opened in an org-level view, with its remembered repositories and the
+ * board last opened in it.
+ */
+export type LastScope = {
+  readonly org: string
+  readonly repos: ReadonlyArray<string>
+  /** A board id; the default board when none was remembered. */
+  readonly board: string
+}
 
 const LAST_ORG_KEY = "tabulo.lastOrg"
 const reposKey = (org: string) => `tabulo.repos.${org.toLowerCase()}`
 // Before the scope was shared between views, only the board remembered a selection.
 const boardReposKey = (org: string) => `tabulo.board.repos.${org.toLowerCase()}`
+const lastBoardKey = (org: string) => `tabulo.board.last.${org.toLowerCase()}`
 
 // Remembering the scope is a convenience: storage can be missing or refuse writes.
 const read = (key: string) => {
@@ -34,16 +44,32 @@ const parseRepos = (selection: string | null) =>
 export const readRememberedRepos = (org: string): string | null =>
   read(reposKey(org)) ?? read(boardReposKey(org))
 
+/** The board last opened in `org`. */
+export const rememberedBoard = (org: string): string => read(lastBoardKey(org)) ?? DEFAULT_BOARD_ID
+
+/** What the browser remembers of `org`, for a link to any of its views. */
+export const rememberedScope = (org: string): LastScope => ({
+  org,
+  repos: parseRepos(readRememberedRepos(org)),
+  board: rememberedBoard(org),
+})
+
 const readLastScope = (): LastScope | null => {
   const org = read(LAST_ORG_KEY)
-  return org ? { org, repos: parseRepos(readRememberedRepos(org)) } : null
+  return org ? rememberedScope(org) : null
 }
 
 let lastScope = readLastScope()
 const listeners = new Set<() => void>()
 
 const publish = (next: LastScope) => {
-  if (lastScope?.org === next.org && lastScope.repos.join(",") === next.repos.join(",")) return
+  if (
+    lastScope?.org === next.org &&
+    lastScope.repos.join(",") === next.repos.join(",") &&
+    lastScope.board === next.board
+  ) {
+    return
+  }
   lastScope = next
   for (const listener of listeners) listener()
 }
@@ -55,14 +81,38 @@ export const rememberScope = (org: string, selection: string) => {
     write(reposKey(org), selection)
     write(boardReposKey(org), null)
   }
-  publish({ org, repos: parseRepos(selection || readRememberedRepos(org)) })
+  publish({
+    org,
+    repos: parseRepos(selection || readRememberedRepos(org)),
+    board: rememberedBoard(org),
+  })
 }
 
 /** Remembers that the user chose no repositories of `org`. */
 export const forgetRepos = (org: string) => {
   write(reposKey(org), "")
   write(boardReposKey(org), null)
-  if (lastScope?.org === org) publish({ org, repos: [] })
+  if (lastScope?.org === org) publish({ ...lastScope, repos: [] })
+}
+
+/** Makes `org` the last organization and `board` the board its links open. */
+export const rememberBoard = (org: string, board: string) => {
+  write(LAST_ORG_KEY, org)
+  write(lastBoardKey(org), board === DEFAULT_BOARD_ID ? null : board)
+  publish({ org, repos: parseRepos(readRememberedRepos(org)), board })
+}
+
+/**
+ * Stops opening `board` from the links of `org`, as after it was deleted. Answers whether it was
+ * the board they opened.
+ */
+export const forgetBoard = (org: string, board: string): boolean => {
+  if (board === DEFAULT_BOARD_ID || rememberedBoard(org) !== board) return false
+  write(lastBoardKey(org), null)
+  if (lastScope?.org.toLowerCase() === org.toLowerCase()) {
+    publish({ ...lastScope, board: DEFAULT_BOARD_ID })
+  }
+  return true
 }
 
 const subscribe = (listener: () => void) => {
