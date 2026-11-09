@@ -96,6 +96,7 @@ export const epicSummary = (epics: ReadonlyArray<Epic>) => {
 }
 
 const LISTING_LABELS = { open: "open issues", closed: "recently closed issues" } as const
+const NAMED_EPICS = 5
 
 /**
  * What Tabulo did not read, as sentences; empty when it read everything. The epics whose linking
@@ -114,9 +115,9 @@ export const incompleteNotice = ({ listings, children, backlinks }: Epics["incom
           .map(({ repo, listing }) => `${LISTING_LABELS[listing]} of ${repo}`)
           .join(", ")}, so some epics may be missing.`
   const unlooked = children === 0 ? "" : partly === "" ? `${limit} ${lookups}` : `It ${lookups}`
-  const others = backlinks.length - 5
+  const others = backlinks.length - NAMED_EPICS
   const named = `${backlinks
-    .slice(0, 5)
+    .slice(0, NAMED_EPICS)
     .map(({ repo, number }) => `${repo}#${number}`)
     .join(", ")}${others > 0 ? ` and ${others} other ${others === 1 ? "epic" : "epics"}` : ""}`
   const unlinked =
@@ -128,7 +129,6 @@ export const incompleteNotice = ({ listings, children, backlinks }: Epics["incom
   return [partly, unlooked, unlinked].filter((sentence) => sentence !== "").join(" ")
 }
 
-/** Whether Tabulo read every issue that links to `epic`, so none of its children is missing. */
 export const backlinksRead = (
   incomplete: Epics["incomplete"],
   epic: Pick<Epic, "repo" | "number">,

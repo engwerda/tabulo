@@ -222,7 +222,6 @@ export const EpicCard = ({
   org: string
   board: LinkedBoard | undefined
   epic: Epic
-  /** Whether Tabulo read every issue that links to the epic, so none of its children is missing. */
   backlinksRead: boolean
   columns: ReadonlyArray<BoardColumn>
   /** Labels every epic on the page carries, such as the epic label itself: not worth repeating. */

@@ -601,9 +601,8 @@ export type IncompleteEpicListing = typeof IncompleteEpicListing.Type
 
 /** An epic whose timeline Tabulo did not read to its end. */
 export const IncompleteEpicBacklinks = Schema.Struct({
-  /** The epic's repository, by its bare name as `Epic.repo` gives it. */
-  repo: Schema.String,
-  number: Schema.Number,
+  repo: Epic.fields.repo,
+  number: Epic.fields.number,
 })
 export type IncompleteEpicBacklinks = typeof IncompleteEpicBacklinks.Type
 

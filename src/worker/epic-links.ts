@@ -12,7 +12,6 @@ const ISSUE_PATH = new RegExp(`^/(${NAME})/(${NAME})/(?:issues|pulls)/([1-9][0-9
 const CHECKBOX = /^\[[ xX]\][\t ]+/
 const firstWord = (text: string) => /^\S*/.exec(text.trimStart())?.[0] ?? ""
 
-/** A unit of inline text, as the parsers read references from it. */
 type Token =
   | { readonly _tag: "Word"; readonly text: string }
   | { readonly _tag: "Link"; readonly label: string; readonly destination: string }
@@ -100,17 +99,12 @@ const referenceOf = (
   return { owner, name, number, ref: `${owner}/${name}#${number}` }
 }
 
-/** Reads references as an issue of `repository` writes them. */
 const referenceReader = (repository: RepoRef, forgejoUrl: string) => {
   const base = new URL(forgejoUrl)
   const prefix = base.pathname.replace(/\/$/, "")
   return (token: string) => referenceOf(token, repository, base, prefix)
 }
 
-/**
- * The issue a token names: a word by itself, a link by the first word of its text and then by
- * its absolute http(s) destination.
- */
 const tokenReference = (
   token: Token | undefined,
   named: (token: string) => EpicReference | undefined,
@@ -154,12 +148,10 @@ export const parseEpicChildren = (
 const word = (token: Token | undefined) =>
   token?._tag === "Word" ? token.text.toLowerCase() : undefined
 
-/** Whether a heading's tokens read `Parent` or `Epic`, with an optional colon. */
 const isParentHeading = (tokens: ReadonlyArray<Token>) =>
   tokens.every((token) => token._tag === "Word") &&
   ["parent", "epic"].includes(tokens.map(word).join(" ").replace(/:$/, ""))
 
-/** The first token of a paragraph, or of the paragraph a list's first item opens with. */
 const openingToken = (block: Node | null) => {
   const paragraph = block?.type === "list" ? block.firstChild?.firstChild : block
   return paragraph?.type === "paragraph" ? inlineTokens(paragraph)[0] : undefined

@@ -341,7 +341,6 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     return json({ error: "unsupported_grant_type" }, { status: 400 })
   }
 
-  /** The items of the page that `query` asks for, with Forgejo's paging parameters and limit cap. */
   const pageOf = <A>(items: ReadonlyArray<A>, query: URLSearchParams) => {
     const limit = Math.min(Number(query.get("limit") ?? 30) || 30, fixtures.maxPageSize)
     const page = Math.max(Number(query.get("page") ?? 1) || 1, 1)

@@ -34,7 +34,6 @@ export class EpicsConfig extends Context.Service<EpicsConfig, { readonly label: 
 ) {}
 
 const MAX_CHILD_LOOKUPS = 200
-/** Epic timelines and child lookups each read at most this many at once. */
 const READ_CONCURRENCY = 4
 
 type RepoEpics =
@@ -46,7 +45,6 @@ type RepoEpics =
     }
   | { readonly _tag: "Failed"; readonly repo: string; readonly message: string }
 
-/** A referring issue as an epic reference, keyed as `cardKey` keys it. */
 const issueReference = (issue: ForgejoReferringIssue): EpicReference => {
   const owner = issue.repository.owner.toLowerCase()
   const name = issue.repository.name.toLowerCase()
