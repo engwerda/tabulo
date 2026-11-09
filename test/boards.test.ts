@@ -948,7 +948,7 @@ describe("repositories a member cannot read", () => {
     ])
   })
 
-  it("stay unnamed when their own read and the organization's listing both fail", async () => {
+  it("fail the board read unnamed when their own read and the organization's listing both fail", async () => {
     let failing = false
     const { get, post } = await session({
       intercept: (method, path) =>
@@ -964,11 +964,10 @@ describe("repositories a member cannot read", () => {
     const response = await get("/api/board?org=acme")
     const text = await response.text()
 
-    expect(response.status).toBe(200)
+    expect(response.status).toBe(502)
     expect(text).not.toMatch(/secret|Acquisition/i)
-    expect(JSON.parse(text)).toMatchObject({
-      board: { repos: ["api", "Web"], unreadableRepos: 1 },
-      failedRepos: [],
+    expect(JSON.parse(text)).toEqual({
+      error: "Forgejo had a problem (HTTP 503); try again in a moment",
     })
   })
 

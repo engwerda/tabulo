@@ -38,7 +38,6 @@ import {
   BoardRequestInvalid,
   BoardWriteForbidden,
   describeForgejoError,
-  FORGEJO_READ_ERRORS,
   type ForgejoError,
   ForgejoForbidden,
   ForgejoMovePartlyApplied,
@@ -449,12 +448,13 @@ export const loadBoard = (
       concurrency: REPO_CONCURRENCY,
     })
     // The organization's listing shows only repositories the user can read. One listing serves
-    // every unknown repository, and one that fails leaves them all unnamed.
-    const visible = repoReads.some((read) => read._tag === "AccessUnknown")
-      ? yield* (unchanged ? Effect.succeed(orgRepos) : forgejo.orgRepos(token, query.org)).pipe(
-          Effect.catchTag(FORGEJO_READ_ERRORS, () => Effect.succeed([])),
-        )
-      : []
+    // every unknown repository. When it fails, the read fails: counting them unreadable would let
+    // a save drop a repository the user can read.
+    const visible = unchanged
+      ? orgRepos
+      : repoReads.some((read) => read._tag === "AccessUnknown")
+        ? yield* forgejo.orgRepos(token, query.org)
+        : []
     const results = repoReads.map((read): RepoCards => {
       if (read._tag !== "AccessUnknown") return read
       const shown = visible.find((repo) => repo.name.toLowerCase() === read.name)

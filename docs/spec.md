@@ -204,7 +204,8 @@ board's repositories the repository, its open issues, and the issues closed sinc
 the Done window. A repository the user cannot read is left out, unnamed. Another repository
 that fails to load is listed in `failedRepos` with a message, and the other repositories still
 show. When the repository's own read fails, the user can read it only if the organization's
-repository listing shows it. The columns depend on every label, so when the labels need more
+repository listing shows it. If that listing fails too, the board answers with the listing's
+error instead of guessing. The columns depend on every label, so when the labels need more
 than 100 pages, the board and `POST /api/board/move` answer HTTP 503 with
 `{ error: "Too many Forgejo pages for one request; choose fewer repositories" }` instead of
 using part of them. Before it answers, it stores ranks in one D1 batch:
