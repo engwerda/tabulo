@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from "react"
+import { type KeyboardEvent, type Ref, useEffect, useRef, useState } from "react"
 import type { OrgRepo } from "../../shared/api.ts"
 import { ArchiveIcon, LockIcon, RepoIcon } from "../ui/icons.tsx"
 import { buttonClass, Popover } from "../ui/primitives.tsx"
@@ -57,7 +57,26 @@ const RepoDot = ({ repo, chosen }: { repo: string; chosen: boolean }) => {
   )
 }
 
-export const RepoPicker = ({ repos, selected, onChange, open, onOpenChange }: RepoPickerProps) => {
+type RepoChecklistProps = {
+  readonly repos: ReadonlyArray<OrgRepo>
+  readonly selected: ReadonlyArray<string>
+  readonly onChange: (selected: ReadonlyArray<string>) => void
+  /** What the boxes choose, for assistive technology. */
+  readonly legend: string
+  readonly searchRef?: Ref<HTMLInputElement>
+}
+
+/**
+ * The organization's repositories as checkboxes, with a search and a box that chooses every match.
+ * Up and down arrows move between the boxes, as in the app's menus.
+ */
+export const RepoChecklist = ({
+  repos,
+  selected,
+  onChange,
+  legend,
+  searchRef,
+}: RepoChecklistProps) => {
   const [search, setSearch] = useState("")
   const selectAll = useRef<HTMLInputElement>(null)
 
@@ -82,6 +101,75 @@ export const RepoPicker = ({ repos, selected, onChange, open, onOpenChange }: Re
     }
   })
 
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: the handler only moves focus between the checkboxes inside
+    <div onKeyDown={moveCheckboxFocus}>
+      <SearchField
+        label="Search repositories"
+        value={search}
+        onChange={setSearch}
+        inputRef={searchRef ?? null}
+        inMenu
+      />
+      {visible.length > 0 && (
+        <div className="mt-1.5 mb-1 border-b border-zinc-100 pb-1 dark:border-zinc-800">
+          <label className={`${rowClass} h-9 font-medium pointer-coarse:h-11`}>
+            <input
+              ref={selectAll}
+              type="checkbox"
+              checked={allVisibleChosen}
+              onChange={toggleVisible}
+              className={checkboxClass}
+            />
+            {search === "" ? "Select all" : "Select all matches"}
+            <span className="ml-auto text-xs font-normal text-zinc-500 tabular-nums dark:text-zinc-400">
+              {visibleChosen} of {visible.length}
+            </span>
+          </label>
+        </div>
+      )}
+      <fieldset className="scroll-thin max-h-72 overflow-y-auto">
+        <legend className="sr-only">{legend}</legend>
+        {visible.length === 0 ? (
+          <p className="px-2 py-2 text-sm text-zinc-500 dark:text-zinc-400">
+            No repository matches “{search.trim()}”.
+          </p>
+        ) : (
+          visible.map((repo) => (
+            <label key={repo.name} className={`${rowClass} h-8 pointer-coarse:h-11`}>
+              <input
+                type="checkbox"
+                checked={chosen.has(repo.name)}
+                onChange={() => toggle(repo.name)}
+                className={checkboxClass}
+              />
+              <RepoDot repo={repo.name} chosen={chosen.has(repo.name)} />
+              <span
+                className={`truncate ${repo.archived ? "text-zinc-500 dark:text-zinc-400" : "text-zinc-800 dark:text-zinc-200"}`}
+              >
+                {repo.name}
+              </span>
+              {repo.private && (
+                <span title="Private" className="text-zinc-500 dark:text-zinc-400">
+                  <LockIcon className="size-3.5" />
+                  <span className="sr-only">private</span>
+                </span>
+              )}
+              {repo.archived && (
+                <span className="ml-auto inline-flex items-center gap-1 rounded-md border border-zinc-200 px-1.5 text-2xs font-medium text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
+                  <ArchiveIcon className="size-3" />
+                  Archived
+                </span>
+              )}
+            </label>
+          ))
+        )}
+      </fieldset>
+    </div>
+  )
+}
+
+export const RepoPicker = ({ repos, selected, onChange, open, onOpenChange }: RepoPickerProps) => {
   const summary =
     selected.length === 0
       ? "Choose repositories"
@@ -92,10 +180,7 @@ export const RepoPicker = ({ repos, selected, onChange, open, onOpenChange }: Re
   return (
     <Popover
       open={open}
-      onOpenChange={(next) => {
-        onOpenChange(next)
-        if (!next) setSearch("")
-      }}
+      onOpenChange={onOpenChange}
       triggerClass={`${buttonClass.secondary} min-w-0 max-w-60 shrink-0`}
       // Starts with what the button shows, so a voice command naming the visible text finds it.
       accessibleLabel={`${summary}: ${selected.length} of ${repos.length} chosen`}
@@ -112,64 +197,12 @@ export const RepoPicker = ({ repos, selected, onChange, open, onOpenChange }: Re
       panelClass="w-80 p-1.5"
     >
       {() => (
-        // biome-ignore lint/a11y/noStaticElementInteractions: the handler only moves focus between the checkboxes inside
-        <div onKeyDown={moveCheckboxFocus}>
-          <SearchField label="Search repositories" value={search} onChange={setSearch} inMenu />
-          {visible.length > 0 && (
-            <div className="mt-1.5 mb-1 border-b border-zinc-100 pb-1 dark:border-zinc-800">
-              <label className={`${rowClass} h-9 font-medium pointer-coarse:h-11`}>
-                <input
-                  ref={selectAll}
-                  type="checkbox"
-                  checked={allVisibleChosen}
-                  onChange={toggleVisible}
-                  className={checkboxClass}
-                />
-                {search === "" ? "Select all" : "Select all matches"}
-                <span className="ml-auto text-xs font-normal text-zinc-500 tabular-nums dark:text-zinc-400">
-                  {visibleChosen} of {visible.length}
-                </span>
-              </label>
-            </div>
-          )}
-          <fieldset className="scroll-thin max-h-72 overflow-y-auto">
-            <legend className="sr-only">Repositories on the board</legend>
-            {visible.length === 0 ? (
-              <p className="px-2 py-2 text-sm text-zinc-500 dark:text-zinc-400">
-                No repository matches “{search.trim()}”.
-              </p>
-            ) : (
-              visible.map((repo) => (
-                <label key={repo.name} className={`${rowClass} h-8 pointer-coarse:h-11`}>
-                  <input
-                    type="checkbox"
-                    checked={chosen.has(repo.name)}
-                    onChange={() => toggle(repo.name)}
-                    className={checkboxClass}
-                  />
-                  <RepoDot repo={repo.name} chosen={chosen.has(repo.name)} />
-                  <span
-                    className={`truncate ${repo.archived ? "text-zinc-500 dark:text-zinc-400" : "text-zinc-800 dark:text-zinc-200"}`}
-                  >
-                    {repo.name}
-                  </span>
-                  {repo.private && (
-                    <span title="Private" className="text-zinc-500 dark:text-zinc-400">
-                      <LockIcon className="size-3.5" />
-                      <span className="sr-only">private</span>
-                    </span>
-                  )}
-                  {repo.archived && (
-                    <span className="ml-auto inline-flex items-center gap-1 rounded-md border border-zinc-200 px-1.5 text-2xs font-medium text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
-                      <ArchiveIcon className="size-3" />
-                      Archived
-                    </span>
-                  )}
-                </label>
-              ))
-            )}
-          </fieldset>
-        </div>
+        <RepoChecklist
+          repos={repos}
+          selected={selected}
+          onChange={onChange}
+          legend="Chosen repositories"
+        />
       )}
     </Popover>
   )
