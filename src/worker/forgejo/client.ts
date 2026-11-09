@@ -25,8 +25,10 @@ import {
   ForgejoNotification,
   ForgejoOrg,
   ForgejoPerson,
+  type ForgejoReferringIssue,
   ForgejoRepo,
   ForgejoRepoIssue,
+  ForgejoTimelineEvent,
   ForgejoUser,
   OAuthErrorResponse,
   TokenResponse,
@@ -164,6 +166,18 @@ export class ForgejoClient extends Context.Service<
       repo: RepoRef,
       number: number,
     ) => Effect.Effect<ForgejoRepoIssue, ForgejoError>
+    /**
+     * The issues whose description references the issue, oldest reference first, each as it is
+     * now, as far as `budget` reaches. Read from the issue's timeline: pull requests, comments,
+     * and commits that reference it are left out, and Forgejo leaves out issues the user cannot
+     * read.
+     */
+    readonly referencingIssues: (
+      token: AccessToken,
+      repo: RepoRef,
+      number: number,
+      budget: PageBudget,
+    ) => Effect.Effect<Listing<ForgejoReferringIssue>, ForgejoError>
     /** The issue's description as Markdown, empty when it has none. */
     readonly issueBody: (
       token: AccessToken,
@@ -337,6 +351,14 @@ const knownTotal = <A>(page: {
 const PAGE_SIZE = 50
 const MAX_PAGES = 100
 
+/**
+ * How a listing shows its end. "total": its X-Total-Count, or without one a short page.
+ * "empty": only an empty page. Forgejo's issue timeline cuts a page and then drops references
+ * the user cannot read, and its X-Total-Count counts what is left, so neither a short page nor
+ * the header says anything about later pages.
+ */
+type ListingEnd = "total" | "empty"
+
 export const OAUTH_SCOPES = [
   "read:user",
   "read:organization",
@@ -408,8 +430,8 @@ export const makeForgejoClient = (
     )
 
   /**
-   * Reads pages from the first until the listing ends, `isLast` holds for a page, or the budget
-   * runs out.
+   * Reads pages from the first until the listing ends as `end` shows it, `isLast` holds for a
+   * page, or the budget runs out.
    */
   const paginate = <A>(
     budget: PageBudget,
@@ -420,6 +442,7 @@ export const makeForgejoClient = (
       ForgejoError
     >,
     isLast: (batch: ReadonlyArray<A>) => boolean = () => false,
+    end: ListingEnd = "total",
   ) =>
     Effect.gen(function* () {
       const items: Array<A> = []
@@ -434,7 +457,8 @@ export const makeForgejoClient = (
         if (
           batch.length === 0 ||
           isLast(batch) ||
-          (total === undefined ? batch.length < fullPage : items.length >= total)
+          (end === "total" &&
+            (total === undefined ? batch.length < fullPage : items.length >= total))
         ) {
           return { items, complete: true } as Listing<A>
         }
@@ -600,6 +624,27 @@ export const makeForgejoClient = (
     issue: (token, repo, number) =>
       api(token, `${repoPath(repo)}/issues/${number}`, {}, ForgejoRepoIssue).pipe(
         Effect.map(({ body }) => body),
+      ),
+    referencingIssues: (token, repo, number, budget) =>
+      paginate(
+        budget,
+        (pageNumber) =>
+          api(
+            token,
+            `${repoPath(repo)}/issues/${number}/timeline`,
+            { limit: String(PAGE_SIZE), page: String(pageNumber) },
+            // Forgejo sends a timeline page with no events as null, not [].
+            Schema.NullOr(Schema.Array(ForgejoTimelineEvent)),
+          ).pipe(Effect.map(({ body }) => ({ items: body ?? [], total: undefined }))),
+        undefined,
+        "empty",
+      ).pipe(
+        Effect.map(({ items, complete }) => ({
+          items: items.flatMap((event) =>
+            event.type === "issue_ref" && event.ref_issue != null ? [event.ref_issue] : [],
+          ),
+          complete,
+        })),
       ),
     issueBody: (token, repo, number) =>
       api(token, `${repoPath(repo)}/issues/${number}`, {}, ForgejoIssueBody).pipe(

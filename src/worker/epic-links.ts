@@ -3,7 +3,7 @@ import type { RepoRef } from "./forgejo/client.ts"
 
 export type EpicReference = RepoRef & { readonly number: number; readonly ref: string }
 
-const MAX_CHILDREN = 200
+export const MAX_CHILDREN = 200
 const NAME = "[A-Za-z0-9_.-]+"
 const SHORT_REF = new RegExp(`^(?:(?:(${NAME})/)?(${NAME}))?#([1-9][0-9]*)(?![A-Za-z0-9])`)
 const ISSUE_PATH = new RegExp(`^/(${NAME})/(${NAME})/(?:issues|pulls)/([1-9][0-9]*)/?$`)

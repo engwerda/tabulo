@@ -3,7 +3,12 @@ import { Schema } from "effect"
 import { beforeEach, describe, expect, it } from "vitest"
 import { Epics } from "../src/shared/api.ts"
 import { createFakeClock } from "./fake-clock.ts"
-import { createFakeForgejo, type FakeForgejoFixtures } from "./fake-forgejo.ts"
+import {
+  createFakeForgejo,
+  type FakeForgejoFixtures,
+  type FakeIssue,
+  type FakeTimelineEvent,
+} from "./fake-forgejo.ts"
 import {
   acme,
   boardIssue,
@@ -12,6 +17,7 @@ import {
   grace,
   inProgress,
   label,
+  referencedBy,
   repoLabel,
   review,
 } from "./fixtures.ts"
@@ -90,8 +96,9 @@ const fixtures = (): Partial<FakeForgejoFixtures> => ({
     path.includes("/forbidden/") ? new Response(null, { status: 403 }) : undefined,
 })
 
-// Requests that take a page from the budget: organization labels, listings, and child lookups.
-const PAGE_READ = /\/labels$|\/issues(\/\d+)?$/
+// Requests that take a page from the budget: organization labels, listings, epic timelines, and
+// child lookups.
+const PAGE_READ = /\/labels$|\/issues(\/\d+)?$|\/timeline$/
 
 const TOO_MANY_PAGES = {
   error: "Too many Forgejo pages for one request; choose fewer repositories",
@@ -417,7 +424,8 @@ describe("GET /api/epics", () => {
   it.each([
     // 600 of the 800 pages go to listings before Forgejo rejects the token.
     { read: "listing", closed: 60, rejects: /^\/api\/v1\/repos\/acme\/r\d+\/issues$/, at: 600 },
-    // Labels and listings take 624 pages, leaving 176 child lookups; the 150th is rejected.
+    // Labels and listings take 623 pages, leaving one for the timeline and 176 child lookups;
+    // the 150th lookup is rejected.
     { read: "child lookup", closed: 0, rejects: /\/external\/issues\//, at: 150 },
   ])("keeps one page budget when a late $read 401 refreshes the token", async (scenario) => {
     const { names, org } = crowdedOrg(60, scenario.closed)
@@ -526,6 +534,219 @@ describe("GET /api/epics", () => {
     const call = tabulo(
       async (request) => {
         if (!request.url.includes("/external/issues/")) return forgejo.fetch(request)
+        active++
+        peak = Math.max(peak, active)
+        if (active === 4) release()
+        await gate
+        const response = await forgejo.fetch(request)
+        active--
+        return response
+      },
+      { clock: createFakeClock().clock },
+    )
+    const cookie = await signIn(call, forgejo)
+    expect((await call("/api/epics?org=acme&repos=api", { headers: { cookie } })).status).toBe(200)
+    expect(peak).toBe(4)
+  })
+})
+
+const LABELLED: FakeTimelineEvent = { type: "label" }
+
+/** An organization whose api repository holds `issues`, beside more repositories. */
+const linkedOrg = (issues: Array<FakeIssue>, ...repos: Array<ReturnType<typeof boardRepo>>) =>
+  acme([boardRepo("api", { issues }), ...repos])
+
+const loadEpicsOf = async (
+  overrides: Partial<FakeForgejoFixtures>,
+  repos = "api",
+): Promise<{ data: typeof Epics.Type; forgejo: ReturnType<typeof createFakeForgejo> }> => {
+  const forgejo = createFakeForgejo(overrides)
+  const call = tabulo(forgejo.fetch, { clock: createFakeClock().clock })
+  const cookie = await signIn(call, forgejo)
+  const response = await call(`/api/epics?org=acme&repos=${repos}`, { headers: { cookie } })
+  expect(response.status, "the epics request succeeds").toBe(200)
+  return { data: Schema.decodeUnknownSync(Epics)(await response.json()), forgejo }
+}
+
+const childKeys = (epic: (typeof Epics.Type)["epics"][number] | undefined) =>
+  epic?.children.map((child) => (child._tag === "Issue" ? child.key : child.ref))
+
+const timelineReads = (forgejo: ReturnType<typeof createFakeForgejo>, epic: string) =>
+  forgejo.requests.filter(({ path }) => path === `/api/v1/repos/acme/${epic}/timeline`)
+
+describe("GET /api/epics, children that name their epic", () => {
+  it("finds them through the epic's timeline, judged by each one's current description", async () => {
+    const inProgressChild = boardIssue("api", 20, {
+      body: "Part of #1",
+      labels: [inProgress],
+      created_at: "2026-04-01T00:00:00Z",
+    })
+    const closedLongAgo = boardIssue("api", 21, {
+      body: "## Parent\n\n#1",
+      state: "closed",
+      created_at: "2026-04-02T00:00:00Z",
+      closed_at: "2026-05-01T00:00:00Z",
+      updated_at: "2026-05-01T00:00:00Z",
+    })
+    const unchosenRepo = boardIssue("web", 22, {
+      body: "Part of api#1",
+      created_at: "2026-04-03T00:00:00Z",
+    })
+    const editedAway = boardIssue("api", 23, {
+      body: "Related to #1",
+      created_at: "2026-03-01T00:00:00Z",
+    })
+    const pull = boardIssue("api", 24, {
+      body: "Part of #1",
+      created_at: "2026-03-01T00:00:00Z",
+      pull_request: { merged: false, draft: false, html_url: "" },
+    })
+    const epic = boardIssue("api", 1, {
+      labels: [epicLabel],
+      timeline: referencedBy(unchosenRepo, editedAway, pull, closedLongAgo, inProgressChild),
+    })
+
+    const { data, forgejo } = await loadEpicsOf({
+      orgs: [
+        linkedOrg(
+          [epic, inProgressChild, closedLongAgo, editedAway, pull],
+          boardRepo("web", { issues: [unchosenRepo] }),
+        ),
+      ],
+    })
+
+    expect(data.epics[0]?.children).toEqual([
+      expect.objectContaining({ key: "acme/api#20", column: inProgress.name, kind: "issue" }),
+      expect.objectContaining({ key: "acme/api#21", column: "done", state: "closed" }),
+      expect.objectContaining({ key: "acme/web#22", repo: "acme/web", column: "todo" }),
+    ])
+    expect(data.epics[0]?.progress).toMatchObject({ total: 3, done: 1 })
+    expect(
+      forgejo.requests.filter(({ path }) => /\/issues\/2\d$/.test(path)),
+      "linked children come with the timeline, so none is looked up",
+    ).toHaveLength(0)
+  })
+
+  it("lists body children first, then linked children oldest first with the key breaking ties", async () => {
+    const naming = (number: number, created: string) =>
+      boardIssue("api", number, { body: "Part of #1", created_at: created })
+    const both = naming(31, "2026-10-05T00:00:00Z")
+    const second = naming(33, "2026-10-03T00:00:00Z")
+    const first = naming(32, "2026-10-02T00:00:00Z")
+    const tieLater = naming(35, "2026-10-04T00:00:00Z")
+    const tieEarlier = naming(34, "2026-10-04T00:00:00Z")
+    const epic = boardIssue("api", 1, {
+      labels: [epicLabel],
+      body: "- #30\n- #31",
+      timeline: referencedBy(both, second, tieLater, first, tieEarlier, both),
+    })
+
+    const { data } = await loadEpicsOf({
+      orgs: [linkedOrg([epic, boardIssue("api", 30), both, second, first, tieLater, tieEarlier])],
+    })
+
+    expect(childKeys(data.epics[0])).toEqual([
+      "acme/api#30",
+      "acme/api#31",
+      "acme/api#32",
+      "acme/api#33",
+      "acme/api#34",
+      "acme/api#35",
+    ])
+  })
+
+  it("reads past a timeline page that Forgejo shortened by dropping an unreadable reference", async () => {
+    const hidden = boardIssue("secret", 9, { body: "Part of api#1" })
+    const late = boardIssue("api", 50, { body: "Part of #1" })
+    const epic = boardIssue("api", 1, {
+      labels: [epicLabel],
+      timeline: [LABELLED, LABELLED, LABELLED, ...referencedBy(hidden, late)],
+    })
+
+    const { data, forgejo } = await loadEpicsOf({
+      orgs: [
+        linkedOrg([epic, late], boardRepo("secret", { hiddenFrom: ["ada"], issues: [hidden] })),
+      ],
+      maxPageSize: 2,
+    })
+
+    expect(childKeys(data.epics[0])).toEqual(["acme/api#50"])
+    expect(
+      timelineReads(forgejo, "api/issues/1"),
+      "pages 1 to 3, where page 2 is short, and the empty page 4",
+    ).toHaveLength(4)
+  })
+
+  it("reads a timeline whose X-Total-Count is the length of each page", async () => {
+    const child = boardIssue("api", 60, { body: "Part of #1" })
+    const epic = boardIssue("api", 1, {
+      labels: [epicLabel],
+      timeline: [
+        ...Array.from({ length: 59 }, () => LABELLED),
+        ...referencedBy(child),
+        ...Array.from({ length: 13 }, () => LABELLED),
+      ],
+    })
+
+    const { data, forgejo } = await loadEpicsOf({ orgs: [linkedOrg([epic, child])] })
+
+    expect(childKeys(data.epics[0])).toEqual(["acme/api#60"])
+    expect(
+      timelineReads(forgejo, "api/issues/1"),
+      "50 and 23 events, then the empty page",
+    ).toHaveLength(3)
+  })
+
+  it("resolves a listed child from another epic's timeline without looking it up", async () => {
+    const external = boardIssue("other", 5, { body: "Uses api#2 for its data." })
+    const lister = boardIssue("api", 1, { labels: [epicLabel], body: "- [ ] other#5" })
+    const referenced = boardIssue("api", 2, {
+      labels: [epicLabel],
+      timeline: referencedBy(external),
+    })
+
+    const { data, forgejo } = await loadEpicsOf({
+      orgs: [linkedOrg([lister, referenced], boardRepo("other", { issues: [external] }))],
+    })
+
+    expect(data.epics.find(({ number }) => number === 1)?.children).toEqual([
+      expect.objectContaining({ _tag: "Issue", key: "acme/other#5", repo: "acme/other" }),
+    ])
+    expect(childKeys(data.epics.find(({ number }) => number === 2))).toEqual([])
+    expect(forgejo.requests.filter(({ path }) => path.endsWith("/other/issues/5"))).toHaveLength(0)
+  })
+
+  it("reads epic timelines before child lookups within the page budget", async () => {
+    const { names, org } = crowdedOrg(60, 0)
+
+    const { data, forgejo } = await loadEpicsOf({ orgs: [org], maxPageSize: 2 }, names.join(","))
+
+    // Labels take 3 pages, and each of 20 repositories 30 open pages and one empty closed page.
+    // That leaves 177 of 800: one for r0#1's empty timeline, then 176 lookups.
+    expect(timelineReads(forgejo, "r0/issues/1")).toHaveLength(1)
+    expect(forgejo.requests.filter(({ path }) => path.includes("/external/issues/"))).toHaveLength(
+      176,
+    )
+    expect(data.incomplete.children).toBe(24)
+  })
+
+  it("bounds concurrent timeline reads to four", async () => {
+    const forgejo = createFakeForgejo({
+      orgs: [
+        linkedOrg(
+          Array.from({ length: 6 }, (_, i) => boardIssue("api", i + 1, { labels: [epicLabel] })),
+        ),
+      ],
+    })
+    let active = 0
+    let peak = 0
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const call = tabulo(
+      async (request) => {
+        if (!request.url.includes("/timeline")) return forgejo.fetch(request)
         active++
         peak = Math.max(peak, active)
         if (active === 4) release()

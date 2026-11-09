@@ -99,6 +99,28 @@ export const ForgejoEpicIssue = Schema.Struct({
   body: Schema.NullOr(Schema.String),
 })
 export type ForgejoEpicIssue = typeof ForgejoEpicIssue.Type
+
+/**
+ * An issue as a timeline's reference event carries it, loaded when the timeline is read, so its
+ * description, state, and labels are current. `repository` resolves the references in its
+ * description.
+ */
+export const ForgejoReferringIssue = Schema.Struct({
+  ...ForgejoEpicIssue.fields,
+  repository: Schema.Struct({
+    owner: Schema.String,
+    name: Schema.String,
+    full_name: Schema.String,
+  }),
+})
+export type ForgejoReferringIssue = typeof ForgejoReferringIssue.Type
+
+/** One event of an issue's timeline. Only reference events carry `ref_issue`. */
+export const ForgejoTimelineEvent = Schema.Struct({
+  type: Schema.String,
+  ref_issue: Schema.optionalKey(Schema.NullOr(ForgejoReferringIssue)),
+})
+
 /** The description of an issue, which only a card's detail reads. */
 export const ForgejoIssueBody = Schema.Struct({ body: Schema.String })
 
