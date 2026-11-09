@@ -20,8 +20,7 @@ export type BoardUpdate = {
 export const useBoardReads = (org: string) => {
   const queryClient = useQueryClient()
   return {
-    holdReads: () =>
-      queryClient.cancelQueries({ queryKey: everyBoardQueryKey(org) }, { revert: false }),
+    holdReads: () => queryClient.cancelQueries({ queryKey: everyBoardQueryKey(org) }),
     refetchAfterWrites: () => {
       if (queryClient.isMutating({ mutationKey: boardWriteKey(org) }) > 1) return
       // Not returned: React Query would keep the write pending, and a moved card "Saving", until
