@@ -115,11 +115,10 @@ showing its issue when a refresh no longer lists it.
 The preview reads the description, comments, and referencing pull requests through
 `GET /api/board/issue` and `GET /api/board/issue-pulls`, with `org` set to the repository's
 owner; both serve any repository the user can read. It shows the item's labels, author, and
-update time, and comments on an issue through `POST /api/board/comment`. It does not change
-assignees, labels, or the milestone. A pull request shows its description and conversation
-comments, but not the pull requests that reference it, and links to Forgejo for its files,
-review comments, checks, and new comments, because the comment route takes issues only. Tabulo
-reads no branch, review state, or checks.
+update time, and comments through `POST /api/board/comment`. It does not change assignees,
+labels, or the milestone. A pull request shows its description and conversation comments, but
+not the pull requests that reference it, and links to Forgejo for its files, review comments,
+and checks. Tabulo reads no branch, review state, or checks.
 
 Opening a preview marks nothing read. When the notifications section lists an unread
 notification about the issue, the preview offers **Mark read**, which marks it read in Forgejo
@@ -324,7 +323,8 @@ characters. The server:
 
 The card edits `POST /api/board/assignees`, `labels`, `milestone`, and `comment` take
 `{ org, repo, number }` and their own fields. Each answers 400 to an invalid name, number, or
-field and to a pull request, and 403 if the repository is archived, before it writes. A
+field and, except `comment`, to a pull request, and 403 if the repository is archived, before
+it writes. A
 Forgejo refusal answers with its status. An edit that finds the issue already as asked writes
 nothing. Forgejo ignores some writes without an error when the user may not make them; when
 the issue is still not as asked after the write, Tabulo answers 403. The answered card is as

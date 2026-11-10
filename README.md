@@ -201,9 +201,9 @@ Changing `SESSION_ENCRYPTION_KEY` signs everyone out, because existing tokens no
 **Dashboard** in the header lists your review requests, the open issues and pull requests
 assigned to you, your mentions, the items you created, and your unread notifications. Click an
 item, or a notification about an issue or pull request, to preview it in a panel over the
-dashboard: its description, the latest 20 comments, and its labels, author, and last update. You can comment on
-an issue there; for a pull request, a link opens Forgejo for its files, reviews, checks, and new
-comments. The address names the preview, so you can share it, and Back closes it. Press `O` to
+dashboard: its description, the latest 20 comments, and its labels, author, and last update.
+You can comment there. For a pull request, a link opens Forgejo for its files, reviews, and
+checks. The address names the preview, so you can share it, and Back closes it. Press `O` to
 open the item in Forgejo and `Esc` to close the preview. Cmd-click or Ctrl-click, or a middle
 click, opens Forgejo in a new tab instead.
 

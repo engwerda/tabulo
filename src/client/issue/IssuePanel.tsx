@@ -421,7 +421,7 @@ type IssuePanelProps = {
    * "over": modal at every width, with its backdrop always shown.
    */
   readonly placement: "beside" | "over"
-  /** Whether the viewer may comment on an issue; a pull request's comment link goes to Forgejo. */
+  /** Whether the panel offers a comment box. */
   readonly canComment: boolean
   /** Controls before the copy, open, and close buttons, such as the board's previous and next. */
   readonly headerControls?: ReactNode
@@ -710,7 +710,7 @@ export const IssuePanel = ({
                       No comments yet.
                     </p>
                   )}
-                  {canComment && issue.kind === "issue" && (
+                  {canComment && (
                     <div className="mt-4">
                       <CommentBox
                         key={issue.key}
@@ -719,18 +719,6 @@ export const IssuePanel = ({
                         onSubmit={(body) => comment.mutateAsync(body)}
                       />
                     </div>
-                  )}
-                  {/* Tabulo comments on issues only; a pull request's go to Forgejo. */}
-                  {canComment && issue.kind === "pull" && (
-                    <a
-                      href={issue.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className={`mt-4 ${forgejoLink}`}
-                    >
-                      Comment in Forgejo
-                      <ExternalIcon className="size-3.5" />
-                    </a>
                   )}
                 </section>
               </>

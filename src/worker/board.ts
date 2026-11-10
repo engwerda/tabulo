@@ -798,6 +798,15 @@ type IssueRequest = { readonly org: string; readonly repo: string; readonly numb
  * Reads the repository and issue a card edit names. Refuses a pull request and an issue of an
  * archived repository before anything is written.
  */
+const refuseArchived = (repo: ForgejoRepo) =>
+  repo.archived
+    ? Effect.fail(
+        new BoardWriteForbidden({
+          message: `${repo.full_name} is archived, so its issues cannot be changed`,
+        }),
+      )
+    : Effect.void
+
 const editableIssue = (token: AccessToken, repoRef: RepoRef, number: number) =>
   Effect.gen(function* () {
     const forgejo = yield* ForgejoClient
@@ -808,11 +817,7 @@ const editableIssue = (token: AccessToken, repoRef: RepoRef, number: number) =>
     if (issue.pull_request != null) {
       return yield* new BoardRequestInvalid({ message: "Pull requests are not on the board" })
     }
-    if (repo.archived) {
-      return yield* new BoardWriteForbidden({
-        message: `${repo.full_name} is archived, so its issues cannot be changed`,
-      })
-    }
+    yield* refuseArchived(repo)
     return { repo, issue }
   })
 
@@ -954,12 +959,15 @@ const toCardComment = (comment: ForgejoComment, bodyHtml: string): CardComment =
 const plainHtml = (text: string) =>
   `<p>${text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\n", "<br>\n")}</p>`
 
-/** Comments as the user who owns `token`; Forgejo decides who may comment. */
+/**
+ * Comments on an issue or pull request as the user who owns `token`; Forgejo decides who may
+ * comment.
+ */
 export const addComment = (token: AccessToken, _login: string, request: AddCommentRequest) =>
   Effect.gen(function* () {
     const repoRef = yield* parseRepoQuery(request.org, request.repo)
-    yield* editableIssue(token, repoRef, request.number)
     const forgejo = yield* ForgejoClient
+    yield* refuseArchived(yield* forgejo.repo(token, repoRef))
     const comment = yield* forgejo.createComment(token, repoRef, request.number, request.body)
     const bodyHtml = yield* renderIssueMarkdown(token, repoRef, comment.body).pipe(
       Effect.catch((error) =>
