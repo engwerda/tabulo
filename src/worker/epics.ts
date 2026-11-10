@@ -1,4 +1,3 @@
-import { Parser } from "commonmark"
 import { Clock, Context, Effect } from "effect"
 import type { Epic, EpicChild, Epics, IncompleteEpicListing } from "../shared/api.ts"
 import {
@@ -9,119 +8,33 @@ import {
   readOrgLabels,
   toBoardCard,
 } from "./board.ts"
+import {
+  type EpicReference,
+  MAX_CHILDREN,
+  parseEpicChildren,
+  parseEpicParents,
+} from "./epic-links.ts"
 import { describeForgejoError, FORGEJO_READ_ERRORS } from "./errors.ts"
 import {
   type AccessToken,
   ForgejoClient,
+  type Listing,
   type PageBudget,
-  type RepoRef,
   sharePages,
 } from "./forgejo/client.ts"
-import type { ForgejoEpicIssue, ForgejoRepo, ForgejoRepoIssue } from "./forgejo/schemas.ts"
-
-export type EpicReference = RepoRef & { readonly number: number; readonly ref: string }
-
-const MAX_CHILDREN = 200
-const NAME = "[A-Za-z0-9_.-]+"
-const SHORT_REF = new RegExp(`^(?:(?:(${NAME})/)?(${NAME}))?#([1-9][0-9]*)(?![A-Za-z0-9])`)
-const ISSUE_PATH = new RegExp(`^/(${NAME})/(${NAME})/(?:issues|pulls)/([1-9][0-9]*)/?$`)
-// Forgejo's Goldmark task list extension reads the checkbox from the source of the item's first
-// line, so escapes, emphasis, and link definitions there make it plain text.
-const TASK = /^\[[ xX]\][\t ]+(.*)/
-const firstWord = (text: string) => /^\S*/.exec(text.trimStart())?.[0] ?? ""
-
-/** The text and destination of the inline link `text` starts with, as CommonMark reads it. */
-const leadingLink = (text: string) => {
-  const block = new Parser().parse(text).firstChild
-  const link = block?.type === "paragraph" ? block.firstChild : null
-  if (link?.type !== "link") return undefined
-  // A code span keeps its place as a backtick, so a word in it is never the reference.
-  let label = ""
-  const walker = link.walker()
-  for (let step = walker.next(); step !== null; step = walker.next()) {
-    if (!step.entering) continue
-    if (step.node.type === "text") label += step.node.literal ?? ""
-    if (step.node.type === "code") label += "`"
-  }
-  return { label, destination: link.destination ?? "" }
-}
-
-/** The issue that `token`, a word or link destination after a checkbox, names, if valid. */
-const referenceOf = (
-  token: string,
-  repository: RepoRef,
-  base: URL,
-  prefix: string,
-): EpicReference | undefined => {
-  const target = token.replace(/^[(<[*_]+/, "")
-  let owner = repository.owner
-  let name = repository.name
-  let number: number
-  const short = SHORT_REF.exec(target)
-  if (short !== null) {
-    owner = short[1] ?? owner
-    name = short[2] ?? name
-    number = Number(short[3])
-  } else {
-    const link = /^[^<>()[\]]+/.exec(target)?.[0].replace(/[.,:;!?*_]+$/, "") ?? ""
-    if (!URL.canParse(link)) return undefined
-    const url = new URL(link)
-    if (url.origin !== base.origin || !url.pathname.startsWith(`${prefix}/`)) return undefined
-    const issue = ISSUE_PATH.exec(url.pathname.slice(prefix.length))
-    if (issue === null) return undefined
-    owner = issue[1] ?? owner
-    name = issue[2] ?? name
-    number = Number(issue[3])
-  }
-  if (!Number.isSafeInteger(number) || [owner, name].some((part) => part === "." || part === ".."))
-    return undefined
-  owner = owner.toLowerCase()
-  name = name.toLowerCase()
-  return { owner, name, number, ref: `${owner}/${name}#${number}` }
-}
-
-/**
- * The issues that the task-list items of an epic's body reference, in body order. The body is
- * parsed as CommonMark, as Forgejo renders it, so code and HTML never hold task items. The
- * checkbox and reference come from the source text of each item's first line. A leading inline
- * link names its issue by its text or, failing that, its destination.
- */
-export const parseEpicChildren = (
-  body: string,
-  repository: RepoRef,
-  forgejoUrl: string,
-): ReadonlyArray<EpicReference> => {
-  const base = new URL(forgejoUrl)
-  const prefix = base.pathname.replace(/\/$/, "")
-  const children = new Map<string, EpicReference>()
-  const lines = body.split(/\r\n|\r|\n/)
-  const named = (token: string) => referenceOf(token, repository, base, prefix)
-  const walker = new Parser().parse(body).walker()
-  for (let step = walker.next(); step !== null; step = walker.next()) {
-    const paragraph = step.node.firstChild
-    if (!step.entering || step.node.type !== "item" || paragraph?.type !== "paragraph") continue
-    const [[line, column]] = paragraph.sourcepos
-    const text = TASK.exec(lines[line - 1]?.slice(column - 1) ?? "")?.[1]
-    if (text === undefined) continue
-    const link = leadingLink(text)
-    const reference =
-      link === undefined
-        ? named(firstWord(text))
-        : (named(firstWord(link.label)) ??
-          (/^https?:\/\//i.test(link.destination) ? named(link.destination) : undefined))
-    if (reference === undefined) continue
-    children.set(reference.ref, reference)
-    if (children.size === MAX_CHILDREN) break
-  }
-  return [...children.values()]
-}
+import type {
+  ForgejoEpicIssue,
+  ForgejoReferringIssue,
+  ForgejoRepo,
+  ForgejoRepoIssue,
+} from "./forgejo/schemas.ts"
 
 export class EpicsConfig extends Context.Service<EpicsConfig, { readonly label: string }>()(
   "tabulo/EpicsConfig",
 ) {}
 
 const MAX_CHILD_LOOKUPS = 200
-const CHILD_CONCURRENCY = 4
+const READ_CONCURRENCY = 4
 
 type RepoEpics =
   | {
@@ -132,9 +45,40 @@ type RepoEpics =
     }
   | { readonly _tag: "Failed"; readonly repo: string; readonly message: string }
 
+const issueReference = (issue: ForgejoReferringIssue): EpicReference => {
+  const owner = issue.repository.owner.toLowerCase()
+  const name = issue.repository.name.toLowerCase()
+  return { owner, name, number: issue.number, ref: cardKey(owner, name, issue.number) }
+}
+
 /**
- * Loads the epics of `query`. Labels, listings, and child lookups take their pages from `pool`,
- * in that order.
+ * An epic's children: the issues its body lists, in body order, then the `referrers` whose
+ * current description names the epic as their parent, oldest first with the key breaking ties.
+ * Each issue once, listed ones first.
+ */
+const epicChildren = (
+  epic: string,
+  listed: ReadonlyArray<EpicReference>,
+  referrers: ReadonlyArray<ForgejoReferringIssue>,
+  forgejoUrl: string,
+) => {
+  const children = new Map(listed.map((reference) => [reference.ref, reference]))
+  const linked = referrers
+    .filter((issue) =>
+      parseEpicParents(issue.body ?? "", issue.repository, forgejoUrl).some(
+        ({ ref }) => ref === epic,
+      ),
+    )
+    .map((issue) => ({ created: Date.parse(issue.created_at), reference: issueReference(issue) }))
+    .toSorted((a, b) => a.created - b.created || a.reference.ref.localeCompare(b.reference.ref))
+  for (const { reference } of linked)
+    if (!children.has(reference.ref)) children.set(reference.ref, reference)
+  return [...children.values()].slice(0, MAX_CHILDREN)
+}
+
+/**
+ * Loads the epics of `query`. Labels, listings, epic timelines, and child lookups take their
+ * pages from `pool`, in that order.
  */
 export const loadEpics = Effect.fn("loadEpics")(function* (
   token: AccessToken,
@@ -190,36 +134,78 @@ export const loadEpics = Effect.fn("loadEpics")(function* (
     { concurrency: 2 },
   )
   const loaded = results.flatMap((result) => (result._tag === "Loaded" ? [result] : []))
-  const listed = new Map<string, ForgejoRepoIssue>()
-  const epics: Array<{
-    repo: ForgejoRepo
-    issue: ForgejoEpicIssue
-    refs: ReadonlyArray<EpicReference>
-  }> = []
+  // Issues by key from the listings, then from the timelines, so their children need no lookup.
+  const known = new Map<string, ForgejoRepoIssue>()
+  const found: Array<{ repo: ForgejoRepo; issue: ForgejoEpicIssue }> = []
   for (const { repo, issues } of loaded) {
     for (const issue of issues) {
-      listed.set(cardKey(query.org, repo.name, issue.number), issue)
+      known.set(cardKey(query.org, repo.name, issue.number), issue)
       if (
         issue.pull_request == null &&
         issue.labels.some((label) => label.name === config.label) &&
         (issue.state === "open" ||
           (issue.closed_at !== null && Date.parse(issue.closed_at) >= windowStart))
       )
-        epics.push({
-          repo,
-          issue,
-          refs: parseEpicChildren(
-            issue.body ?? "",
-            { owner: query.org, name: repo.name },
-            forgejo.baseUrl,
-          ),
-        })
+        found.push({ repo, issue })
     }
   }
+  const listed = found.map(({ repo, issue }) =>
+    parseEpicChildren(issue.body ?? "", { owner: query.org, name: repo.name }, forgejo.baseUrl),
+  )
+  // Listed children the listings did not resolve keep the lookups they had before timelines were
+  // read, so the timelines read only from the pages left.
+  const kept = Math.min(
+    MAX_CHILD_LOOKUPS,
+    new Set(listed.flatMap((refs) => refs.map(({ ref }) => ref)).filter((ref) => !known.has(ref)))
+      .size,
+    pool.remaining,
+  )
+  const timelines = yield* Effect.suspend(() => {
+    pool.remaining -= kept
+    return Effect.forEach(
+      found,
+      ({ repo, issue }, i) =>
+        forgejo
+          .referencingIssues(token, { owner: query.org, name: repo.name }, issue.number, pool)
+          .pipe(
+            Effect.catchTag(FORGEJO_READ_ERRORS, (error) =>
+              Effect.sync((): Listing<ForgejoReferringIssue> => {
+                console.warn(
+                  `Epic timeline ${query.org}/${repo.name}#${issue.number} failed`,
+                  error,
+                )
+                return { items: [], complete: false }
+              }),
+            ),
+            Effect.map((timeline) => ({ repo, issue, listed: listed[i] ?? [], timeline })),
+          ),
+      { concurrency: READ_CONCURRENCY },
+    )
+  }).pipe(
+    Effect.ensuring(
+      Effect.sync(() => {
+        pool.remaining += kept
+      }),
+    ),
+  )
+  for (const referrer of timelines.flatMap(({ timeline }) => timeline.items)) {
+    const { ref } = issueReference(referrer)
+    if (!known.has(ref)) known.set(ref, referrer)
+  }
+  const epics = timelines.map(({ repo, issue, listed, timeline }) => ({
+    repo,
+    issue,
+    refs: epicChildren(
+      cardKey(query.org, repo.name, issue.number),
+      listed,
+      timeline.items,
+      forgejo.baseUrl,
+    ),
+  }))
   const missing = new Map(
     epics
       .flatMap(({ refs }) => refs)
-      .filter(({ ref }) => !listed.has(ref))
+      .filter(({ ref }) => !known.has(ref))
       .map((ref) => [ref.ref, ref]),
   )
   const toChild = (ref: EpicReference, issue: ForgejoRepoIssue): EpicChild => ({
@@ -254,7 +240,7 @@ export const loadEpics = Effect.fn("loadEpics")(function* (
             ] as const),
           ),
         ),
-      { concurrency: CHILD_CONCURRENCY },
+      { concurrency: READ_CONCURRENCY },
     ),
   )
   return {
@@ -268,7 +254,7 @@ export const loadEpics = Effect.fn("loadEpics")(function* (
         ...card
       } = toBoardCard(layout, query.org, repo, issue)
       const children = refs.map((ref): EpicChild => {
-        const local = listed.get(ref.ref)
+        const local = known.get(ref.ref)
         return local === undefined
           ? (resolved.get(ref.ref) ?? { _tag: "Unavailable", ref: ref.ref })
           : toChild(ref, local)
@@ -292,6 +278,9 @@ export const loadEpics = Effect.fn("loadEpics")(function* (
         incomplete.map((listing) => ({ repo: repo.name, listing })),
       ),
       children: missing.size - lookups.length,
+      backlinks: timelines.flatMap(({ repo, issue, timeline }) =>
+        timeline.complete ? [] : [{ repo: repo.name, number: issue.number }],
+      ),
     },
   } satisfies Epics
 })

@@ -205,10 +205,15 @@ const ChildRow = ({
   )
 }
 
+const codeClass = "font-mono text-xs text-zinc-700 dark:text-zinc-300"
+
+const UNREAD_LINKS = "Tabulo did not read every issue that links to this epic"
+
 export const EpicCard = ({
   org,
   board,
   epic,
+  backlinksRead,
   columns,
   sharedLabels,
   expanded,
@@ -217,6 +222,7 @@ export const EpicCard = ({
   org: string
   board: LinkedBoard | undefined
   epic: Epic
+  backlinksRead: boolean
   columns: ReadonlyArray<BoardColumn>
   /** Labels every epic on the page carries, such as the epic label itself: not worth repeating. */
   sharedLabels: ReadonlySet<number>
@@ -304,8 +310,20 @@ export const EpicCard = ({
 
         {epic.progress.total === 0 ? (
           <p className="mt-5 text-sm text-zinc-500 dark:text-zinc-400">
-            No children yet. List them in the epic's body, like{" "}
-            <code className="font-mono text-xs text-zinc-700 dark:text-zinc-300">- [ ] #12</code>.
+            {backlinksRead ? (
+              <>
+                No children yet. List them in this epic's description, like{" "}
+                <code className={codeClass}>- #12</code>, or write{" "}
+                <code className={codeClass}>Part of #{epic.number}</code> in each child's
+                description, or{" "}
+                <code className={codeClass}>
+                  Part of {org}/{epic.repo}#{epic.number}
+                </code>{" "}
+                in a child in another repository.
+              </>
+            ) : (
+              `No children found. ${UNREAD_LINKS}, so some may be missing.`
+            )}
           </p>
         ) : (
           <>
@@ -358,6 +376,11 @@ export const EpicCard = ({
                 </li>
               ))}
             </ul>
+            {!backlinksRead && (
+              <p className="mt-2.5 text-xs text-zinc-500 dark:text-zinc-400">
+                {UNREAD_LINKS}, so some children may be missing.
+              </p>
+            )}
           </>
         )}
 

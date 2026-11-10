@@ -14,6 +14,7 @@
     "src/shared",
     "src/worker/forgejo",
     "src/worker/dashboard.ts",
+    "src/worker/epic-links.ts",
     "src/worker/errors.ts"
   ]
 }

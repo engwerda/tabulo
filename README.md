@@ -304,24 +304,36 @@ longest streaks and your busiest day. Its **Table** button lists the days with c
 
 ## Use the epics view
 
-Add `Type/Epic` (or the full name in `EPIC_LABEL`) to an issue in Forgejo. In its body,
-list children as tasks:
+Add `Type/Epic` (or the full name in `EPIC_LABEL`) to an issue in Forgejo. In its description,
+list its children, one per list item, with or without a checkbox:
 
 ```md
-- [ ] #12
+- #12
 - [x] web#34
-- [ ] other-owner/repo#56
-- [ ] https://your-forgejo.example/owner/repo/issues/78
+1. other-owner/repo#56 Sync upcoming events
+- https://your-forgejo.example/owner/repo/issues/78
 - [ ] [Fix the login form](https://your-forgejo.example/owner/repo/issues/79)
 1. [ ] **#90**: Login page
 ```
 
-A bare number belongs to the epic's repository; `web#34` belongs to the same organization.
-Only the first reference after a task checkbox counts, and pull request references count too.
-Write the checkbox plainly, as Forgejo shows a checkbox only then: `\[ ]` and `**[ ]**` are text.
-Tabulo reads the body as CommonMark, as Forgejo renders it, so code, HTML comments, and Forgejo
-dependencies do not create links. An HTML comment that starts a line and is never closed hides
-the rest of the body. Tabulo keeps the first 200 unique references in body order.
+Or name the epic in each child's own description: write `Part of #12`, a line `Parent: #12`, or
+a `## Parent` heading followed by `#12`. Tabulo finds these children through the epic's
+timeline in Forgejo, so they show even when the epic's description does not list them. A child
+in another repository writes `Part of owner/repo#12` or the epic's URL: Forgejo records no
+reference for `repo#12`, so Tabulo cannot find that form. Only the child's current description
+counts, outside quotes and code, and `not part of #12`, `Related to #12`, and pull requests do
+not make a child.
+
+A bare number belongs to the repository of the issue that writes it; `web#34` belongs to the
+same organization. In the epic's description, only the first reference of a list item counts,
+and pull request references count too. Every list counts, so write related or blocking issues as
+sentences, not as items that start with the reference. The one exception is a sub-epic's own
+parent: the issue a `## Parent` heading or a `Parent:` line names is not its child. Write a
+checkbox plainly, as Forgejo shows a checkbox only then: `\[ ]` and `**[ ]**` are text, so their
+items list nothing. Tabulo reads descriptions as CommonMark, as Forgejo renders them, so code,
+HTML comments, and Forgejo dependencies do not create links. An HTML comment that starts a line
+and is never closed hides the rest of the body. Tabulo keeps 200 unique children: the listed
+ones in body order first, then the others oldest first.
 
 Open **Epics**, choose an organization and repositories, then expand a card to see its children.
 The address `/epics/<org>?repos=<repo>,<repo>` keeps your selection, filters, and sort order,
@@ -333,7 +345,8 @@ of its checkbox. Closed children count as Done, even when closed before the boar
 Epics themselves appear while open or closed within `BOARD_DONE_DAYS`. Unavailable children
 stay in the total and show as unavailable, including references beyond the request's limit of
 200 individual child lookups. Like the insights, one page load reads at most 800 pages from
-Forgejo, and the page says what it did not read when a busy organization needs more. The
+Forgejo, and the page says what it did not read when a busy organization needs more, including
+the epics whose linking issues it did not read, as their children may be missing. The
 summary counts open epics that have children but none done as at risk.
 The page refreshes every minute.
 

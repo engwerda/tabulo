@@ -42,6 +42,8 @@ major version.
   the plan; moves, new issues, card edits, and issue options pass `UNORDERED`, and epics pass the
   default board's order without hiding anything. `CardRanks` in `src/worker/card-ranks.ts` owns
   the `card_ranks` table.
+- `parseEpicChildren` and `parseEpicParents` in `src/worker/epic-links.ts` own the epic link
+  grammar; `referenceOf` is the only parser of a reference.
 - `BoardStore` in `src/worker/board-store.ts` owns the `boards` table. Its writes compare and
   swap on the version the writer read, and its insert enforces the board limit. Board CRUD lives
   in `src/worker/boards.ts`, which checks membership and repository access and does every Forgejo

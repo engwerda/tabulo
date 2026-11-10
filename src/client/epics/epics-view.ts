@@ -96,17 +96,40 @@ export const epicSummary = (epics: ReadonlyArray<Epic>) => {
 }
 
 const LISTING_LABELS = { open: "open issues", closed: "recently closed issues" } as const
+const NAMED_EPICS = 5
 
-/** What Tabulo did not read, as sentences; empty when it read everything. */
-export const incompleteNotice = ({ listings, children }: Epics["incomplete"]) => {
+/**
+ * What Tabulo did not read, as sentences; empty when it read everything. The epics whose linking
+ * issues it did not read are named up to five.
+ */
+export const incompleteNotice = ({ listings, children, backlinks }: Epics["incomplete"]) => {
   const lookups =
     children === 1
       ? "did not look up 1 child, which shows as unavailable."
       : `did not look up ${children} children, which show as unavailable.`
   const limit = "Tabulo reached its limit of Forgejo requests and"
-  if (listings.length === 0) return children === 0 ? "" : `${limit} ${lookups}`
-  const partly = `${limit} read only part of the ${listings
-    .map(({ repo, listing }) => `${LISTING_LABELS[listing]} of ${repo}`)
-    .join(", ")}, so some epics may be missing.`
-  return children === 0 ? partly : `${partly} It ${lookups}`
+  const partly =
+    listings.length === 0
+      ? ""
+      : `${limit} read only part of the ${listings
+          .map(({ repo, listing }) => `${LISTING_LABELS[listing]} of ${repo}`)
+          .join(", ")}, so some epics may be missing.`
+  const unlooked = children === 0 ? "" : partly === "" ? `${limit} ${lookups}` : `It ${lookups}`
+  const others = backlinks.length - NAMED_EPICS
+  const named = `${backlinks
+    .slice(0, NAMED_EPICS)
+    .map(({ repo, number }) => `${repo}#${number}`)
+    .join(", ")}${others > 0 ? ` and ${others} other ${others === 1 ? "epic" : "epics"}` : ""}`
+  const unlinked =
+    backlinks.length === 0
+      ? ""
+      : `Tabulo did not read every issue that links to ${named}, so some of ${
+          backlinks.length === 1 ? "its" : "their"
+        } children may be missing.`
+  return [partly, unlooked, unlinked].filter((sentence) => sentence !== "").join(" ")
 }
+
+export const backlinksRead = (
+  incomplete: Epics["incomplete"],
+  epic: Pick<Epic, "repo" | "number">,
+) => !incomplete.backlinks.some(({ repo, number }) => repo === epic.repo && number === epic.number)

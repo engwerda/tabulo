@@ -51,9 +51,10 @@ browser; a tab whose session changes to another user reloads.
   scope is `Status/`, so `Status/In Progress` maps to the "In Progress" column. An open issue
   without a status label is in "Todo". An issue closed within the last 14 days is in "Done".
 - **Epics.** An epic is an issue with the configured epic label (default `Type/Epic`). Its
-  children are the issues its body references in task-list items (`- [ ] #12`, `repo#12`, or an
-  issue URL). Forgejo dependencies are not epic links, because teams already use them for
-  ordering.
+  children are the issues its description lists, one per list item (`- #12`, `1. repo#12 Title`,
+  `- [ ] owner/repo#12`, or an issue URL), and the issues whose own description names it as their
+  parent (`Part of #12`, `Parent: #12`, or a `Parent` heading followed by `#12`). Forgejo
+  dependencies are not epic links, because teams already use them for ordering.
 - **Card order.** Forgejo has no rank field, so Tabulo stores the order of cards within a column.
   The order belongs to the organization, so everyone sees the same order on every board.
 - **Boards.** A board is a saved view of one organization: a name, at most 20 of its
@@ -393,57 +394,115 @@ organization's chosen repositories with insights. Its columns are the default bo
 board's order, hidden ones included, so progress counts every child. It shows open epics and
 epics closed within `BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
 
-- **Children.** `parseEpicChildren` in `src/worker/epics.ts` parses the body as CommonMark
-  with the reference parser, as Forgejo renders it, to find its list items: bullet (`-`, `*`,
-  `+`) and ordered (`1.`, `1)`) items at any nesting depth, in block quotes too. Code blocks,
-  HTML blocks, and HTML comments hold no list items, so they add no children. An item is a task
-  when the source text of its first line, after the list marker, starts with `[ ]`, `[x]`, or
-  `[X]` and a space or tab. Forgejo's task list extension reads the checkbox the same way, so an
-  escaped (`\[ ]`) or emphasized (`**[ ]**`) checkbox is plain text, and a link definition
-  named `x` does not change `[x]`.
-- **References.** The first word after the checkbox, in the same source text, is `#12`,
-  `repo#12`, `owner/repo#12`, or an issue or pull request URL on `FORGEJO_URL`, bare or as an
-  autolink. It may be wrapped in `(`, `<`, `[`, `*`, or `_` and followed by punctuation, so
-  `#12: Login`, `(#12)`, `**#12**`, and `<https://…/issues/12>` count. When the text after the
-  checkbox starts with an inline link `[text](destination)`, as CommonMark reads it, the first word of its text is tried
-  first and the destination URL second, so `[#12](…)` and `[Fix login](https://…/issues/12)`
-  count. The destination must be an absolute `http` or `https` URL, and a reference-style link counts only by its
-  text. A word in a code span or after an inline HTML comment is not a reference. Only the
-  first reference of an item counts. A bare number refers to the epic's repository, a repo-only
-  reference to its organization. The parser preserves body order, deduplicates case-insensitively, and caps each
-  epic at 200 children. Forgejo dependencies do not create epic links.
+- **Children.** An epic's children are its listed children in body order, then its linked
+  children from oldest to newest, with the key breaking ties. An issue that is both keeps its
+  listed place. Each issue counts once, and an epic has at most 200 children. Listed children
+  fill the cap first.
+- **Listed children.** `parseEpicChildren` in `src/worker/epic-links.ts` parses the body as
+  CommonMark with the reference parser, as Forgejo renders it, to find its list items: bullet
+  (`-`, `*`, `+`) and ordered (`1.`, `1)`) items at any nesting depth, in block quotes too. Code
+  blocks, HTML blocks, and HTML comments hold no list items, so they add no children. An item
+  lists a child when the source text of its first line, after the list marker and an optional
+  checkbox, starts with a reference. A checkbox is `[ ]`, `[x]`, or `[X]` and a space or tab,
+  read from the source as Forgejo's task list extension reads it. An escaped (`\[ ]`) or
+  emphasized (`**[ ]**`) checkbox is plain text, so its item lists nothing, and a link definition
+  named `x` does not change `[x]`. Every list counts, whatever heading it is under, except that
+  the issue a `Parent` heading or a `Parent:` line names is the epic's own parent, not its child,
+  so a sub-epic that lists its parent does not count it; that issue is left out before the cap.
+  `part of` does not count there, because an epic's own description uses it for other things.
+  Write related or blocking issues as sentences, not as list items that start with the
+  reference.
+- **References.** The first word after the list marker and checkbox, in the same source text,
+  is `#12`, `repo#12`, `owner/repo#12`, or an issue or pull request URL on `FORGEJO_URL`, bare or
+  as an autolink. It may be wrapped in `(`, `<`, `[`, `*`, or `_` and followed by punctuation,
+  so `#12: Login`, `(#12)`, `**#12**`, and `<https://…/issues/12>` count. When that text starts
+  with an inline link `[text](destination)`, as CommonMark reads it, the first word of its text
+  is tried first and the destination URL second, so `[#12](…)` and
+  `[Fix login](https://…/issues/12)` count. The destination must be an absolute `http` or
+  `https` URL, and a reference-style link counts only by its text. A word in a code span or
+  after an inline HTML comment is not a reference. Only the first reference of an item counts.
+  A bare number refers to the epic's repository, a repo-only reference to its organization. The
+  parser preserves body order, deduplicates case-insensitively, and caps each epic at 200
+  children. Forgejo dependencies do not create epic links.
+- **Linked children.** `parseEpicParents` in `src/worker/epic-links.ts` returns the issues that
+  an issue's description names as its parent. It parses the description as CommonMark and reads
+  the inline text of paragraphs and headings outside block quotes. Code spans, code blocks, HTML,
+  and block quotes name no parent. Case is ignored. A description names a parent in three ways.
+  - `part of`, with an optional colon, and a reference, where `part` opens a line, follows a word
+    that ends in `.`, `!`, `?`, or `:`, or follows the word `is`. `(part of #12)` and
+    `**Part of:** #12` count. `Part of #1813, which delivers #1083.` names only #1813.
+    `not part of #12`, `no longer part of #12`, `counterpart of #12`, and `part of a whole` name
+    none.
+  - A line that starts with `Parent:` or `Epic:` and a reference. Emphasis does not matter, so
+    `**Parent:** #12` counts.
+  - A heading whose whole text is `Parent`, with an optional colon, followed by a paragraph that
+    starts with a reference, or by a list whose first item does. HTML blocks between them, such
+    as a template's comment, are skipped, and so is the item's checkbox, read from the source as
+    a listed child's is. An `Epic` heading does not count, because an epic's own description
+    lists its children under one.
+
+  A reference is a word as in **References**, or a link, which counts by the first word of its
+  text and then by an absolute `http` or `https` destination on `FORGEJO_URL`. An opening `(`,
+  `<`, `[`, `*`, or `_` that CommonMark parses apart from a link, as in `(<https://…/issues/12>)`,
+  is skipped. A bare number refers to the describing issue's own repository, a repo-only
+  reference to its organization. Forgejo records a reference only for `#12`, `owner/repo#12`, or
+  an issue URL, never for `repo#12`, so a linked child is found only when it names the epic one
+  of those ways: `#12` from the epic's own repository, `owner/repo#12` or the URL from any.
+  `Related to`, `Depends on`, `Blocked by`, `Follow-up to`, `Split from`, `Closes`, and
+  `parent issue #12` name no parent. The endpoint finds candidates in the epic's Forgejo
+  timeline. Each `issue_ref` event carries the issue whose description references the epic, as
+  it is when Tabulo reads it. That issue is a linked child when `parseEpicParents` of its current
+  description names the epic, so a reference later edited away does not count. Pull requests,
+  comments, and commits that reference the epic never make linked children. List a pull request
+  in the epic's description to include it. Forgejo leaves out references from repositories the
+  user cannot read.
 - **Progress.** Checkbox state is ignored. The child's real issue state and labels determine
   its column through `boardLayout`, including repository status labels matching an organization
   column. Every closed child is Done, however old. Pull request children are marked as pull
   requests. Progress reports `total`, `done`, and `byColumn` keyed by the board's column keys.
   Unavailable references stay in `total` but do not enter any column or count as Done.
-- **Reads.** The endpoint reads organization labels and each repository's metadata, open issues,
-  and issues updated since the Done window that are closed. Epic bodies use a separate Forgejo
-  schema; the board's decoder and payload are unchanged. Listed issues resolve children where
-  possible. Missing children, including older closed issues and pull requests, are read
-  individually with at most four concurrent requests and 200 unique lookups per endpoint call.
-  Duplicate references across epics share that lookup. A 403, 404, or lookup beyond that cap
-  or the page budget becomes `{ _tag: "Unavailable", ref }`. Other child failures fail the
-  request. Failed
-  repositories enter `failedRepos`; an authentication failure still ends the request. This
-  endpoint writes no Forgejo data or card ranks.
-- **Page budget.** The organization labels, repository listings, and child lookups of one
-  request share the 800-page budget that Insights uses, in that order. As on Insights, a retry
-  after a token refresh reads only the pages the first attempt left, and it reads the labels
-  again first. The columns depend on every label, so when the labels do not fit in the pages
-  left, the request fails with HTTP 503 and
-  `{ error: "Too many Forgejo pages for one request; choose fewer repositories" }`. A
-  repository takes an equal share of the pages left when it starts and gives back what it does
-  not use. Each child lookup takes one page when it starts. A listing that runs out of pages is
-  named in `incomplete.listings`, and epics in its unread part are missing.
-  `incomplete.children` counts the child references that were not looked up. With at most 20
-  repositories read on each of two attempts and one token refresh, a request makes at most 842
+- **Reads.** The endpoint reads organization labels, each repository's metadata, its open issues,
+  its closed issues updated since the Done window, and each epic's timeline. Epic bodies and
+  timeline issues use their own Forgejo schemas; the board's decoder and payload are unchanged. On
+  the timeline, Forgejo's `X-Total-Count` counts only that page, and Forgejo drops
+  cross-repository references the user cannot read after it cuts the page. So Tabulo ignores the
+  header and reads a timeline, 50 events a page, at most four timelines at a time, until a page
+  comes back empty. A page whose 50 events are all references the user cannot read comes back
+  empty too, so 50 such references in a row can end that timeline's read early, and Tabulo does
+  not report it. Listed and timeline issues resolve children where possible, so a linked child
+  never needs a lookup. Missing listed children, including older closed issues and pull requests,
+  are read individually with at most four concurrent requests and 200 unique lookups per endpoint
+  call. Duplicate references across epics share that lookup. A 403, 404, or lookup beyond that cap
+  or the page budget becomes `{ _tag: "Unavailable", ref }`. A timeline that fails for any reason
+  but an authentication failure leaves that epic's timeline unread, because the timeline is read
+  for every epic on every refresh. Other child failures fail the request. Failed repositories
+  enter `failedRepos`; an authentication failure still ends the request. This endpoint writes no
+  Forgejo data or card ranks.
+- **Page budget.** The organization labels, repository listings, epic timelines, and child lookups
+  of one request share the 800-page budget that Insights uses, in that order. As on Insights, a
+  retry after a token refresh reads only the pages the first attempt left, and it reads the labels
+  again first. The columns depend on every label, so when the labels do not fit in the pages left,
+  the request fails with HTTP 503 and
+  `{ error: "Too many Forgejo pages for one request; choose fewer repositories" }`. A repository
+  takes an equal share of the pages left when it starts and gives back what it does not use. Then
+  one page is set aside for each listed child reference that the listings did not resolve, up to
+  200, so the lookups keep the pages they had before timelines were read. The timelines take one
+  page each from the rest as they read it, until their empty page, their 20th page (1,000 events),
+  or until no pages are left. The set-aside pages then go back, and each child lookup takes one
+  page when it starts. A listing that runs out of pages is named in `incomplete.listings`, and
+  epics in its unread part are missing. An epic whose timeline Tabulo did not read to its empty
+  page, because the pages ran out, it reached 20 pages, or the timeline failed, is named in
+  `incomplete.backlinks`; children that name it as their parent may be missing.
+  `incomplete.children` counts the listed child references that were not looked up. With at most
+  20 repositories read on each of two attempts and one token refresh, a request makes at most 842
   Forgejo requests.
 - **Display.** Each epic exposes its issue details and board column, progress segments and
   legend, completion percentage, and an expandable child list. The response is
-  `{ org, repos, columns, epics, failedRepos, incomplete }`; children are tagged `Issue` or
-  `Unavailable`. When `incomplete` names anything, the page says what Tabulo did not read,
-  and an empty page does not claim that there are no epics.
+  `{ org, repos, columns, epics, failedRepos, incomplete }`, with `incomplete` as
+  `{ listings, children, backlinks }`; children are tagged `Issue` or `Unavailable`. When
+  `incomplete` names anything, the page says what Tabulo did not read, and an empty page does
+  not claim that there are no epics. The card of an epic named in `incomplete.backlinks` says
+  that some children may be missing and does not claim the epic has none.
   Search (`q`), epic state (`state`), assignee (`assignee`), and sort (`sort`, values `updated`,
   `progress`, `children`) live in the URL. The default sort is most recently updated; progress
   and child-count sorts run descending with update time and key as tie breakers. The summary

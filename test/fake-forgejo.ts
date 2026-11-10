@@ -36,6 +36,16 @@ export type FakeComment = {
   updated_at: string
 }
 
+/** An event of an issue's timeline. */
+export type FakeTimelineEvent =
+  | {
+      /** A reference from an issue's description, a pull request's, or a comment. */
+      readonly type: "issue_ref" | "pull_ref" | "comment_ref"
+      /** The referring issue, which the fake serves as it is when the timeline is read. */
+      readonly from: { readonly owner: string; readonly repo: string; readonly number: number }
+    }
+  | { readonly type: "label" | "assignees" | "close" | "comment" }
+
 /** An issue or pull request as Forgejo 17 returns it from the repository endpoints. */
 export type FakeIssue = {
   id: number
@@ -67,6 +77,8 @@ export type FakeIssue = {
    * fake makes up `comments` comments by the poster, so the count and the list agree.
    */
   commentRecords?: Array<FakeComment>
+  /** Timeline events, oldest first, which the fake serves from the timeline endpoint. None when left out. */
+  timeline?: ReadonlyArray<FakeTimelineEvent>
   [field: string]: unknown
 }
 
@@ -224,6 +236,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
   const users = [fixtures.user, ...fixtures.otherUsers]
   const orgs = structuredClone(fixtures.orgs) as Array<FakeOrg>
   const issueComments = new Map<FakeIssue, Array<FakeComment>>()
+  const issueTimelines = new Map<FakeIssue, ReadonlyArray<FakeTimelineEvent>>()
   let lastCommentId = Math.max(
     0,
     ...orgs.flatMap((org) =>
@@ -261,6 +274,8 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     delete issue.commentRecords
     issue.comments = comments.length
     issueComments.set(issue, comments)
+    issueTimelines.set(issue, issue.timeline ?? [])
+    delete issue.timeline
   }
   const requests: Array<RecordedRequest> = []
   const authorizationCodes = new Map<string, { challenge: string; login: string }>()
@@ -326,14 +341,17 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     return json({ error: "unsupported_grant_type" }, { status: 400 })
   }
 
-  /** One page of `items`, with Forgejo's paging parameters, limit cap, and total header. */
-  const paged = (items: ReadonlyArray<unknown>, query: URLSearchParams) => {
+  const pageOf = <A>(items: ReadonlyArray<A>, query: URLSearchParams) => {
     const limit = Math.min(Number(query.get("limit") ?? 30) || 30, fixtures.maxPageSize)
     const page = Math.max(Number(query.get("page") ?? 1) || 1, 1)
-    return json(items.slice((page - 1) * limit, page * limit), {
+    return items.slice((page - 1) * limit, page * limit)
+  }
+
+  /** One page of `items`, with Forgejo's paging parameters, limit cap, and total header. */
+  const paged = (items: ReadonlyArray<unknown>, query: URLSearchParams) =>
+    json(pageOf(items, query), {
       headers: fixtures.omitTotalCount ? {} : { "x-total-count": String(items.length) },
     })
-  }
 
   const notFound = () => json({ message: "not found" }, { status: 404 })
   const forbidden = () => json({ message: "permission denied" }, { status: 403 })
@@ -549,6 +567,43 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     issue.comments = comments.length
     issue.updated_at = fixtures.now
     return json(comment, { status: 201 })
+  }
+
+  /**
+   * Forgejo 17's ListIssueCommentsAndTimeline. It cuts the page from every event, then drops
+   * references from other repositories that `login` cannot read (isXRefCommentAccessible), and
+   * sends X-Total-Count as the number left. So a page can come back short, or empty, before the
+   * timeline ends. A reference carries the referring issue as it is now. Forgejo collects the
+   * page in a nil Go slice, so a page with no events is JSON `null`, not `[]`.
+   */
+  const timelineEndpoint = (
+    repo: FakeRepo,
+    issue: FakeIssue,
+    login: string,
+    query: URLSearchParams,
+  ) => {
+    const events = (issueTimelines.get(issue) ?? []).map((event, index) => ({
+      id: index + 1,
+      event,
+    }))
+    const shown = pageOf(events, query).flatMap(({ id, event }): Array<unknown> => {
+      if (!("from" in event)) return [{ id, type: event.type, ref_issue: null }]
+      const { owner, repo: name, number } = event.from
+      const source = findRepo(owner, name)
+      const referrer = source?.issues.find((candidate) => candidate.number === number)
+      if (source === undefined || referrer === undefined) {
+        throw new Error(`no issue ${owner}/${name}#${number} for a timeline reference`)
+      }
+      const readable =
+        source === repo ||
+        (shownOrg(owner, login) !== undefined &&
+          source.hiddenFrom?.includes(login) !== true &&
+          source.issuesHiddenFrom?.includes(login) !== true)
+      return readable ? [{ id, type: event.type, ref_issue: referrer }] : []
+    })
+    return json(shown.length === 0 ? null : shown, {
+      headers: fixtures.omitTotalCount ? {} : { "x-total-count": String(shown.length) },
+    })
   }
 
   const escapeHtml = (text: string) =>
@@ -804,7 +859,9 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
           ? createIssue(owner, org, repo, login, body)
           : listIssues(repo, query)
       }
-      const issuePath = /^\/issues\/(\d+)(?:\/(labels|comments)(?:\/([^/]+))?)?$/.exec(rest)
+      const issuePath = /^\/issues\/(\d+)(?:\/(labels|comments|timeline)(?:\/([^/]+))?)?$/.exec(
+        rest,
+      )
       if (issuePath === null) return notFound()
       const [, number = "", sub, identifier] = issuePath
       const issue = repo.issues.find((candidate) => candidate.number === Number(number))
@@ -819,6 +876,11 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
           identifier === undefined ? undefined : decodeURIComponent(identifier),
           body,
         )
+      }
+      if (sub === "timeline") {
+        return method === "GET" && identifier === undefined
+          ? timelineEndpoint(repo, issue, login, query)
+          : notFound()
       }
       if (sub === "comments") {
         return identifier === undefined
