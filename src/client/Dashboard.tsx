@@ -6,11 +6,13 @@ import { ACTIVITY, ActivityCard } from "./ActivityCard.tsx"
 import { fetchDashboard } from "./api.ts"
 import {
   findPreview,
+  focusAfterPreview,
   ITEM_SECTIONS,
   type ItemSection,
   itemRef,
   PREVIEW_PARAM,
   type Preview,
+  type PreviewOrigin,
   withoutNotification,
 } from "./dashboard-preview.ts"
 import { relativeTime } from "./format.ts"
@@ -252,21 +254,11 @@ const usePreview = (data: Dashboard | undefined, fresh: boolean) => {
     return next.toString()
   }
 
-  // Focus goes back to the row link that opened the preview, or else the first one for its issue.
-  // When Mark read took the issue off the dashboard, it goes to the row now in the opener's place,
-  // or to its section's heading.
-  const opener = useRef<{
-    readonly link: HTMLElement
-    readonly section: HTMLElement | null
-    readonly index: number
-  } | null>(null)
+  const opener = useRef<PreviewOrigin | null>(null)
   const open: OpenPreview = (next, link) => {
     const section = link.closest("section")
-    opener.current = {
-      link,
-      section,
-      index: section === null ? -1 : rowLinks(section).indexOf(link),
-    }
+    opener.current =
+      section === null ? null : { section: section.id, index: rowLinks(section).indexOf(link) }
     setRef(
       next,
       ref === null
@@ -276,17 +268,25 @@ const usePreview = (data: Dashboard | undefined, fresh: boolean) => {
   }
   const restoreFocus = () => {
     if (preview === undefined) return
-    const own = opener.current
-    const rows = own?.section?.isConnected ? rowLinks(own.section) : []
-    const target =
-      (own?.link.isConnected &&
-      own.link.dataset.previewRef?.toLowerCase() === preview.ref.toLowerCase()
-        ? own.link
-        : null) ??
-      document.querySelector<HTMLElement>(`a[data-preview-ref="${CSS.escape(preview.ref)}" i]`) ??
-      rows[Math.min(Math.max(own?.index ?? 0, 0), rows.length - 1)] ??
-      own?.section?.querySelector<HTMLElement>("h2")
-    target?.focus()
+    const sections = COLUMNS.flat().flatMap((key) => {
+      const element = document.getElementById(SECTIONS[key].id)
+      return element === null ? [] : [{ element, links: rowLinks(element) }]
+    })
+    const target = focusAfterPreview(
+      sections.map(({ element, links }) => ({
+        section: element.id,
+        refs: links.map((link) => link.dataset.previewRef ?? null),
+      })),
+      preview.ref,
+      opener.current,
+      SECTIONS.notifications.id,
+    )
+    const at = sections.find(({ element }) => element.id === target?.section)
+    if (target === null || at === undefined) return
+    ;(target.row === "heading"
+      ? at.element.querySelector<HTMLElement>("h2")
+      : at.links[target.row]
+    )?.focus()
   }
   const close = () => {
     const entry = window.history.state as { previewOpenedFrom?: unknown } | null

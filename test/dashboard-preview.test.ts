@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   findPreview,
+  focusAfterPreview,
   type ItemSection,
   itemRef,
   notificationRef,
@@ -247,5 +248,91 @@ describe("notificationState", () => {
 
   it("is null without a notification", () => {
     expect(notificationState(null, null)).toBeNull()
+  })
+})
+
+describe("focusAfterPreview", () => {
+  const page = (sections: Record<string, ReadonlyArray<string | null>>) =>
+    Object.entries(sections).map(([section, refs]) => ({ section, refs }))
+
+  it("goes back to the opener when its row still lists the issue", () => {
+    const sections = page({
+      assigned: ["acme/web#1", "acme/web#2"],
+      mentioned: ["acme/web#2"],
+    })
+
+    expect(
+      focusAfterPreview(
+        sections,
+        "acme/web#2",
+        { section: "mentioned", index: 0 },
+        "notifications",
+      ),
+    ).toEqual({ section: "mentioned", row: 0 })
+  })
+
+  it("finds the issue's row elsewhere when the opener's section no longer lists it", () => {
+    const sections = page({ assigned: ["acme/web#1", "ACME/Web#2"], notifications: ["acme/api#3"] })
+
+    expect(
+      focusAfterPreview(sections, "acme/web#2", { section: "notifications", index: 1 }, "x"),
+    ).toEqual({ section: "assigned", row: 1 })
+  })
+
+  it("takes the row now in the opener's place when no row lists the issue", () => {
+    const sections = page({ notifications: ["acme/api#3", null, "acme/api#5"] })
+
+    expect(
+      focusAfterPreview(sections, "acme/web#2", { section: "notifications", index: 1 }, "x"),
+    ).toEqual({ section: "notifications", row: 1 })
+    expect(
+      focusAfterPreview(sections, "acme/web#2", { section: "notifications", index: 3 }, "x"),
+    ).toEqual({ section: "notifications", row: 2 })
+  })
+
+  it("takes the section's heading when the opener's section has no rows left", () => {
+    const sections = page({ assigned: ["acme/web#1"], notifications: [] })
+
+    expect(
+      focusAfterPreview(sections, "acme/web#2", { section: "notifications", index: 0 }, "x"),
+    ).toEqual({ section: "notifications", row: "heading" })
+  })
+
+  it("falls back on the first row or heading of the fallback section after a reload", () => {
+    expect(
+      focusAfterPreview(
+        page({ assigned: ["acme/web#1"], notifications: ["acme/api#3"] }),
+        "acme/web#2",
+        null,
+        "notifications",
+      ),
+    ).toEqual({ section: "notifications", row: 0 })
+    expect(
+      focusAfterPreview(
+        page({ assigned: ["acme/web#1"], notifications: [] }),
+        "acme/web#2",
+        null,
+        "notifications",
+      ),
+    ).toEqual({ section: "notifications", row: "heading" })
+  })
+
+  it("finds the issue's row after a reload while the dashboard lists it", () => {
+    const sections = page({ assigned: ["acme/web#1"], notifications: ["acme/web#1"] })
+
+    expect(focusAfterPreview(sections, "acme/web#1", null, "notifications")).toEqual({
+      section: "notifications",
+      row: 0,
+    })
+    expect(focusAfterPreview(page({ assigned: ["acme/web#1"] }), "acme/web#1", null, "x")).toEqual({
+      section: "assigned",
+      row: 0,
+    })
+  })
+
+  it("has nowhere to go when neither the issue nor the section to fall back on is on the page", () => {
+    expect(
+      focusAfterPreview(page({ assigned: [] }), "acme/web#2", null, "notifications"),
+    ).toBeNull()
   })
 })

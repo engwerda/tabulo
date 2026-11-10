@@ -129,6 +129,52 @@ export const notificationState = (
   return marked === null ? null : "marked"
 }
 
+/** Where a preview was opened from: a section, by its element id, and the row's place in it. */
+export type PreviewOrigin = { readonly section: string; readonly index: number }
+
+/** A section of the page as focus sees it: the preview reference of each row link, in order. */
+export type SectionRows = {
+  readonly section: string
+  /** Null for a row whose link opens Forgejo rather than a preview. */
+  readonly refs: ReadonlyArray<string | null>
+}
+
+/** A row link to focus, by its place in its section, or the section's heading. */
+export type FocusTarget =
+  | { readonly section: string; readonly row: number }
+  | { readonly section: string; readonly row: "heading" }
+
+/**
+ * Where focus goes when the preview of `ref` closes: the issue's row in the section it was opened
+ * from, else its first row on the page, else the row now in the opener's place, else that
+ * section's heading. A preview that no row opened, such as one restored by a reload, counts as
+ * opened from the first row of `fallback`, the section that Mark read takes rows from. `sections`
+ * come in page order; null when the section to fall back on is not on the page.
+ */
+export const focusAfterPreview = (
+  sections: ReadonlyArray<SectionRows>,
+  ref: string,
+  origin: PreviewOrigin | null,
+  fallback: string,
+): FocusTarget | null => {
+  const wanted = ref.toLowerCase()
+  const isIssue = (row: string | null) => row?.toLowerCase() === wanted
+  const home = sections.find((rows) => rows.section === (origin?.section ?? fallback))
+  if (home !== undefined && origin !== null && isIssue(home.refs[origin.index] ?? null)) {
+    return { section: home.section, row: origin.index }
+  }
+  for (const rows of home === undefined ? sections : [home, ...sections]) {
+    const row = rows.refs.findIndex(isIssue)
+    if (row !== -1) return { section: rows.section, row }
+  }
+  if (home === undefined) return null
+  if (home.refs.length === 0) return { section: home.section, row: "heading" }
+  return {
+    section: home.section,
+    row: Math.min(Math.max(origin?.index ?? 0, 0), home.refs.length - 1),
+  }
+}
+
 /** The dashboard without the notification `id`, as Forgejo lists it once it is read. */
 export const withoutNotification = (data: Dashboard, id: number): Dashboard => {
   const section = data.notifications

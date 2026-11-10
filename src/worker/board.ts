@@ -798,7 +798,7 @@ const refuseArchived = (repo: ForgejoRepo) =>
   repo.archived
     ? Effect.fail(
         new BoardWriteForbidden({
-          message: `${repo.full_name} is archived, so its issues cannot be changed`,
+          message: `${repo.full_name} is archived, so it cannot be changed`,
         }),
       )
     : Effect.void

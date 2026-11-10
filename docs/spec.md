@@ -325,11 +325,11 @@ characters. The server:
 The card edits `POST /api/board/assignees`, `labels`, `milestone`, and `comment` take
 `{ org, repo, number }` and their own fields. Each answers 400 to an invalid name, number, or
 field and, except `comment`, to a pull request, and 403 if the repository is archived, before
-it writes. A
-Forgejo refusal answers with its status. An edit that finds the issue already as asked writes
-nothing. Forgejo ignores some writes without an error when the user may not make them; when
-the issue is still not as asked after the write, Tabulo answers 403. The answered card is as
-the board shows it, with its stored rank or the rank a board read would give it.
+it writes. A Forgejo refusal answers with its status. An edit that finds the issue already as
+asked writes nothing. Forgejo ignores some writes without an error when the user may not make
+them; when the issue is still not as asked after the write, Tabulo answers 403. Every edit but
+`comment` answers with the card as the board shows it, with its stored rank or the rank a board
+read would give it.
 
 - `assignees` takes `{ login, assigned }`. Forgejo has no endpoint that adds a single
   assignee, so Tabulo reads the assignees and writes the whole list with the login added or
