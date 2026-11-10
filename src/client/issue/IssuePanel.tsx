@@ -502,9 +502,13 @@ export const IssuePanel = ({
 
   return (
     <div ref={layer} data-card-panel="">
-      {/* A modal panel covers the page; a tap beside it closes it. */}
+      {/*
+        A modal panel covers the page; a tap beside it closes it. The press keeps focus in the
+        panel, or the page's focusable container would take it and closing could not return it.
+      */}
       <div
         aria-hidden="true"
+        onMouseDown={(event) => event.preventDefault()}
         onClick={onClose}
         className={
           beside
