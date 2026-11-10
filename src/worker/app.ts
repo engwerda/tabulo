@@ -10,6 +10,7 @@ import {
   DeleteBoardRequest,
   type Instance,
   MAX_BOARDS,
+  MarkNotificationReadRequest,
   MoveCardRequest,
   SetAssigneeRequest,
   SetLabelRequest,
@@ -69,6 +70,7 @@ import {
   type PageBudget,
 } from "./forgejo/client.ts"
 import { loadActivity, loadInsights, parseInsightsQuery, parseTimeZone } from "./load-insights.ts"
+import { markNotificationRead } from "./notifications.ts"
 import { parseSearchQuery, searchItems } from "./search.ts"
 import {
   makeSessionStore,
@@ -463,7 +465,8 @@ export const createApp = (dependencies: Dependencies) => {
       ),
     ),
   )
-  const boardWrite =
+  /** A POST route that decodes its JSON body with `schema` and runs `write` as the session user. */
+  const jsonWrite =
     <A, R>(
       schema: Schema.Decoder<A>,
       write: (
@@ -482,15 +485,16 @@ export const createApp = (dependencies: Dependencies) => {
         ),
       )
 
-  app.post("/api/boards", boardWrite(CreateBoardRequest, createBoard))
-  app.post("/api/boards/update", boardWrite(UpdateBoardRequest, updateBoard))
-  app.post("/api/boards/delete", boardWrite(DeleteBoardRequest, deleteBoard))
-  app.post("/api/board/move", boardWrite(MoveCardRequest, moveCard))
-  app.post("/api/board/issues", boardWrite(CreateCardRequest, createCard))
-  app.post("/api/board/assignees", boardWrite(SetAssigneeRequest, setAssignee))
-  app.post("/api/board/labels", boardWrite(SetLabelRequest, setLabel))
-  app.post("/api/board/milestone", boardWrite(SetMilestoneRequest, setMilestone))
-  app.post("/api/board/comment", boardWrite(AddCommentRequest, addComment))
+  app.post("/api/boards", jsonWrite(CreateBoardRequest, createBoard))
+  app.post("/api/boards/update", jsonWrite(UpdateBoardRequest, updateBoard))
+  app.post("/api/boards/delete", jsonWrite(DeleteBoardRequest, deleteBoard))
+  app.post("/api/board/move", jsonWrite(MoveCardRequest, moveCard))
+  app.post("/api/board/issues", jsonWrite(CreateCardRequest, createCard))
+  app.post("/api/board/assignees", jsonWrite(SetAssigneeRequest, setAssignee))
+  app.post("/api/board/labels", jsonWrite(SetLabelRequest, setLabel))
+  app.post("/api/board/milestone", jsonWrite(SetMilestoneRequest, setMilestone))
+  app.post("/api/board/comment", jsonWrite(AddCommentRequest, addComment))
+  app.post("/api/notifications/read", jsonWrite(MarkNotificationReadRequest, markNotificationRead))
 
   return app
 }

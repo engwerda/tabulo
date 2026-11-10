@@ -163,6 +163,11 @@ export type FakeForgejoFixtures = {
   readonly orgs: ReadonlyArray<FakeOrg>
   /** `read` makes every write answer 403, as Forgejo does for a token without write:issue. */
   readonly tokenScope: "read" | "write"
+  /**
+   * `read` makes marking a notification read answer 403, as Forgejo does for a token granted
+   * before Tabulo asked for write:notification.
+   */
+  readonly notificationScope: "read" | "write"
   /** Forgejo's MAX_RESPONSE_ITEMS: the largest page any list endpoint returns. */
   readonly maxPageSize: number
   /** Leaves out X-Total-Count, as a proxy that strips headers would. */
@@ -232,6 +237,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     otherUsers: [],
     orgs: [],
     tokenScope: "write",
+    notificationScope: "write",
     maxPageSize: 50,
     omitTotalCount: false,
     now: "2026-11-07T09:00:00Z",
@@ -239,6 +245,12 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
     ...overrides,
   }
   const users = [fixtures.user, ...fixtures.otherUsers]
+  /** The notification threads marked read, which the unread listing leaves out. */
+  const readThreads = new Set<number>()
+  const unreadNotifications = () =>
+    fixtures.notifications.filter(
+      (notification) => !readThreads.has((notification as { id: number }).id),
+    )
   const orgs = structuredClone(fixtures.orgs) as Array<FakeOrg>
   const issueComments = new Map<FakeIssue, Array<FakeComment>>()
   const issueTimelines = new Map<FakeIssue, ReadonlyArray<FakeTimelineEvent>>()
@@ -739,9 +751,21 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
       )
     }
     if (path === "/api/v1/notifications") {
-      return json(fixtures.notifications, {
-        headers: { "x-total-count": String(fixtures.notifications.length) },
-      })
+      const unread = unreadNotifications()
+      return json(unread, { headers: { "x-total-count": String(unread.length) } })
+    }
+    const thread = /^\/api\/v1\/notifications\/threads\/(\d+)$/.exec(path)
+    if (thread !== null && method === "PATCH") {
+      // Forgejo checks the token's scope before it looks for the thread.
+      if (fixtures.notificationScope !== "write") return forbidden()
+      const id = Number(thread[1])
+      const known = fixtures.notifications.some(
+        (notification) => (notification as { id: number }).id === id,
+      )
+      if (!known) return notFound()
+      if (query.get("to-status") === "read") readThreads.add(id)
+      // 205 is a null body status, so the fake cannot send the thread Forgejo sends with it.
+      return new Response(null, { status: 205 })
     }
     if (path === "/api/v1/repos/issues/search" && query.has("q")) {
       const text = (query.get("q") ?? "").toLowerCase()

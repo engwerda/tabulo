@@ -359,6 +359,12 @@ export type AddCommentRequest = typeof AddCommentRequest.Type
 
 export const AddCommentResult = Schema.Struct({ comment: CardComment })
 export type AddCommentResult = typeof AddCommentResult.Type
+
+/** Marks one of the user's notifications read in Forgejo; the answer is `{}`. */
+export const MarkNotificationReadRequest = Schema.Struct({
+  id: Schema.Int.check(Schema.isGreaterThan(0)),
+})
+export type MarkNotificationReadRequest = typeof MarkNotificationReadRequest.Type
 // Insights and activity.
 
 export const INSIGHT_DAYS = [1, 7, 30, 90, 180, 365] as const

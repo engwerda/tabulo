@@ -19,6 +19,7 @@ import {
   Insights,
   Instance,
   IssueOptions,
+  type MarkNotificationReadRequest,
   type MoveCardRequest,
   MoveCardResult,
   Org,
@@ -150,6 +151,10 @@ export const setMilestone = async (request: SetMilestoneRequest): Promise<CardUp
 
 export const addComment = async (request: AddCommentRequest): Promise<AddCommentResult> =>
   decodeAddCommentResult(await postJson("/api/board/comment", request))
+
+export const markNotificationRead = async (id: number): Promise<void> => {
+  await postJson("/api/notifications/read", { id } satisfies MarkNotificationReadRequest)
+}
 
 export const fetchIssueOptions = async (org: string, repo: string): Promise<IssueOptions> =>
   decodeIssueOptions(
