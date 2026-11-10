@@ -1,7 +1,8 @@
 import { useMutation } from "@tanstack/react-query"
-import { useRef } from "react"
+import { useRef, useState } from "react"
+import type { NotificationItem } from "../shared/api.ts"
 import { markNotificationRead, RequestFailed } from "./api.ts"
-import type { Preview } from "./dashboard-preview.ts"
+import { notificationState, type Preview } from "./dashboard-preview.ts"
 import { absoluteTime, relativeTime } from "./format.ts"
 import { IssuePanel, Property } from "./issue/IssuePanel.tsx"
 import { IssueRef } from "./ui/IssueRef.tsx"
@@ -38,14 +39,16 @@ export const DashboardPanel = ({
 }: DashboardPanelProps) => {
   const toast = useToast()
   const markButton = useRef<HTMLButtonElement>(null)
+  const [marked, setMarked] = useState<NotificationItem | null>(null)
   const mark = useMutation({
-    mutationFn: markNotificationRead,
-    onSuccess: (_, id) => {
+    mutationFn: (unread: NotificationItem) => markNotificationRead(unread.id),
+    onSuccess: (_, unread) => {
       // The button goes away, so focus that was on it moves to the heading instead of the page.
       if (markButton.current !== null && document.activeElement === markButton.current) {
         markButton.current.closest('[role="dialog"]')?.querySelector<HTMLElement>("h2")?.focus()
       }
-      onMarkedRead(id)
+      setMarked(unread)
+      onMarkedRead(unread.id)
     },
     onError: (error) =>
       toast({
@@ -57,6 +60,7 @@ export const DashboardPanel = ({
   })
   const { issue, item, notification } = preview
   const updatedAt = item?.updatedAt ?? notification?.updatedAt
+  const state = notificationState(notification, marked)
   return (
     <IssuePanel
       issue={issue}
@@ -93,20 +97,20 @@ export const DashboardPanel = ({
               </time>
             </Property>
           )}
-          {(notification !== null || mark.isSuccess) && (
+          {state !== null && (
             <Property name="Notification">
               <span className="flex flex-wrap items-center gap-1">
                 <span aria-live="polite" className="px-1.5 py-1">
-                  {mark.isSuccess ? "Marked read" : "Unread"}
+                  {state === "marked" ? "Marked read" : "Unread"}
                 </span>
-                {notification !== null && !mark.isSuccess && (
+                {state === "unread" && notification !== null && (
                   // Disabling the button would drop its focus to the page while it saves.
                   <button
                     ref={markButton}
                     type="button"
                     aria-disabled={mark.isPending || undefined}
                     onClick={() => {
-                      if (!mark.isPending) mark.mutate(notification.id)
+                      if (!mark.isPending) mark.mutate(notification)
                     }}
                     className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-indigo-700 transition hover:bg-indigo-50 aria-disabled:opacity-60 pointer-coarse:min-h-11 pointer-coarse:px-2.5 dark:text-indigo-300 dark:hover:bg-indigo-500/10"
                   >

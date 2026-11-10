@@ -794,10 +794,6 @@ const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 
 type IssueRequest = { readonly org: string; readonly repo: string; readonly number: number }
 
-/**
- * Reads the repository and issue a card edit names. Refuses a pull request and an issue of an
- * archived repository before anything is written.
- */
 const refuseArchived = (repo: ForgejoRepo) =>
   repo.archived
     ? Effect.fail(
@@ -807,6 +803,10 @@ const refuseArchived = (repo: ForgejoRepo) =>
       )
     : Effect.void
 
+/**
+ * Reads the repository and issue a card edit names. Refuses a pull request and an issue of an
+ * archived repository before anything is written.
+ */
 const editableIssue = (token: AccessToken, repoRef: RepoRef, number: number) =>
   Effect.gen(function* () {
     const forgejo = yield* ForgejoClient

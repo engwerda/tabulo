@@ -43,7 +43,11 @@ export const SectionCard = <A,>({
         <span aria-hidden="true" className="flex text-zinc-400 dark:text-zinc-500">
           {icon}
         </span>
-        <h2 id={headingId} className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+        <h2
+          id={headingId}
+          tabIndex={-1}
+          className="text-sm font-semibold text-zinc-900 focus:outline-none dark:text-zinc-100"
+        >
           {title}
         </h2>
         {section._tag === "Loaded" &&

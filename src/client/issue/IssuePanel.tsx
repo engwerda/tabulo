@@ -115,8 +115,11 @@ const subscribeWide = (changed: () => void) => {
   return () => wideQuery.removeEventListener("change", changed)
 }
 
-/** Toasts stay usable over a modal panel: their Undo and Retry act on the open issue. */
-const STAYS_LIVE = 'section[aria-label="Notifications"]'
+/**
+ * Toasts stay usable over a modal panel, since their Undo and Retry act on the open issue, and so
+ * do dialogs opened over it, such as the shortcut list.
+ */
+const STAYS_LIVE = 'section[aria-label="Notifications"], dialog'
 
 /**
  * While `modal`, everything outside `layer` is inert, so focus and assistive technology stay in

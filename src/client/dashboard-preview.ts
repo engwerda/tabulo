@@ -1,7 +1,7 @@
 import type { Dashboard, DashboardItem, NotificationItem } from "../shared/api.ts"
 import type { PanelIssue } from "./issue/panel-issue.ts"
 
-/** The address parameter that names the previewed issue, as `?item=owner/repo#12`. */
+/** The address parameter that names the previewed issue as `owner/repo#12`, percent-encoded. */
 export const PREVIEW_PARAM = "item"
 
 /** The dashboard's item sections in page order. */
@@ -112,6 +112,21 @@ export const findPreview = (data: Dashboard, ref: string): Preview | undefined =
     item: null,
     notification: about.notification,
   }
+}
+
+/**
+ * What the preview says about its notification: `unread` while the dashboard lists an update the
+ * viewer has not marked read here, `marked` once they have, and null without a notification. A
+ * later update of the same thread is unread again.
+ */
+export const notificationState = (
+  listed: NotificationItem | null,
+  marked: NotificationItem | null,
+): "unread" | "marked" | null => {
+  if (listed !== null && (listed.id !== marked?.id || listed.updatedAt !== marked.updatedAt)) {
+    return "unread"
+  }
+  return marked === null ? null : "marked"
 }
 
 /** The dashboard without the notification `id`, as Forgejo lists it once it is read. */

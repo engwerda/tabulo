@@ -4,6 +4,7 @@ import {
   type ItemSection,
   itemRef,
   notificationRef,
+  notificationState,
   withoutNotification,
 } from "../src/client/dashboard-preview.ts"
 import type { Dashboard, DashboardItem, NotificationItem, Section } from "../src/shared/api.ts"
@@ -217,5 +218,34 @@ describe("withoutNotification", () => {
 
     expect(withoutNotification(data, 55)).toBe(data)
     expect(withoutNotification(dashboard({ notifications: failed }), 55).notifications).toBe(failed)
+  })
+})
+
+describe("notificationState", () => {
+  const unread = notification(55, "Issue", "acme/web", "https://forgejo.example/acme/web/issues/9")
+
+  it("is unread while the dashboard lists a notification the viewer has not marked", () => {
+    expect(notificationState(unread, null)).toBe("unread")
+  })
+
+  it("is marked once the viewer marked it, whether or not the dashboard still lists it", () => {
+    expect(notificationState(null, unread)).toBe("marked")
+    expect(notificationState(unread, unread)).toBe("marked")
+  })
+
+  it("is unread again for a later update of the thread the viewer marked", () => {
+    const later = { ...unread, updatedAt: "2026-11-07T12:00:00Z" }
+
+    expect(notificationState(later, unread)).toBe("unread")
+  })
+
+  it("is unread for another notification than the one marked", () => {
+    const other = notification(56, "Issue", "acme/web", "https://forgejo.example/acme/web/issues/9")
+
+    expect(notificationState(other, unread)).toBe("unread")
+  })
+
+  it("is null without a notification", () => {
+    expect(notificationState(null, null)).toBeNull()
   })
 })

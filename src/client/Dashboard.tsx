@@ -205,10 +205,18 @@ const SkeletonGrid = () => (
   </div>
 )
 
+/** The link of each row of a dashboard section, in order. */
+const rowLinks = (section: Element) =>
+  [...section.querySelectorAll("li")].flatMap((row) => {
+    const link = row.querySelector<HTMLElement>("a[href]")
+    return link === null ? [] : [link]
+  })
+
 /**
  * The preview that `?item=` names, and opening and closing it. The panel keeps what it showed
- * when a refetch no longer lists the issue, such as after Mark read, until it closes. `fresh` is
- * false until the dashboard has been read since the page opened.
+ * when a refetch no longer lists the issue, such as after Mark read, until it closes. `fresh` says
+ * that the dashboard's last read succeeded and came after the page opened, so a section missing
+ * the issue is current.
  */
 const usePreview = (data: Dashboard | undefined, fresh: boolean) => {
   const queryClient = useQueryClient()
@@ -226,6 +234,7 @@ const usePreview = (data: Dashboard | undefined, fresh: boolean) => {
   const held = useRef<Preview | null>(null)
   const found = data === undefined || ref === null ? undefined : findPreview(data, ref)
   if (found !== undefined) held.current = found
+  if (ref === null) held.current = null
   const preview =
     found ??
     (ref !== null && held.current?.ref.toLowerCase() === ref.toLowerCase()
@@ -244,9 +253,20 @@ const usePreview = (data: Dashboard | undefined, fresh: boolean) => {
   }
 
   // Focus goes back to the row link that opened the preview, or else the first one for its issue.
-  const opener = useRef<HTMLElement | null>(null)
+  // When Mark read took the issue off the dashboard, it goes to the row now in the opener's place,
+  // or to its section's heading.
+  const opener = useRef<{
+    readonly link: HTMLElement
+    readonly section: HTMLElement | null
+    readonly index: number
+  } | null>(null)
   const open: OpenPreview = (next, link) => {
-    opener.current = link
+    const section = link.closest("section")
+    opener.current = {
+      link,
+      section,
+      index: section === null ? -1 : rowLinks(section).indexOf(link),
+    }
     setRef(
       next,
       ref === null
@@ -257,10 +277,15 @@ const usePreview = (data: Dashboard | undefined, fresh: boolean) => {
   const restoreFocus = () => {
     if (preview === undefined) return
     const own = opener.current
+    const rows = own?.section?.isConnected ? rowLinks(own.section) : []
     const target =
-      own?.isConnected && own.dataset.previewRef?.toLowerCase() === preview.ref.toLowerCase()
-        ? own
-        : document.querySelector<HTMLElement>(`a[data-preview-ref="${CSS.escape(preview.ref)}" i]`)
+      (own?.link.isConnected &&
+      own.link.dataset.previewRef?.toLowerCase() === preview.ref.toLowerCase()
+        ? own.link
+        : null) ??
+      document.querySelector<HTMLElement>(`a[data-preview-ref="${CSS.escape(preview.ref)}" i]`) ??
+      rows[Math.min(Math.max(own?.index ?? 0, 0), rows.length - 1)] ??
+      own?.section?.querySelector<HTMLElement>("h2")
     target?.focus()
   }
   const close = () => {
@@ -346,7 +371,7 @@ export const DashboardView = () => {
   const data = dashboard.data
   const firstName = viewer.name.split(/\s+/)[0] || viewer.login
   const homes = data === undefined ? null : homeSections(data)
-  const preview = usePreview(data, dashboard.isFetchedAfterMount)
+  const preview = usePreview(data, dashboard.isFetchedAfterMount && dashboard.isSuccess)
 
   const renderSection = (key: SectionKey, data: Dashboard) => {
     const { id, title, icon, empty } = SECTIONS[key]

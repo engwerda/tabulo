@@ -108,9 +108,10 @@ A plain click on an item of the review requests, assigned, mentions, or created 
 notification about an issue or pull request, opens a preview over the dashboard. A click with a
 modifier key or the middle button still opens Forgejo in a new tab. A notification about a
 commit or a repository, or whose address has no issue or pull request number, links to Forgejo
-only. The address names the preview as `?item=owner/repo#12`, so Back closes it. An address that
-no loaded section lists closes with a notice, unless a section failed to load. A preview keeps
-showing its issue when a refresh no longer lists it.
+only. The address names the preview as `item=<owner>/<repo>#<number>`, percent-encoded, so Back
+closes it and a reload keeps it. An address that the dashboard does not list once a read since
+the page opened has succeeded closes with a notice, unless a section failed to load. A preview
+keeps showing its issue when a refresh no longer lists it, until it closes.
 
 The preview reads the description, comments, and referencing pull requests through
 `GET /api/board/issue` and `GET /api/board/issue-pulls`, with `org` set to the repository's
