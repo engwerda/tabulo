@@ -144,6 +144,10 @@
   body {
     @apply bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
   }
+  /* Tailwind 4's preflight leaves buttons on the default cursor; every live button shows the hand. */
+  button:not(:disabled, [aria-disabled="true"]) {
+    cursor: pointer;
+  }
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-indigo-500;
   }
