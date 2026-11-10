@@ -22,6 +22,7 @@ import {
   addComment,
   BoardConfig,
   cardDetail,
+  cardPullRequests,
   createCard,
   issueOptions,
   listOrgRepos,
@@ -399,6 +400,21 @@ export const createApp = (dependencies: Dependencies) => {
           withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
             cardDetail(token, query).pipe(Effect.map((detail) => c.json(detail))),
           ),
+      ),
+    ),
+  )
+
+  app.get("/api/board/issue-pulls", (c) =>
+    run(
+      c,
+      Effect.flatMap(
+        parseCardQuery(c.req.query("org"), c.req.query("repo"), c.req.query("number")),
+        (query) => {
+          const pool: PageBudget = { remaining: PAGE_BUDGET }
+          return withAccessToken(getCookie(c, SESSION_COOKIE), (token) =>
+            cardPullRequests(token, query, pool).pipe(Effect.map((pulls) => c.json(pulls))),
+          )
+        },
       ),
     ),
   )

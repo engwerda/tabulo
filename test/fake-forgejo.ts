@@ -43,6 +43,11 @@ export type FakeTimelineEvent =
       readonly type: "issue_ref" | "pull_ref" | "comment_ref"
       /** The referring issue, which the fake serves as it is when the timeline is read. */
       readonly from: { readonly owner: string; readonly repo: string; readonly number: number }
+      /**
+       * Served as `ref_action`: "closes" for a closing keyword, "neutered" once an edit removed
+       * the reference. "none" when left out, as Forgejo sends for a plain mention.
+       */
+      readonly action?: "none" | "closes" | "reopens" | "neutered"
     }
   | { readonly type: "label" | "assignees" | "close" | "comment" }
 
@@ -587,7 +592,7 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
       event,
     }))
     const shown = pageOf(events, query).flatMap(({ id, event }): Array<unknown> => {
-      if (!("from" in event)) return [{ id, type: event.type, ref_issue: null }]
+      if (!("from" in event)) return [{ id, type: event.type, ref_action: "none", ref_issue: null }]
       const { owner, repo: name, number } = event.from
       const source = findRepo(owner, name)
       const referrer = source?.issues.find((candidate) => candidate.number === number)
@@ -599,7 +604,9 @@ export const createFakeForgejo = (overrides: Partial<FakeForgejoFixtures> = {}) 
         (shownOrg(owner, login) !== undefined &&
           source.hiddenFrom?.includes(login) !== true &&
           source.issuesHiddenFrom?.includes(login) !== true)
-      return readable ? [{ id, type: event.type, ref_issue: referrer }] : []
+      return readable
+        ? [{ id, type: event.type, ref_action: event.action ?? "none", ref_issue: referrer }]
+        : []
     })
     return json(shown.length === 0 ? null : shown, {
       headers: fixtures.omitTotalCount ? {} : { "x-total-count": String(shown.length) },

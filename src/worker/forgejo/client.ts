@@ -99,6 +99,12 @@ export type IssueSearch = "review_requested" | "assigned" | "mentioned" | "creat
 /** A repository by owner and name, both already validated as path segments. */
 export type RepoRef = { readonly owner: string; readonly name: string }
 
+/** A pull request that references an issue, and the timeline's `ref_action` for it. */
+export type PullReference = {
+  readonly pull: ForgejoReferringIssue
+  readonly action: string | null
+}
+
 /** Which issues of a repository to list. Pull requests are never included. */
 export type IssueListing =
   | { readonly state: "open" }
@@ -178,6 +184,17 @@ export class ForgejoClient extends Context.Service<
       number: number,
       budget: PageBudget,
     ) => Effect.Effect<Listing<ForgejoReferringIssue>, ForgejoError>
+    /**
+     * The pull requests whose title or description references the issue, oldest reference
+     * first, from the same timeline pages as `referencingIssues`. A pull request can appear
+     * once per reference Forgejo recorded.
+     */
+    readonly referencingPulls: (
+      token: AccessToken,
+      repo: RepoRef,
+      number: number,
+      budget: PageBudget,
+    ) => Effect.Effect<Listing<PullReference>, ForgejoError>
     /** The issue's description as Markdown, empty when it has none. */
     readonly issueBody: (
       token: AccessToken,
@@ -526,6 +543,23 @@ export const makeForgejoClient = (
       budget,
     )
 
+  /** The issue's timeline events, oldest first, as far as `budget` and TIMELINE_PAGES reach. */
+  const timeline = (token: AccessToken, repo: RepoRef, number: number, budget: PageBudget) =>
+    paginate(
+      budget,
+      (pageNumber) =>
+        api(
+          token,
+          `${repoPath(repo)}/issues/${number}/timeline`,
+          { limit: String(PAGE_SIZE), page: String(pageNumber) },
+          // Forgejo sends a timeline page with no events as null, not [].
+          Schema.NullOr(Schema.Array(ForgejoTimelineEvent)),
+        ).pipe(Effect.map(({ body }) => ({ items: body ?? [], total: undefined }))),
+      undefined,
+      "empty",
+      TIMELINE_PAGES,
+    )
+
   const tokenRequest = (grant: Record<string, string>) =>
     Effect.gen(function* () {
       const response = yield* send(
@@ -629,23 +663,21 @@ export const makeForgejoClient = (
         Effect.map(({ body }) => body),
       ),
     referencingIssues: (token, repo, number, budget) =>
-      paginate(
-        budget,
-        (pageNumber) =>
-          api(
-            token,
-            `${repoPath(repo)}/issues/${number}/timeline`,
-            { limit: String(PAGE_SIZE), page: String(pageNumber) },
-            // Forgejo sends a timeline page with no events as null, not [].
-            Schema.NullOr(Schema.Array(ForgejoTimelineEvent)),
-          ).pipe(Effect.map(({ body }) => ({ items: body ?? [], total: undefined }))),
-        undefined,
-        "empty",
-        TIMELINE_PAGES,
-      ).pipe(
+      timeline(token, repo, number, budget).pipe(
         Effect.map(({ items, complete }) => ({
           items: items.flatMap((event) =>
             event.type === "issue_ref" && event.ref_issue != null ? [event.ref_issue] : [],
+          ),
+          complete,
+        })),
+      ),
+    referencingPulls: (token, repo, number, budget) =>
+      timeline(token, repo, number, budget).pipe(
+        Effect.map(({ items, complete }) => ({
+          items: items.flatMap(({ type, ref_issue, ref_action }) =>
+            type === "pull_ref" && ref_issue != null && ref_issue.pull_request != null
+              ? [{ pull: ref_issue, action: ref_action ?? null }]
+              : [],
           ),
           complete,
         })),
