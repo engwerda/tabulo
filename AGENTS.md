@@ -55,10 +55,15 @@ major version.
 - `src/shared/card-order.ts` holds the card order rules (sorting and the rank of a drop) that
   the server and the client's optimistic update share.
 - `src/client/board/board-view.ts` holds the client's pure board logic (column order, filters,
-  drop neighbours, the rollback of a failed move), and `board-settings.ts` the board settings
-  dialog's (the draft, its requests, and the rebase after a 409). The column drag on the board
-  builds its order there too, with `dropColumn`, `placeColumnAsIn` for Undo and Retry, and
-  `withColumnOrder`. The worker tsconfig includes both so tests can import them.
+  drop neighbours, the rollback of a failed move, `heldBoard` with `nextHold`, which keep the
+  layout still while the person uses the board, and `nextSeen`, which decides what screen readers
+  hear as it lands), and `board-settings.ts` the board settings dialog's (the draft, its
+  requests, and the rebase after a 409). The column drag on the board builds its order there
+  too, with `dropColumn`, `placeColumnAsIn` for Undo and Retry, and `withColumnOrder`. The
+  worker tsconfig includes both so tests can import them.
+- `src/client/board/use-held-board.ts` wires the hold into `BoardPage`. What the board shows
+  can be a held board, so writes build from the query cache (`getQueryData`), and only a move's
+  `fromColumn` comes from the shown board, so the server refuses a move made on a held layout.
 - `src/client/board/BoardColumns.tsx` runs card and column drags in one `DndContext`, because
   the cards' context must wrap every column. Each kind's collisions, keyboard moves,
   announcements, drag-over, drop, and overlay are its entry in a

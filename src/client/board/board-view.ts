@@ -209,3 +209,191 @@ export const replaceCard = (board: Board, key: string, change: (card: BoardCard)
   ...board,
   cards: board.cards.map((card) => (card.key === key ? change(card) : card)),
 })
+
+const samePlacement = (a: BoardCard, b: BoardCard) =>
+  a.column === b.column && a.rank === b.rank && a.state === b.state && a.closedAt === b.closedAt
+
+export const sameKeys = (a: ReadonlyArray<{ key: string }>, b: ReadonlyArray<{ key: string }>) =>
+  a.length === b.length && a.every((column, index) => column.key === b[index]?.key)
+
+const sameFields = <T extends object>(a: T, b: T) =>
+  (Object.keys(a) as Array<keyof T>).every((field) => a[field] === b[field])
+
+/**
+ * The board with `held`'s layout, its columns and where each card is, and everything else from
+ * `live`. A card that only `live` has waits, and one that `live` no longer has stays. So does
+ * all of `held`'s version of a card that `visible`, the board's filters, judges differently in
+ * the two, so another person's change neither shows nor hides it. `live` itself when the layouts
+ * are the same, so nothing waits, and `held` itself when it already is the result, so holding
+ * the held board again changes nothing.
+ */
+export const heldBoard = (
+  held: Board,
+  live: Board,
+  visible: (card: BoardCard) => boolean,
+): Board => {
+  const liveCards = new Map(live.cards.map((card) => [card.key, card] as const))
+  const heldKeys = new Set(held.cards.map((card) => card.key))
+  // Cards the filters hide in both boards cannot move anything on screen, so they never wait.
+  const sameLayout =
+    sameKeys(held.columns, live.columns) &&
+    sameKeys(held.allColumns, live.allColumns) &&
+    held.cards.every((card) => {
+      const now = liveCards.get(card.key)
+      if (now === undefined) return !visible(card)
+      return visible(card) === visible(now) && (!visible(card) || samePlacement(card, now))
+    }) &&
+    live.cards.every((card) => heldKeys.has(card.key) || !visible(card))
+  if (sameLayout) return live
+  const cards = held.cards.map((card) => {
+    const now = liveCards.get(card.key)
+    if (now === undefined || visible(card) !== visible(now)) return card
+    if (samePlacement(card, now)) return now
+    const { column, rank, state, closedAt } = card
+    const placed = { ...now, column, rank, state, closedAt }
+    return sameFields(placed, card) ? card : placed
+  })
+  const board = { ...live, columns: held.columns, allColumns: held.allColumns }
+  return cards.every((card, index) => card === held.cards[index]) &&
+    sameFields({ ...board, cards: held.cards }, held)
+    ? held
+    : { ...board, cards }
+}
+
+export type LayoutChanges = {
+  readonly added: number
+  readonly removed: number
+  /** Cards shown in both boards whose column changed. */
+  readonly moved: number
+}
+
+/** What changed among the cards that `visible`, the board's filters, shows in each board. */
+export const layoutChanges = (
+  before: Board,
+  after: Board,
+  visible: (card: BoardCard) => boolean,
+): LayoutChanges => {
+  const columns = (board: Board) =>
+    new Map(board.cards.filter(visible).map((card) => [card.key, card.column] as const))
+  const columnBefore = columns(before)
+  const columnAfter = columns(after)
+  const keysOnly = (a: Map<string, string>, b: Map<string, string>) =>
+    [...a.keys()].filter((key) => !b.has(key)).length
+  return {
+    added: keysOnly(columnAfter, columnBefore),
+    removed: keysOnly(columnBefore, columnAfter),
+    moved: [...columnAfter].filter(([key, column]) => {
+      const was = columnBefore.get(key)
+      return was !== undefined && was !== column
+    }).length,
+  }
+}
+
+/** "Board updated: 2 added, 1 moved", or null when no card was added, moved, or removed. */
+export const announceLayout = ({ added, moved, removed }: LayoutChanges) => {
+  const parts = [
+    [added, "added"],
+    [moved, "moved"],
+    [removed, "removed"],
+  ] as const
+  const said = parts.filter(([count]) => count > 0).map(([count, word]) => `${count} ${word}`)
+  return said.length === 0 ? null : `Board updated: ${said.join(", ")}`
+}
+
+/**
+ * `snapshot` is the board as it last showed while the person uses the board, null when nothing
+ * is held. `following` says why the hold takes every board as it is read: a write of the
+ * person's own, while it is pending and until the read that follows it lands, or Refresh, until
+ * its read lands.
+ */
+export type BoardHold = {
+  readonly snapshot: Board | null
+  readonly following: false | "write" | "refresh"
+}
+
+export const NO_HOLD: BoardHold = { snapshot: null, following: false }
+
+/** What the board is doing at one step: in use by the person, writing, or reading. */
+export type BoardActivity = {
+  readonly using: boolean
+  readonly writing: boolean
+  readonly reading: boolean
+}
+
+/**
+ * The hold once the board is `live`. Use keeps the layout of the moment it began, and its end
+ * lets the latest layout land. A write makes the hold follow `live` until the write has ended and
+ * the read after it has landed, so the person's own changes, their rollbacks, and the board as
+ * the server then has it show at once. `visible` is the board's filters.
+ */
+export const nextHold = (
+  hold: BoardHold,
+  live: Board | undefined,
+  { using, writing, reading }: BoardActivity,
+  visible: (card: BoardCard) => boolean,
+): BoardHold => {
+  const following = writing ? "write" : reading ? hold.following : false
+  const snapshot =
+    live === undefined || !using
+      ? null
+      : writing || hold.following !== false || hold.snapshot === null
+        ? live
+        : heldBoard(hold.snapshot, live, visible)
+  return snapshot === hold.snapshot && following === hold.following ? hold : { snapshot, following }
+}
+
+/**
+ * The hold once Refresh asks for what waits, and the board's next read, to show at once. A
+ * write's read keeps following as the write's, so it stays unannounced.
+ */
+export const landHold = (hold: BoardHold): BoardHold =>
+  hold.following === false ? { ...hold, following: "refresh" } : hold
+
+/** Keyed, so the same words said twice are announced twice. */
+export type Announcement = { readonly id: number; readonly text: string }
+
+/**
+ * What screen readers were last told about the board: the board that showed, why the hold then
+ * followed reads, whether a read since the page opened has shown, and the latest announcement.
+ */
+export type BoardSeen = {
+  readonly board: Board | undefined
+  readonly following: BoardHold["following"]
+  readonly fetched: boolean
+  readonly announcement: Announcement | null
+}
+
+/**
+ * What screen readers are told once `now` shows, counting the cards that `visible`, the board's
+ * filters, shows. A layout change is announced unless the person's own write brought it, while
+ * pending, as it ends, or with the read after it, or no read since the page opened had shown
+ * yet, as when it opens on a board read before. `now.fetched` says whether the board was read
+ * since the page opened; that read has shown once `now.board` is `live`, not a held board.
+ */
+export const nextSeen = (
+  seen: BoardSeen,
+  now: Omit<BoardSeen, "announcement">,
+  live: Board | undefined,
+  visible: (card: BoardCard) => boolean,
+): BoardSeen => {
+  const fetched = seen.fetched || (now.fetched && now.board === live)
+  if (seen.board === now.board && seen.following === now.following && seen.fetched === fetched) {
+    return seen
+  }
+  const text =
+    seen.board === now.board ||
+    seen.board === undefined ||
+    now.board === undefined ||
+    seen.following === "write" ||
+    now.following === "write" ||
+    !seen.fetched
+      ? null
+      : announceLayout(layoutChanges(seen.board, now.board, visible))
+  return {
+    board: now.board,
+    following: now.following,
+    fetched,
+    announcement:
+      text === null ? seen.announcement : { id: (seen.announcement?.id ?? 0) + 1, text },
+  }
+}

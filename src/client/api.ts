@@ -6,6 +6,7 @@ import {
   Board,
   BoardList,
   CardDetail,
+  CardPullRequests,
   CardUpdateResult,
   type CreateBoardRequest,
   type CreateCardRequest,
@@ -67,6 +68,7 @@ const decodeCardUpdateResult = Schema.decodeUnknownPromise(CardUpdateResult)
 const decodeAddCommentResult = Schema.decodeUnknownPromise(AddCommentResult)
 const decodeIssueOptions = Schema.decodeUnknownPromise(IssueOptions)
 const decodeCardDetail = Schema.decodeUnknownPromise(CardDetail)
+const decodeCardPullRequests = Schema.decodeUnknownPromise(CardPullRequests)
 
 const requestJson = async (path: string, init?: RequestInit): Promise<unknown> => {
   const response = await fetch(path, {
@@ -162,6 +164,17 @@ export const fetchCardDetail = async (
   decodeCardDetail(
     await requestJson(
       `/api/board/issue?${new URLSearchParams({ org, repo, number: String(number) })}`,
+    ),
+  )
+
+export const fetchCardPullRequests = async (
+  org: string,
+  repo: string,
+  number: number,
+): Promise<CardPullRequests> =>
+  decodeCardPullRequests(
+    await requestJson(
+      `/api/board/issue-pulls?${new URLSearchParams({ org, repo, number: String(number) })}`,
     ),
   )
 

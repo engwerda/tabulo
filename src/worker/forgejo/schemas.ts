@@ -112,12 +112,25 @@ export const ForgejoReferringIssue = Schema.Struct({
     name: Schema.String,
     full_name: Schema.String,
   }),
+  pull_request: Schema.optionalKey(
+    Schema.NullOr(
+      Schema.Struct({
+        merged: Schema.optionalKey(Schema.Boolean),
+        draft: Schema.optionalKey(Schema.Boolean),
+      }),
+    ),
+  ),
 })
 export type ForgejoReferringIssue = typeof ForgejoReferringIssue.Type
 
 /** One event of an issue's timeline. Only reference events carry `ref_issue`. */
 export const ForgejoTimelineEvent = Schema.Struct({
   type: Schema.String,
+  /**
+   * How a reference refers to the issue: "closes" with a closing keyword, "reopens", "none",
+   * or "neutered" once an edit removed the reference.
+   */
+  ref_action: Schema.optionalKey(Schema.NullOr(Schema.String)),
   ref_issue: Schema.optionalKey(Schema.NullOr(ForgejoReferringIssue)),
 })
 

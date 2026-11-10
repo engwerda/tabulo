@@ -280,6 +280,33 @@ export const CardDetail = Schema.Struct({
 })
 export type CardDetail = typeof CardDetail.Type
 
+/** A pull request whose title or description references a card's issue. */
+export const CardPullRequest = Schema.Struct({
+  /** `owner/repo#number`, lowercased like a card key. */
+  key: Schema.String,
+  /** The pull request's repository as `owner/repo`. */
+  repo: Schema.String,
+  number: Schema.Number,
+  title: Schema.String,
+  url: Schema.String,
+  state: Schema.Literals(["open", "draft", "merged", "closed"]),
+  /**
+   * "closes" when the reference uses a closing keyword such as `Closes #12`. Forgejo then closes
+   * the issue when the pull request merges into the default branch.
+   */
+  reference: Schema.Literals(["closes", "mentions"]),
+})
+export type CardPullRequest = typeof CardPullRequest.Type
+
+/** The pull requests a card's detail panel lists, open ones first. */
+export const CardPullRequests = Schema.Struct({
+  key: Schema.String,
+  pullRequests: Schema.Array(CardPullRequest),
+  /** False when the issue's timeline had more pages than Tabulo reads, so more may exist. */
+  complete: Schema.Boolean,
+})
+export type CardPullRequests = typeof CardPullRequests.Type
+
 /** What a card's labels, milestone, and assignees can be set to in one repository. */
 export const IssueOptions = Schema.Struct({
   /** Organization and repository labels, without status column labels or archived labels. */

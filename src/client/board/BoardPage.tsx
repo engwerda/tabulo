@@ -90,6 +90,7 @@ import {
   readFilters,
   replaceCard,
   revertMove,
+  sameKeys,
   withFilter,
 } from "./board-view.ts"
 import { CardComposer } from "./CardComposer.tsx"
@@ -97,8 +98,13 @@ import { CardPanel } from "./CardPanel.tsx"
 import { drafts, titleDraftKey } from "./drafts.ts"
 import { BOARD_SHORTCUTS } from "./shortcuts.ts"
 import { useBoardUpdate } from "./use-board-writes.ts"
+import { useColumnsInUse, useHeldBoard } from "./use-held-board.ts"
 
 const REFRESH_MS = 60_000
+const WAITING = "Changes waiting"
+const WAITING_DETAIL =
+  "Someone changed the board. Their changes show once you stop using it. Select to show them now (R)."
+const WAITING_DETAIL_ID = "board-changes-waiting-detail"
 const NO_COMMANDS: ReturnType<typeof boardCommands> = []
 
 // The command menu gives focus back to where it was as it closes, after its command runs, so a
@@ -484,10 +490,39 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
     refetchOnReconnect: settled,
     refetchOnMount: settled,
   })
+  const columnsArea = useColumnsInUse()
+  // A board that answered 404 keeps its last answer in the cache, which nothing may act on.
+  const live = isNotFound(board.error) ? undefined : board.data
+  const visible = (card: BoardCard) => matchesFilters(card, boardFilters, viewer.login)
+  // Judged on the live board: a held board keeps showing a column that a settings save hid, and
+  // with it the composer, which would hold the board for good.
+  const composerShown =
+    composing !== null && live?.columns.some((column) => column.key === composing) === true
+  const {
+    shown: data,
+    waiting,
+    announcement,
+    land,
+  } = useHeldBoard(
+    live,
+    {
+      using: columnsArea.inUse || composerShown || dragging,
+      writing: moving,
+      reading: board.isFetching,
+      // A failed read counts as fetched in TanStack Query, but shows nothing new.
+      fetched: board.isFetchedAfterMount && !board.isError,
+    },
+    visible,
+  )
+  const shownBoard = useRef(data)
+  shownBoard.current = data
   // While a write is pending its end reads the boards again; an answer read now predates the
   // write and would put a moved card back. With no board loaded there is nothing to put back.
   const refresh = () => {
-    if (board.data === undefined || !writingBoards(queryClient, org)) void board.refetch()
+    if (board.data === undefined || !writingBoards(queryClient, org)) {
+      land()
+      void board.refetch()
+    }
   }
   const boardMissing =
     board.error instanceof RequestFailed && board.error.code === "board_not_found"
@@ -526,7 +561,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
     )
 
   const columnTitle = (key: string) =>
-    board.data?.columns.find((column) => column.key === key)?.title ?? key
+    data?.columns.find((column) => column.key === key)?.title ?? key
 
   // Writes wait while the browser is offline; one notice says so and goes away once it is back.
   const online = useOnline()
@@ -629,7 +664,28 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
   const startMove = (cardMove: CardMove, undo?: CardMove | null) => {
     const current = queryClient.getQueryData<Board>(boardKey)
     const card = current?.cards.find((candidate) => candidate.key === cardMove.key)
-    if (current === undefined || card === undefined) return
+    if (current === undefined || card === undefined) {
+      const gone = shownBoard.current?.cards.find((candidate) => candidate.key === cardMove.key)
+      if (gone !== undefined) {
+        land()
+        toast({
+          tone: "warning",
+          title: (
+            <>
+              <IssueRef repo={gone.repo} number={gone.number} /> is no longer on this board
+            </>
+          ),
+          detail: "Someone changed it meanwhile, so it did not move.",
+          key: aboutCard(gone),
+        })
+      }
+      return
+    }
+    // The column as the person sees it, so the server refuses a move made on a held layout that
+    // is out of date.
+    const fromColumn =
+      shownBoard.current?.cards.find((candidate) => candidate.key === card.key)?.column ??
+      card.column
     if (!navigator.onLine) {
       offlineNotice(`${card.repo}#${card.number} moves in Forgejo once you are back online.`)
     }
@@ -655,7 +711,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
         org: current.org,
         repo: card.repo,
         number: card.number,
-        fromColumn: card.column,
+        fromColumn,
         toColumn: cardMove.toColumn,
         afterKey: cardMove.afterKey,
         beforeKey: cardMove.beforeKey,
@@ -696,6 +752,19 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
     if (current === undefined) return
     if (settingsSavePending()) {
       stillSaving({ label: again, run: () => arrangeColumns(key, arrange, kind, again) })
+      return
+    }
+    // A drop places the column among the columns the person sees; on a held order it would save
+    // an order nobody chose.
+    const shown = shownBoard.current
+    if (kind === "move" && shown !== undefined && !sameKeys(shown.allColumns, current.allColumns)) {
+      land()
+      toast({
+        tone: "warning",
+        title: "Someone changed the columns meanwhile",
+        detail: "The column did not move. The board now shows the columns as they are; try again.",
+        key: COLUMN_ORDER_TOAST,
+      })
       return
     }
     const base = draftOf(current)
@@ -858,9 +927,6 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
     [toast],
   )
 
-  const visible = (card: BoardCard) => matchesFilters(card, boardFilters, viewer.login)
-  // A board that answered 404 keeps its last answer in the cache, which nothing may act on.
-  const data = isNotFound(board.error) ? undefined : board.data
   const archived = new Set(
     (repos.data ?? []).filter((repo) => repo.archived).map((repo) => repo.name),
   )
@@ -1102,6 +1168,15 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
     composerRepo !== null && creatableRepos.includes(composerRepo)
       ? composerRepo
       : creatableRepos[0]
+  const noMatches = filtered && shownCount === 0 && data !== undefined && data.cards.length > 0
+  // The composer closes once the board stops showing it, as when its column goes or no card
+  // matches the filters, rather than open again by itself later.
+  if (
+    composing !== null &&
+    !(canCreate && !noMatches && data?.columns.some((column) => column.key === composing))
+  ) {
+    setComposing(null)
+  }
   const loadedAt = new Date(board.dataUpdatedAt).toISOString()
   // After a failed refresh the cards are older than the last attempt, so say when they were read.
   const refreshFailed = data !== undefined && board.isError && !allFailed
@@ -1112,7 +1187,9 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
         ? "Refreshing…"
         : refreshFailed
           ? `Refresh failed, last loaded ${relativeTime(loadedAt, now)}`
-          : `Updated ${relativeTime(loadedAt, now)}`
+          : waiting
+            ? WAITING
+            : `Updated ${relativeTime(loadedAt, now)}`
   // On a phone the board's options sit beside Filters, which leaves the organization's name room.
   const filtersShown =
     data !== undefined && !allFailed && data.board.repos.length > 0 && data.columns.length > 0
@@ -1204,6 +1281,34 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
               filtersShown ? "sm:col-start-3 min-[84rem]:col-start-4" : ""
             }`}
           >
+            {waiting && (
+              <>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    const button = event.currentTarget
+                    refresh()
+                    // Showing the changes removes the button; focus stays in the header.
+                    requestAnimationFrame(() => {
+                      if (!button.isConnected && document.activeElement === document.body) {
+                        document
+                          .querySelector<HTMLElement>('button[aria-label^="Board options"]')
+                          ?.focus()
+                      }
+                    })
+                  }}
+                  title={WAITING_DETAIL}
+                  aria-describedby={WAITING_DETAIL_ID}
+                  className="mr-1 inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium whitespace-nowrap text-indigo-800 transition hover:bg-indigo-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 dark:bg-indigo-500/15 dark:text-indigo-200 dark:hover:bg-indigo-500/25"
+                >
+                  <span aria-hidden="true" className="size-1.5 rounded-full bg-indigo-500" />
+                  {WAITING}
+                </button>
+                <span id={WAITING_DETAIL_ID} hidden>
+                  {WAITING_DETAIL}
+                </span>
+              </>
+            )}
             {!online && (
               <span className="mr-1 inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-500/15 dark:text-amber-200">
                 <span aria-hidden="true" className="size-1.5 rounded-full bg-amber-500" />
@@ -1232,6 +1337,9 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
           </div>
           <p className="sr-only" aria-live="polite">
             {board.isFetching ? "Refreshing board" : ""}
+          </p>
+          <p className="sr-only" aria-live="polite">
+            {announcement !== null && <span key={announcement.id}>{announcement.text}</span>}
           </p>
         </div>
 
@@ -1403,10 +1511,10 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
                 ? "Show at least one column in the board's settings."
                 : `A member of ${orgTitle} can show them again.`}
             </EmptyBoard>
-          ) : filtered && shownCount === 0 && data.cards.length > 0 ? (
+          ) : noMatches ? (
             <NoMatches query={boardFilters.text.trim()} onClear={clearFilters} />
           ) : (
-            <div className="min-h-0 flex-1">
+            <div ref={columnsArea.ref} {...columnsArea.handlers} className="min-h-0 flex-1">
               <BoardColumns
                 board={data}
                 saving={saving}

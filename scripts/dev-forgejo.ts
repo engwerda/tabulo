@@ -475,6 +475,16 @@ const apiCurrent = current([
     created: 1,
     updated: 0.9,
   },
+  {
+    title: "Count search requests per token",
+    pull: "merged",
+    author: grace,
+    labels: [L.security],
+    comments: 3,
+    created: 8,
+    updated: 5,
+    closed: 5,
+  },
 ])
 
 const webCurrent = current([
@@ -538,6 +548,14 @@ const webCurrent = current([
     comments: 8,
     created: 3,
     updated: 1.3,
+  },
+  {
+    title: "Back off when search answers 429",
+    pull: "draft",
+    author: katherine,
+    labels: [L.ux],
+    created: 2,
+    updated: 1,
   },
 ])
 
@@ -887,6 +905,17 @@ const repos = [
   ),
 ]
 
+const findSeeded = (name: RepoName, title: string, kind: "issue" | "pull") => {
+  const found = repos
+    .find((candidate) => candidate.name === name)
+    ?.issues.find(
+      (candidate) =>
+        candidate.title === title && (candidate.pull_request === null) === (kind === "issue"),
+    )
+  if (found === undefined) throw new Error(`acme/${name} has no ${kind} titled "${title}"`)
+  return found
+}
+
 /**
  * Makes `children` name the epic titled `title` in `home` with `Part of` in their own
  * description, as a team does when the epic does not list them, and records the references in
@@ -897,18 +926,9 @@ const linkChildren = (
   title: string,
   children: ReadonlyArray<readonly [RepoName, string]>,
 ) => {
-  const find = (name: RepoName, issueTitle: string) => {
-    const issue = repos
-      .find((candidate) => candidate.name === name)
-      ?.issues.find(
-        (candidate) => candidate.title === issueTitle && candidate.pull_request === null,
-      )
-    if (issue === undefined) throw new Error(`acme/${name} has no issue titled "${issueTitle}"`)
-    return issue
-  }
-  const parent = find(home, title)
+  const parent = findSeeded(home, title, "issue")
   parent.timeline = children.map(([name, childTitle]) => {
-    const child = find(name, childTitle)
+    const child = findSeeded(name, childTitle, "issue")
     child.body = `Part of acme/${home}#${parent.number}\n\n${child.body ?? ""}`
     return { type: "issue_ref", from: { owner: "acme", repo: name, number: child.number } }
   })
@@ -916,6 +936,32 @@ const linkChildren = (
 linkChildren("web", "Accessible board", [
   ["mobile", "Haptic feedback on drop"],
   ["mobile", "Push notification opt-in screen"],
+])
+
+/**
+ * Makes `pulls` reference the issue titled `title` in `home` from their description, with
+ * `Closes` or `Part of`, and records the references in the issue's timeline as Forgejo does.
+ */
+const linkPulls = (
+  home: RepoName,
+  title: string,
+  pulls: ReadonlyArray<readonly [RepoName, string, "closes" | "none"]>,
+) => {
+  const issue = findSeeded(home, title, "issue")
+  issue.timeline = pulls.map(([name, pullTitle, action]) => {
+    const pull = findSeeded(name, pullTitle, "pull")
+    const ref = name === home ? `#${issue.number}` : `acme/${home}#${issue.number}`
+    pull.body = `${action === "closes" ? "Closes" : "Part of"} ${ref}\n\n${pull.body ?? ""}`
+    return { type: "pull_ref", from: { owner: "acme", repo: name, number: pull.number }, action }
+  })
+}
+linkPulls("api", "Rate limit the public search endpoint", [
+  ["api", "Count search requests per token", "none"],
+  ["web", "Back off when search answers 429", "none"],
+  ["api", "Add rate limiting to the public search endpoint", "closes"],
+])
+linkPulls("api", "Paginate the audit log export", [
+  ["api", "Sketch the audit log export format", "none"],
 ])
 
 // DEMO_EXTRA=300 adds that many issues to a "load" repository, to try a large board.

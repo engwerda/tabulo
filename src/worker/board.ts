@@ -8,6 +8,8 @@ import type {
   BoardLabel,
   CardComment,
   CardDetail,
+  CardPullRequest,
+  CardPullRequests,
   CardUpdateResult,
   CreateCardRequest,
   CreateCardResult,
@@ -44,10 +46,18 @@ import {
   type ForgejoUnauthorized,
   PageBudgetExhausted,
 } from "./errors.ts"
-import { type AccessToken, ForgejoClient, type PageBudget, type RepoRef } from "./forgejo/client.ts"
+import {
+  type AccessToken,
+  ForgejoClient,
+  type Listing,
+  type PageBudget,
+  type PullReference,
+  type RepoRef,
+} from "./forgejo/client.ts"
 import {
   type ForgejoComment,
   type ForgejoLabel,
+  type ForgejoReferringIssue,
   type ForgejoRepo,
   type ForgejoRepoIssue,
   labelHexColor,
@@ -1008,6 +1018,68 @@ export const cardDetail = (
       commentCount: comments.length,
     } satisfies CardDetail
   })
+
+const PULL_STATE_ORDER: Record<CardPullRequest["state"], number> = {
+  open: 0,
+  draft: 1,
+  merged: 2,
+  closed: 3,
+}
+
+const pullState = ({ state, pull_request }: ForgejoReferringIssue): CardPullRequest["state"] =>
+  pull_request?.merged === true
+    ? "merged"
+    : state === "closed"
+      ? "closed"
+      : pull_request?.draft === true
+        ? "draft"
+        : "open"
+
+/**
+ * One entry per pull request that references the issue, open ones first. A reference that a
+ * later edit removed (`neutered`) does not count, and a closing keyword in any reference wins.
+ */
+const toCardPullRequests = (key: string, references: Listing<PullReference>): CardPullRequests => {
+  const byKey = new Map<string, CardPullRequest>()
+  for (const { pull, action } of references.items) {
+    if (action === "neutered") continue
+    const pullKey = cardKey(pull.repository.owner, pull.repository.name, pull.number)
+    if (byKey.get(pullKey)?.reference === "closes") continue
+    byKey.set(pullKey, {
+      key: pullKey,
+      repo: pull.repository.full_name,
+      number: pull.number,
+      title: pull.title,
+      url: pull.html_url,
+      state: pullState(pull),
+      reference: action === "closes" ? "closes" : "mentions",
+    })
+  }
+  return {
+    key,
+    pullRequests: [...byKey.values()].sort(
+      (a, b) =>
+        PULL_STATE_ORDER[a.state] - PULL_STATE_ORDER[b.state] ||
+        byName(a.repo, b.repo) ||
+        a.number - b.number,
+    ),
+    complete: references.complete,
+  }
+}
+
+/** The pull requests that reference the issue, as the user who owns `token` can read them. */
+export const cardPullRequests = (
+  token: AccessToken,
+  query: { readonly repo: RepoRef; readonly number: number },
+  budget: PageBudget,
+) =>
+  ForgejoClient.use((forgejo) =>
+    forgejo.referencingPulls(token, query.repo, query.number, budget),
+  ).pipe(
+    Effect.map((references) =>
+      toCardPullRequests(cardKey(query.repo.owner, query.repo.name, query.number), references),
+    ),
+  )
 
 /**
  * What a card's labels, milestone, and assignees can be set to in the repository: its labels

@@ -135,6 +135,21 @@ the board.
   them the same way for everyone, and a later move places a card after both. Ranks span repositories
   that different users can read, so the ranks a user sees can show that cards they cannot read
   lie between two of theirs, though never which issues those are.
+- **Refresh.** The board reads itself again every minute and when the window gets focus. A
+  change to a card's title, labels, assignees, milestone, or comments shows at once, unless it
+  takes the card into or out of the active filters. That, and a change to the layout, a card
+  added, removed, moved, or reordered, or a column added, removed, or moved, wait while the user
+  uses the board: while a mouse or pen is over the columns or a card's menu, for a second after
+  a touch or a scroll in them, while the new-issue composer shows, and during a drag. Focus does
+  not count, and a change only to cards the filters hide never waits. Meanwhile the header shows
+  a "Changes waiting" button, and the layout lands once the use ends. The user's own writes, the
+  read that follows them, the user's filter changes, Refresh (`R`), and the button show at once.
+  A dropped card that is no longer on the board does not move, and a notice says so. A column
+  dropped while the column order waits does not move, and a notice says to try again. Either
+  way, what waits lands. When a layout change lands that the user did not make, Refresh's
+  included, screen readers hear one line such as "Board updated: 2 added, 1 moved", counting
+  the cards the filters show, though not for the board's first successful read after it opens,
+  even when a hold delays it. Keyboard focus on a card that changed column follows the card.
 - **Who arranges.** Only members of the organization may move, reorder, or add cards, and add,
   change, or delete boards, as `/user/orgs` lists them for the user's token. Anyone
   may change a card's labels, milestone, or assignees, or comment; Forgejo decides. Forgejo
@@ -171,6 +186,7 @@ the board.
 | `POST /api/board/milestone` | Sets or clears the milestone and answers with `{ card }`. |
 | `POST /api/board/comment` | Comments on the issue and answers with `{ comment }`. |
 | `GET /api/board/issue?org=&repo=&number=` | The card's description and latest 20 comments as HTML, `{ key, bodyHtml, comments, commentCount }`. |
+| `GET /api/board/issue-pulls?org=&repo=&number=` | The pull requests that reference the card's issue, `{ key, pullRequests, complete }`. |
 | `GET /api/board/issue-options?org=&repo=` | The labels, open milestones, and assignable users a card of the repository can take, `{ labels, milestones, assignees }`. |
 | `GET /api/epics?org=&repos=a,b` | Epic cards, children, progress, board columns, `failedRepos`, and `incomplete`. At most 20 repositories. |
 
@@ -302,6 +318,39 @@ latest 20, oldest first, with `commentCount` for all of them. Empty text answers
 a render. Anyone who can read the repository may ask; Forgejo
 answers 404 for an issue the user cannot see. The client sanitizes the HTML again before
 showing it.
+
+The card's details list the pull requests whose title or description references the issue, so
+a lead can see whether work on it is in flight. Pull requests stay off the board itself.
+`GET /api/board/issue-pulls` reads them from the issue's timeline, where Forgejo records a
+`pull_ref` event for each such reference and leaves out pull requests the user cannot read.
+Issues and comments that reference the issue do not count. It is a separate route from
+`GET /api/board/issue`, so a timeline failure leaves the description and comments in place.
+Anyone who can read the repository may ask; Forgejo answers 404 for an issue the user cannot
+see. Each entry of `pullRequests` is `{ key, repo, number, title, url, state, reference }`:
+
+- `key` is `owner/repo#number`, lowercased like a card key, and `repo` is `owner/repo`.
+- `state` is `merged` for a merged pull request, `closed` for one closed without merging,
+  `draft` for an open draft, and `open` otherwise.
+- `reference` is `closes` when a reference uses a closing keyword, such as `Closes #12`, and
+  `mentions` otherwise. Forgejo closes the issue only when the pull request merges into the
+  default branch. Tabulo does not read each pull request's base branch, which would cost a
+  request per pull request, so `closes` says only that the keyword is there.
+- A reference that a later edit removed is neutered in Forgejo and does not count. A pull
+  request that references the issue more than once has one entry, `closes` if any of its
+  references closes.
+- Open pull requests come first, then drafts, merged, and closed ones, each by repository
+  and number.
+
+Tabulo reads at most 20 timeline pages (1,000 events), as for an epic, so with one token
+refresh a request makes at most 42 Forgejo requests. `complete` is false when Tabulo stops at
+the 20th page before the timeline's end, so Forgejo may list more pull requests. As for an epic,
+Forgejo drops references the user cannot read after it cuts a page, so a page made only of such
+references comes back empty and ends the read early, and `complete` does not say so. The panel
+shows the section between the card's properties and its description, and only when a pull
+request references the issue, when the read fails, or when `complete` is false; while the read
+is in flight it shows nothing. It writes the reference as `#12` in the card's repository,
+`repo#12` in another repository of the organization, and `owner/repo#12` beyond it.
+
 ### Insights
 
 Insights aggregate the chosen repositories of one organization over a window that ends now. A
