@@ -196,6 +196,20 @@ or credentials.
 
 Changing `SESSION_ENCRYPTION_KEY` signs everyone out, because existing tokens no longer decrypt.
 
+## Use the dashboard
+
+**Dashboard** in the header lists your review requests, the open issues and pull requests
+assigned to you, your mentions, the items you created, and your unread notifications. Click an
+item, or a notification about an issue or pull request, to preview it in a panel over the
+dashboard: its description, the latest 20 comments, and its labels, author, and last update. You can comment on
+an issue there; for a pull request, a link opens Forgejo for its files, reviews, checks, and new
+comments. The address names the preview, so you can share it, and Back closes it. Press `O` to
+open the item in Forgejo and `Esc` to close the preview. Cmd-click or Ctrl-click, or a middle
+click, opens Forgejo in a new tab instead.
+
+Opening a preview does not mark a notification read. **Mark read** in the preview does, in
+Forgejo, and the notification leaves the dashboard.
+
 ## Use the board
 
 The board's columns come from the organization's exclusive labels in the status scope, which is
@@ -387,11 +401,17 @@ The token needs read access to issues, repositories, notifications, and the user
 - Sign-in uses OAuth2 with PKCE (S256) and a single-use `state` that expires after 10 minutes
   and is bound to the browser that started the sign-in.
 - Tabulo asks Forgejo for the token scopes `read:user`, `read:organization`, `read:repository`,
-  `write:issue`, `read:notification`, and `read:misc`, so its tokens cannot change repositories,
-  settings, or anything an administrator can. Forgejo keeps the scopes of a user's first grant
-  to the OAuth2 application. If your users signed in to a Tabulo that asked for no scopes, their
-  grants still allow everything: create a new OAuth2 application, set its client ID and secret,
-  and each user grants the narrower scopes at their next sign-in.
+  `write:issue`, `write:notification`, and `read:misc`, so its tokens cannot change repositories,
+  settings, or anything an administrator can. `write:notification` lets the dashboard mark a
+  notification read. Forgejo keeps the scopes of a user's first grant to the OAuth2 application.
+  If your users signed in to a Tabulo that asked for no scopes, their grants still allow
+  everything: create a new OAuth2 application, set its client ID and secret, and each user grants
+  the narrower scopes at their next sign-in.
+- Earlier versions asked for `read:notification` instead of `write:notification`. Users who
+  granted that keep it, and **Mark read** fails for them. Create a new OAuth2 application and set
+  its client ID and secret, so everyone grants the new scopes at their next sign-in. Or each such
+  user revokes Tabulo in Forgejo under **Settings > Applications > Authorized OAuth2
+  applications** and signs in again.
 - The session cookie is a random value marked `HttpOnly`, `Secure`, and `SameSite=Lax`. D1
   stores only its SHA-256 hash. A session ends 30 days after sign-in.
 - Access and refresh tokens are encrypted with AES-GCM before they are written to D1, and never
