@@ -3,6 +3,7 @@ import { type ReactNode, useState } from "react"
 import type { Dashboard, DashboardItem, NotificationItem, Section } from "../shared/api.ts"
 import { ACTIVITY, ActivityCard } from "./ActivityCard.tsx"
 import { fetchDashboard } from "./api.ts"
+import { ITEM_SECTIONS, type ItemSection, itemRef } from "./dashboard-preview.ts"
 import { relativeTime } from "./format.ts"
 import { ItemRow, NotificationRow } from "./rows.tsx"
 import { SectionCard } from "./SectionCard.tsx"
@@ -13,8 +14,7 @@ import { buttonClass, cardClass, pageContainer } from "./ui/primitives.tsx"
 
 export const DASHBOARD = ["dashboard"] as const
 
-type ItemKey = "reviewRequests" | "assigned" | "mentioned" | "created"
-type SectionKey = ItemKey | "notifications"
+type SectionKey = ItemSection | "notifications"
 
 type SectionMeta = {
   readonly id: string
@@ -64,9 +64,8 @@ const COLUMNS: ReadonlyArray<ReadonlyArray<SectionKey>> = [
   ["reviewRequests", "assigned"],
   ["notifications", "mentioned", "created"],
 ]
-const ITEM_ORDER: ReadonlyArray<ItemKey> = ["reviewRequests", "assigned", "mentioned", "created"]
 /** A section's name in "Also in …" on an item that a section above it shows in full. */
-const SHORT_TITLES: Record<ItemKey, string> = {
+const SHORT_TITLES: Record<ItemSection, string> = {
   reviewRequests: "Review requests",
   assigned: "Assigned",
   mentioned: "Mentions",
@@ -80,16 +79,14 @@ const SUMMARY: ReadonlyArray<readonly [SectionKey, string, string]> = [
   ["mentioned", "mention", "mentions"],
 ]
 
-const itemKey = (item: DashboardItem) => `${item.repo}#${item.number}`
-
 /** For each item, the first section in page order that lists it: the one that shows it in full. */
 const homeSections = (data: Dashboard) => {
-  const homes = new Map<string, ItemKey>()
-  for (const key of ITEM_ORDER) {
+  const homes = new Map<string, ItemSection>()
+  for (const key of ITEM_SECTIONS) {
     const section = data[key]
     if (section._tag !== "Loaded") continue
     for (const item of section.items) {
-      if (!homes.has(itemKey(item))) homes.set(itemKey(item), key)
+      if (!homes.has(itemRef(item))) homes.set(itemRef(item), key)
     }
   }
   return homes
@@ -222,9 +219,9 @@ export const DashboardView = () => {
         key={key}
         {...shared}
         section={data[key]}
-        itemKey={itemKey}
+        itemKey={itemRef}
         renderItem={(item) => {
-          const home = homes?.get(itemKey(item))
+          const home = homes?.get(itemRef(item))
           return (
             <ItemRow
               item={item}

@@ -19,20 +19,7 @@ import { IssueRef } from "../ui/IssueRef.tsx"
 import { ExternalIcon, IssueClosedIcon, LinkIcon, XIcon } from "../ui/icons.tsx"
 import { buttonClass, Kbd } from "../ui/primitives.tsx"
 import { useToast } from "../ui/toast.tsx"
-
-/** What the panel needs to know about the issue or pull request it shows. */
-export type PanelIssue = {
-  /** Lowercased `owner/repo#number`, as `cardKey` writes it; keys the comment draft. */
-  readonly key: string
-  readonly owner: string
-  /** The repository name without its owner. */
-  readonly repo: string
-  readonly number: number
-  readonly kind: "issue" | "pull"
-  readonly title: string
-  readonly url: string
-  readonly closed: boolean
-}
+import type { PanelIssue } from "./panel-issue.ts"
 
 /** The board and the dashboard read the same issue under the same key; Forgejo ignores case. */
 const issueQueryKey = (what: "issue-detail" | "issue-pulls", issue: PanelIssue) =>

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import type { DashboardItem, NotificationItem } from "../shared/api.ts"
+import { numberIn } from "./dashboard-preview.ts"
 import { absoluteTime, relativeTime } from "./format.ts"
 import { IssueRef } from "./ui/IssueRef.tsx"
 import { BellIcon, CommentIcon, IssueOpenIcon, PullIcon } from "./ui/icons.tsx"
@@ -109,12 +110,6 @@ export const ItemRow = ({ item, alsoIn }: { item: DashboardItem; alsoIn?: string
     <Comments count={item.comments} />
   </div>
 )
-
-/** A notification names no number, but an issue's or pull request's address ends in one. */
-const numberIn = (url: string) => {
-  const match = /\/(?:issues|pulls)\/(\d+)(?:[/?#]|$)/.exec(url)
-  return match?.[1] === undefined ? null : Number(match[1])
-}
 
 export const NotificationRow = ({ notification }: { notification: NotificationItem }) => {
   const number = numberIn(notification.url)
