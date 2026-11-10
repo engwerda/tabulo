@@ -135,6 +135,21 @@ the board.
   them the same way for everyone, and a later move places a card after both. Ranks span repositories
   that different users can read, so the ranks a user sees can show that cards they cannot read
   lie between two of theirs, though never which issues those are.
+- **Refresh.** The board reads itself again every minute and when the window gets focus. A
+  change to a card's title, labels, assignees, milestone, or comments shows at once, unless it
+  takes the card into or out of the active filters. That, and a change to the layout, a card
+  added, removed, moved, or reordered, or a column added, removed, or moved, wait while the user
+  uses the board: while a mouse or pen is over the columns or a card's menu, for a second after
+  a touch or a scroll in them, while the new-issue composer shows, and during a drag. Focus does
+  not count, and a change only to cards the filters hide never waits. Meanwhile the header shows
+  a "Changes waiting" button, and the layout lands once the use ends. The user's own writes, the
+  read that follows them, the user's filter changes, Refresh (`R`), and the button show at once.
+  A dropped card that is no longer on the board does not move, and a notice says so. A column
+  dropped while the column order waits does not move, and a notice says to try again. Either
+  way, what waits lands. When a layout change lands that the user did not make, Refresh's
+  included, screen readers hear one line such as "Board updated: 2 added, 1 moved", counting
+  the cards the filters show, though not for the board's first successful read after it opens,
+  even when a hold delays it. Keyboard focus on a card that changed column follows the card.
 - **Who arranges.** Only members of the organization may move, reorder, or add cards, and add,
   change, or delete boards, as `/user/orgs` lists them for the user's token. Anyone
   may change a card's labels, milestone, or assignees, or comment; Forgejo decides. Forgejo
