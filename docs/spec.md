@@ -77,8 +77,10 @@ browser; a tab whose session changes to another user reloads.
 
 1. `GET /auth/login` stores a random `state` and a PKCE verifier, then redirects to Forgejo's
    authorize endpoint. It asks for the scopes `read:user read:organization read:repository
-   write:issue read:notification read:misc`. Forgejo keeps the scopes of a user's first grant to
-   the application, so a grant made before Tabulo asked for scopes keeps every scope.
+   write:issue write:notification read:misc`. Forgejo keeps the scopes of a user's first grant to
+   the application, so a grant made before Tabulo asked for scopes keeps every scope, and one made
+   before Tabulo asked for `write:notification` keeps `read:notification`. Marking a notification
+   read then answers 403 until the user revokes Tabulo in Forgejo and grants it again.
 2. `GET /auth/callback` checks that `state` is the one in the browser's state cookie before it
    uses the stored state up, exchanges the code for access and refresh tokens, reads the Forgejo
    user, and creates a session. It deletes the session the browser already had.
@@ -99,6 +101,39 @@ browser; a tab whose session changes to another user reloads.
 7. Every Worker response carries `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`,
    and `Strict-Transport-Security`. The static assets carry the CSP from `vite.config.ts`, which
    allows no form submission and no framing.
+
+### Dashboard
+
+A plain click on an item of the review requests, assigned, mentions, or created sections, or on a
+notification about an issue or pull request, opens a preview over the dashboard. A click with a
+modifier key or the middle button still opens Forgejo in a new tab. A notification about a
+commit or a repository, or whose address has no issue or pull request number, links to Forgejo
+only. The address names the preview as `?item=owner/repo#12`, so Back closes it. An address that
+no loaded section lists closes with a notice, unless a section failed to load. A preview keeps
+showing its issue when a refresh no longer lists it.
+
+The preview reads the description, comments, and referencing pull requests through
+`GET /api/board/issue` and `GET /api/board/issue-pulls`, with `org` set to the repository's
+owner; both serve any repository the user can read. It shows the item's labels, author, and
+update time, and comments on an issue through `POST /api/board/comment`. It does not change
+assignees, labels, or the milestone. A pull request shows its description and conversation
+comments, but not the pull requests that reference it, and links to Forgejo for its files,
+review comments, checks, and new comments, because the comment route takes issues only. Tabulo
+reads no branch, review state, or checks.
+
+Opening a preview marks nothing read. When the notifications section lists an unread
+notification about the issue, the preview offers **Mark read**, which marks it read in Forgejo
+and drops it from the dashboard. While a preview is open, `O` opens the issue in Forgejo and
+`Escape` closes the preview.
+
+| Endpoint | Result |
+|---|---|
+| `POST /api/notifications/read` | Marks one of the user's notifications read and answers with `{}`. |
+
+`POST /api/notifications/read` takes `{ id }`, a positive integer, and answers 400 to anything
+else. It sends `PATCH /api/v1/notifications/threads/{id}?to-status=read` as the user. Forgejo
+answers 403 when the token lacks `write:notification` or the thread is another user's, and 404
+when it has no such thread; Tabulo answers with the same status.
 
 ### Board
 
@@ -586,7 +621,8 @@ dialog is open.
 The shortcuts are one list in `src/client/palette/shortcuts.ts`, which the key handler and the
 shortcut list both read. On the board, `?` opens the board's own list in
 `src/client/board/ShortcutsDialog.tsx`, which includes these; the board handles its single-key
-shortcuts first, so they win over a sequence that starts with the same key.
+shortcuts first, so they win over a sequence that starts with the same key. On the dashboard,
+the list also shows the preview's keys.
 
 ### Configuration
 
