@@ -4,6 +4,7 @@ import {
   type ItemSection,
   itemRef,
   notificationRef,
+  withoutNotification,
 } from "../src/client/dashboard-preview.ts"
 import type { Dashboard, DashboardItem, NotificationItem, Section } from "../src/shared/api.ts"
 
@@ -194,5 +195,27 @@ describe("findPreview", () => {
     expect(findPreview(data, "acme/web#10")).toBeUndefined()
     expect(findPreview(data, "acme/api#8")).toBeUndefined()
     expect(findPreview(data, "acme/web")).toBeUndefined()
+  })
+})
+
+describe("withoutNotification", () => {
+  const read = notification(55, "Issue", "acme/web", "https://forgejo.example/acme/web/issues/9")
+  const unread = notification(56, "Pull", "acme/api", "https://forgejo.example/acme/api/pulls/4")
+
+  it("drops the notification and counts one fewer", () => {
+    const data = dashboard({ notifications: { _tag: "Loaded", items: [read, unread], total: 31 } })
+
+    expect(withoutNotification(data, 55).notifications).toEqual({
+      _tag: "Loaded",
+      items: [unread],
+      total: 30,
+    })
+  })
+
+  it("leaves the dashboard as it is when the notification is not listed", () => {
+    const data = dashboard({ notifications: loaded([unread]) })
+
+    expect(withoutNotification(data, 55)).toBe(data)
+    expect(withoutNotification(dashboard({ notifications: failed }), 55).notifications).toBe(failed)
   })
 })

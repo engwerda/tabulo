@@ -1,18 +1,47 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { type ReactNode, useState } from "react"
+import { lazy, type ReactNode, Suspense, useEffect, useRef, useState } from "react"
+import { useSearchParams } from "wouter"
 import type { Dashboard, DashboardItem, NotificationItem, Section } from "../shared/api.ts"
 import { ACTIVITY, ActivityCard } from "./ActivityCard.tsx"
 import { fetchDashboard } from "./api.ts"
-import { ITEM_SECTIONS, type ItemSection, itemRef } from "./dashboard-preview.ts"
+import {
+  findPreview,
+  ITEM_SECTIONS,
+  type ItemSection,
+  itemRef,
+  PREVIEW_PARAM,
+  type Preview,
+  withoutNotification,
+} from "./dashboard-preview.ts"
 import { relativeTime } from "./format.ts"
-import { ItemRow, NotificationRow } from "./rows.tsx"
+import { isMac } from "./palette/keys.tsx"
+import { type ShortcutSection, usePageShortcuts } from "./palette/ShortcutsDialog.tsx"
+import { ItemRow, NotificationRow, type OpenPreview } from "./rows.tsx"
 import { SectionCard } from "./SectionCard.tsx"
 import { useViewer } from "./session.ts"
 import { ErrorNotice } from "./ui/ErrorNotice.tsx"
 import { AtIcon, BellIcon, IssueOpenIcon, PullIcon, RefreshIcon, UserIcon } from "./ui/icons.tsx"
-import { buttonClass, cardClass, pageContainer } from "./ui/primitives.tsx"
+import { buttonClass, cardClass, isTypingTarget, pageContainer } from "./ui/primitives.tsx"
+import { useToast } from "./ui/toast.tsx"
 
 export const DASHBOARD = ["dashboard"] as const
+
+// The panel and its HTML sanitizer load when a preview first opens, not with the dashboard.
+const DashboardPanel = lazy(() =>
+  import("./DashboardPanel.tsx").then((m) => ({ default: m.DashboardPanel })),
+)
+
+/** The keys the dashboard handles while a preview is open. */
+const PREVIEW_SHORTCUTS: ReadonlyArray<ShortcutSection> = [
+  {
+    title: "Preview",
+    rows: [
+      { keys: ["O"], label: "Open in Forgejo" },
+      { keys: [isMac ? "⌘" : "Ctrl", "↵"], label: "Send a comment" },
+      { keys: ["Esc"], label: "Close" },
+    ],
+  },
+]
 
 type SectionKey = ItemSection | "notifications"
 
@@ -176,6 +205,124 @@ const SkeletonGrid = () => (
   </div>
 )
 
+/**
+ * The preview that `?item=` names, and opening and closing it. The panel keeps what it showed
+ * when a refetch no longer lists the issue, such as after Mark read, until it closes. `fresh` is
+ * false until the dashboard has been read since the page opened.
+ */
+const usePreview = (data: Dashboard | undefined, fresh: boolean) => {
+  const queryClient = useQueryClient()
+  const toast = useToast()
+  const [params, setParams] = useSearchParams()
+  const ref = params.get(PREVIEW_PARAM)
+  const setRef = (value: string | null, options: { replace: boolean; state?: unknown }) =>
+    setParams((current) => {
+      const next = new URLSearchParams(current)
+      if (value === null) next.delete(PREVIEW_PARAM)
+      else next.set(PREVIEW_PARAM, value)
+      return next
+    }, options)
+
+  const held = useRef<Preview | null>(null)
+  const found = data === undefined || ref === null ? undefined : findPreview(data, ref)
+  if (found !== undefined) held.current = found
+  const preview =
+    found ??
+    (ref !== null && held.current?.ref.toLowerCase() === ref.toLowerCase()
+      ? held.current
+      : undefined)
+
+  // Opening a preview adds a history entry that records the address it was opened from, so Back
+  // closes it, and closing goes back to the entry before it while the rest of the address is
+  // unchanged. Without that record, such as for a preview in the address on load, the entry
+  // before may not be the dashboard, so closing replaces the entry instead. The record lives in
+  // the entry itself, so it holds after Back, Forward, and a reload.
+  const addressWithout = () => {
+    const next = new URLSearchParams(window.location.search)
+    next.delete(PREVIEW_PARAM)
+    return next.toString()
+  }
+
+  // Focus goes back to the row link that opened the preview, or else the first one for its issue.
+  const opener = useRef<HTMLElement | null>(null)
+  const open: OpenPreview = (next, link) => {
+    opener.current = link
+    setRef(
+      next,
+      ref === null
+        ? { replace: false, state: { previewOpenedFrom: addressWithout() } }
+        : { replace: true, state: window.history.state },
+    )
+  }
+  const restoreFocus = () => {
+    if (preview === undefined) return
+    const own = opener.current
+    const target =
+      own?.isConnected && own.dataset.previewRef?.toLowerCase() === preview.ref.toLowerCase()
+        ? own
+        : document.querySelector<HTMLElement>(`a[data-preview-ref="${CSS.escape(preview.ref)}" i]`)
+    target?.focus()
+  }
+  const close = () => {
+    const entry = window.history.state as { previewOpenedFrom?: unknown } | null
+    if (entry?.previewOpenedFrom === addressWithout()) window.history.back()
+    else setRef(null, { replace: true })
+    restoreFocus()
+  }
+
+  // A preview in the address that no section lists, such as an old link to an issue now closed.
+  useEffect(() => {
+    if (ref === null || data === undefined || !fresh || preview !== undefined) return
+    // A section that failed this time may list it; the address keeps it until they load.
+    if (COLUMNS.flat().some((key) => data[key]._tag === "Failed")) return
+    toast({
+      tone: "warning",
+      title: `${ref} is not on your dashboard`,
+      detail: "It may be closed, or no longer waiting on you.",
+    })
+    setRef(null, { replace: true })
+  })
+
+  usePageShortcuts(PREVIEW_SHORTCUTS)
+  const shortcuts = useRef<(event: KeyboardEvent) => void>(() => {})
+  shortcuts.current = (event) => {
+    if (preview === undefined) return
+    if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return
+    if (isTypingTarget(event.target) || document.querySelector("dialog[open]") !== null) return
+    if (event.key === "Escape") close()
+    else if (event.key === "o" || event.key === "O") {
+      window.open(preview.issue.url, "_blank", "noreferrer")
+    } else return
+    event.preventDefault()
+  }
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => shortcuts.current(event)
+    document.addEventListener("keydown", listener)
+    return () => document.removeEventListener("keydown", listener)
+  }, [])
+
+  const panel = preview !== undefined && (
+    <Suspense fallback={null}>
+      <DashboardPanel
+        key={preview.issue.key}
+        preview={preview}
+        onMarkedRead={(id) => {
+          void queryClient.cancelQueries({ queryKey: DASHBOARD }).then(() => {
+            queryClient.setQueryData<Dashboard>(DASHBOARD, (current) =>
+              current === undefined ? current : withoutNotification(current, id),
+            )
+            void queryClient.invalidateQueries({ queryKey: DASHBOARD })
+          })
+        }}
+        onCommented={() => void queryClient.invalidateQueries({ queryKey: DASHBOARD })}
+        restoreFocus={restoreFocus}
+        onClose={close}
+      />
+    </Suspense>
+  )
+  return { open, panel }
+}
+
 export const DashboardView = () => {
   const viewer = useViewer()
   const queryClient = useQueryClient()
@@ -199,6 +346,7 @@ export const DashboardView = () => {
   const data = dashboard.data
   const firstName = viewer.name.split(/\s+/)[0] || viewer.login
   const homes = data === undefined ? null : homeSections(data)
+  const preview = usePreview(data, dashboard.isFetchedAfterMount)
 
   const renderSection = (key: SectionKey, data: Dashboard) => {
     const { id, title, icon, empty } = SECTIONS[key]
@@ -210,7 +358,9 @@ export const DashboardView = () => {
           {...shared}
           section={data.notifications}
           itemKey={(notification) => notification.id}
-          renderItem={(notification) => <NotificationRow notification={notification} />}
+          renderItem={(notification) => (
+            <NotificationRow notification={notification} onPreview={preview.open} />
+          )}
         />
       )
     }
@@ -226,6 +376,7 @@ export const DashboardView = () => {
             <ItemRow
               item={item}
               alsoIn={home === undefined || home === key ? undefined : SHORT_TITLES[home]}
+              onPreview={preview.open}
             />
           )
         }}
@@ -316,6 +467,7 @@ export const DashboardView = () => {
       <div className="mt-4">
         <ActivityCard />
       </div>
+      {preview.panel}
     </main>
   )
 }

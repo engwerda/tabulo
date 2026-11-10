@@ -8,12 +8,18 @@ export const PREVIEW_PARAM = "item"
 export const ITEM_SECTIONS = ["reviewRequests", "assigned", "mentioned", "created"] as const
 export type ItemSection = (typeof ITEM_SECTIONS)[number]
 
-/** What the dashboard's preview shows: the issue, the dashboard item that lists it, and the user's unread notification about it. */
+/**
+ * What the dashboard's preview shows: the issue, the dashboard item that lists it, and the user's
+ * unread notification about it.
+ */
 export type Preview = {
   /** `owner/repo#number`, as the rows and the address write it. */
   readonly ref: string
   readonly issue: PanelIssue
-  /** The item from the first item section that lists it, for its labels, author, and update time; null for a notification-only issue. */
+  /**
+   * The item from the first item section that lists it, for its labels, author, and update time;
+   * null for an issue that only a notification names.
+   */
   readonly item: DashboardItem | null
   /** The unread notification about this issue, if the notifications section lists one. */
   readonly notification: NotificationItem | null
@@ -45,7 +51,10 @@ const notificationTarget = (notification: NotificationItem): NotificationTarget 
   return { notification, ref: `${notification.repo}#${number}`, kind, number }
 }
 
-/** The issue or pull request a notification is about, or null for a commit, repository, or URL without a number. */
+/**
+ * The issue or pull request a notification is about, or null for a commit, a repository, or an
+ * address without a number.
+ */
 export const notificationRef = (notification: NotificationItem) =>
   notificationTarget(notification)?.ref ?? null
 
@@ -64,7 +73,10 @@ const panelIssue = (
   }
 }
 
-/** The preview of `ref` from the loaded sections, matching case-insensitively as Forgejo names are; undefined when no loaded section lists it. */
+/**
+ * The preview of `ref` from the loaded sections, matching without regard to case as Forgejo's
+ * names do; undefined when no loaded section lists it.
+ */
 export const findPreview = (data: Dashboard, ref: string): Preview | undefined => {
   const wanted = ref.toLowerCase()
   const item = ITEM_SECTIONS.flatMap((key) => {
@@ -100,4 +112,13 @@ export const findPreview = (data: Dashboard, ref: string): Preview | undefined =
     item: null,
     notification: about.notification,
   }
+}
+
+/** The dashboard without the notification `id`, as Forgejo lists it once it is read. */
+export const withoutNotification = (data: Dashboard, id: number): Dashboard => {
+  const section = data.notifications
+  if (section._tag !== "Loaded") return data
+  const items = section.items.filter((notification) => notification.id !== id)
+  if (items.length === section.items.length) return data
+  return { ...data, notifications: { _tag: "Loaded", items, total: section.total - 1 } }
 }
