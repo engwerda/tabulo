@@ -8,11 +8,18 @@ import {
   useState,
   useSyncExternalStore,
 } from "react"
-import type { BoardCard, BoardColumn, CardDetail, IssueOptions } from "../../shared/api.ts"
+import type {
+  BoardCard,
+  BoardColumn,
+  CardDetail,
+  CardPullRequest,
+  IssueOptions,
+} from "../../shared/api.ts"
 import { Avatar } from "../Avatar.tsx"
 import {
   addComment,
   fetchCardDetail,
+  fetchCardPullRequests,
   fetchIssueOptions,
   setAssignee,
   setLabel,
@@ -20,6 +27,7 @@ import {
 } from "../api.ts"
 import { absoluteTime, relativeTime } from "../format.ts"
 import { ErrorNotice } from "../ui/ErrorNotice.tsx"
+import { IssueRef } from "../ui/IssueRef.tsx"
 import {
   ChevronDownIcon,
   ExternalIcon,
@@ -416,6 +424,128 @@ const CommentBox = ({
         </button>
       </div>
     </form>
+  )
+}
+
+const PULL_STATES: Record<
+  CardPullRequest["state"],
+  { readonly word: string; readonly tint: string }
+> = {
+  open: {
+    word: "Open",
+    tint: "bg-emerald-50 text-emerald-800 ring-emerald-600/20 dark:bg-emerald-950/60 dark:text-emerald-300 dark:ring-emerald-400/20",
+  },
+  draft: {
+    word: "Draft",
+    tint: "bg-zinc-50 text-zinc-600 ring-zinc-900/10 dark:bg-zinc-800/60 dark:text-zinc-300 dark:ring-white/10",
+  },
+  merged: {
+    word: "Merged",
+    tint: "bg-violet-50 text-violet-700 ring-violet-600/20 dark:bg-violet-950/60 dark:text-violet-300 dark:ring-violet-400/20",
+  },
+  closed: {
+    word: "Closed",
+    tint: "bg-red-50 text-red-700 ring-red-600/15 dark:bg-red-950/60 dark:text-red-300 dark:ring-red-400/20",
+  },
+}
+
+/** `#12` in the card's repository, `repo#12` elsewhere in the organization, or `owner/repo#12`. */
+const pullRepo = (org: string, cardRepo: string, repo: string) => {
+  const name = repo.toLowerCase()
+  if (name === `${org}/${cardRepo}`.toLowerCase()) return ""
+  return name.startsWith(`${org.toLowerCase()}/`) ? repo.slice(org.length + 1) : repo
+}
+
+/**
+ * The pull requests that reference the card's issue: only when there is one, when the read
+ * failed, or when Forgejo may list more. Nothing shows while loading, so an issue without pull
+ * requests never flashes an empty section.
+ */
+const CardPullRequestList = ({ org, card }: { org: string; card: BoardCard }) => {
+  const pulls = useQuery({
+    queryKey: ["card-pulls", org, card.repo, card.number],
+    queryFn: () => fetchCardPullRequests(org, card.repo, card.number),
+    staleTime: 30_000,
+  })
+  const data = pulls.data
+  if (data === undefined && !pulls.isError) return null
+  if (data !== undefined && data.pullRequests.length === 0 && data.complete) return null
+  return (
+    <section aria-labelledby="card-pulls" className="mt-8">
+      <h3 id="card-pulls" className={`${sectionTitle} flex w-fit items-center gap-2`}>
+        Pull requests
+        {data !== undefined && data.pullRequests.length > 0 && (
+          <span className="font-medium text-zinc-500 tabular-nums dark:text-zinc-400">
+            {data.pullRequests.length}
+          </span>
+        )}
+      </h3>
+      {data === undefined ? (
+        <ErrorNotice
+          bare
+          tone="warning"
+          title="Could not load the pull requests"
+          onRetry={() => void pulls.refetch()}
+          retrying={pulls.isFetching}
+          className="mt-3"
+        />
+      ) : (
+        <>
+          <ul className="mt-2 space-y-0.5">
+            {data.pullRequests.map((pull) => (
+              <li key={pull.key}>
+                <a
+                  href={pull.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group -mx-1.5 flex items-center gap-2 rounded-lg px-1.5 py-1 transition hover:bg-zinc-100 pointer-coarse:min-h-11 dark:hover:bg-zinc-800/70"
+                >
+                  <span
+                    className={`inline-flex h-5 w-14 shrink-0 items-center justify-center rounded-md text-2xs font-medium ring-1 ring-inset ${PULL_STATES[pull.state].tint}`}
+                  >
+                    {PULL_STATES[pull.state].word}
+                  </span>
+                  <IssueRef
+                    repo={pullRepo(org, card.repo, pull.repo)}
+                    number={pull.number}
+                    className="max-w-1/2 text-xs text-zinc-500 dark:text-zinc-400"
+                  />
+                  <span
+                    title={pull.title}
+                    className="min-w-0 flex-1 truncate text-sm text-zinc-800 group-hover:text-indigo-700 dark:text-zinc-200 dark:group-hover:text-indigo-300"
+                  >
+                    {pull.title}
+                  </span>
+                  {pull.reference === "closes" && (
+                    <span
+                      title="Merging it into the default branch closes this issue"
+                      className="inline-flex h-5 shrink-0 items-center rounded-md border border-zinc-200 px-1.5 text-2xs font-medium text-zinc-600 dark:border-zinc-700/80 dark:text-zinc-300"
+                    >
+                      Closes<span className="sr-only"> this issue</span>
+                    </span>
+                  )}
+                  <span className="sr-only"> (opens in Forgejo)</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+          {!data.complete && (
+            <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+              This issue's history is too long to read in full.{" "}
+              <a
+                href={card.url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 font-medium text-indigo-700 hover:underline dark:text-indigo-300"
+              >
+                Forgejo may list more
+                <ExternalIcon className="size-3.5" />
+              </a>
+            </p>
+          )}
+        </>
+      )}
+    </section>
   )
 }
 
@@ -920,6 +1050,8 @@ export const CardPanel = ({
                 </span>
               </Property>
             </dl>
+
+            <CardPullRequestList org={org} card={card} />
 
             {detail.data === undefined && detail.isError ? (
               <ErrorNotice
