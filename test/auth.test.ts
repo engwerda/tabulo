@@ -27,7 +27,7 @@ describe("GET /auth/login", () => {
     expect(location.searchParams.get("code_challenge")).toMatch(/^[A-Za-z0-9_-]{43}$/)
     expect(location.searchParams.get("state")).toMatch(/^[A-Za-z0-9_-]{43}$/)
     expect(location.searchParams.get("scope")).toBe(
-      "read:user read:organization read:repository write:issue read:notification read:misc",
+      "read:user read:organization read:repository write:issue write:notification read:misc",
     )
   })
 })

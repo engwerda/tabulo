@@ -75,6 +75,16 @@ major version.
   and reads every board of the organization again once its last pending write ends. While
   `writingBoards` is true a refresh of a loaded board does nothing, and the settings dialog's
   409 reload reads past the cache.
+- `src/client/issue/IssuePanel.tsx` is the shared issue panel: the frame, the description and
+  comments, the comment box, and the pull requests that reference an issue. The board's
+  `CardPanel` composes it with the status menu, the pickers, and previous and next; the
+  dashboard's `DashboardPanel` composes it with read-only properties and Mark read. Both read the
+  same `issue-detail` and `issue-pulls` queries and keep the same comment draft.
+- `src/client/dashboard-preview.ts` owns the dashboard preview's logic: `findPreview` finds what
+  `?item=` names in the loaded sections, `notificationRef` decides which notifications open a
+  preview, `notificationState` says whether Mark read applies, and `focusAfterPreview` decides
+  where focus goes when a preview closes. `PanelIssue` lives in `src/client/issue/panel-issue.ts`,
+  so the worker tsconfig can compile this module for tests without React.
 - `src/client/scope/` owns the organization scope of the org-level views: `ORG_VIEWS` in
   `views.ts` lists them with their routes, `orgViewHref` builds every link to a view,
   `useRepoSelection` owns the `?repos=` of insights and epics, `remembered.ts` owns the remembered

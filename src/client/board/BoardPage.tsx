@@ -7,7 +7,6 @@ import {
 } from "@tanstack/react-query"
 import {
   type ReactNode,
-  useCallback,
   useDeferredValue,
   useEffect,
   useMemo,
@@ -36,6 +35,7 @@ import {
   setAssignee,
 } from "../api.ts"
 import { absoluteTime, relativeTime } from "../format.ts"
+import { copyIssueLink } from "../issue/IssuePanel.tsx"
 import { ShortcutsDialog, usePageShortcuts } from "../palette/ShortcutsDialog.tsx"
 import { usePageCommands } from "../palette/use-palette-groups.ts"
 import { ORGS, OrgSwitcher } from "../scope/OrgPicker.tsx"
@@ -917,15 +917,7 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
       return next
     })
 
-  const copyLink = useCallback(
-    (card: BoardCard) => {
-      navigator.clipboard.writeText(card.url).then(
-        () => toast({ tone: "info", title: "Issue link copied", detail: card.url }),
-        () => toast({ tone: "error", title: "Could not copy the link", detail: card.url }),
-      )
-    },
-    [toast],
-  )
+  const copyLink = (card: BoardCard) => copyIssueLink(toast, card.url, "issue")
 
   const archived = new Set(
     (repos.data ?? []).filter((repo) => repo.archived).map((repo) => repo.name),
@@ -1599,7 +1591,6 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
               onUpdate={(change) => update.mutate(change)}
               onCommented={putCard}
               updating={update.isPending}
-              onCopyLink={() => copyLink(selectedCard)}
               onClose={closePanel}
             />
           )}

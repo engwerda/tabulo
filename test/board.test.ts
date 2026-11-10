@@ -1674,6 +1674,46 @@ describe("POST /api/board/comment", () => {
     expect(writes(forgejo)).toEqual([])
   })
 
+  it("comments on a pull request", async () => {
+    const { forgejo, post } = await boardSession()
+
+    const response = await post("/api/board/comment", {
+      org: "acme",
+      repo: "api",
+      number: 5,
+      body: "Reviewed",
+    })
+
+    expect(response.status).toBe(200)
+    expect(writes(forgejo)[0]).toEqual({
+      method: "POST",
+      path: "/api/v1/repos/acme/api/issues/5/comments",
+      body: { body: "Reviewed" },
+    })
+  })
+
+  it("refuses an archived repository, an invalid name or number, and a cross-origin request without writing", async () => {
+    const org = boardOrg()
+    org.repos.push(boardRepo("old", { archived: true, issues: [boardIssue("old", 1)] }))
+    const { forgejo, call, cookie, post } = await boardSession({ orgs: [org] })
+    const target = { org: "acme", repo: "api", number: 1, body: "Hello" }
+
+    const responses = await Promise.all([
+      post("/api/board/comment", { ...target, repo: "old" }),
+      post("/api/board/comment", { ...target, repo: ".." }),
+      post("/api/board/comment", { ...target, number: 0 }),
+      post("/api/board/comment", { ...target, number: undefined }),
+      call("/api/board/comment", {
+        method: "POST",
+        headers: { cookie, origin: "https://evil.example", "content-type": "application/json" },
+        body: JSON.stringify(target),
+      }),
+    ])
+
+    expect(responses.map((response) => response.status)).toEqual([403, 400, 400, 400, 403])
+    expect(writes(forgejo)).toEqual([])
+  })
+
   it("passes on Forgejo's 403 for a locked issue the user cannot write", async () => {
     const org = boardOrg()
     org.repos[0]?.issues.push(boardIssue("api", 7, { is_locked: true }))
@@ -1699,7 +1739,7 @@ describe("card edits", () => {
     ["/api/board/comment", { body: "Hello" }],
   ] as const
 
-  it.each(edits)(
+  it.each(edits.filter(([path]) => path !== "/api/board/comment"))(
     "%s refuses an archived repository, a pull request, an invalid name or number, and a cross-origin request without writing",
     async (path, fields) => {
       const org = boardOrg()

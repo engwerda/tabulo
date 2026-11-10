@@ -140,6 +140,14 @@ export class ForgejoClient extends Context.Service<
       token: AccessToken,
       limit: number,
     ) => Effect.Effect<Page<ForgejoNotification>, ForgejoError>
+    /**
+     * Marks one of the user's notification threads read. Forgejo answers 403 when the token
+     * lacks `write:notification` or the thread is another user's, and 404 for no such thread.
+     */
+    readonly markNotificationRead: (
+      token: AccessToken,
+      id: number,
+    ) => Effect.Effect<void, ForgejoError>
     readonly userOrgs: (
       token: AccessToken,
     ) => Effect.Effect<ReadonlyArray<ForgejoOrg>, ForgejoError>
@@ -378,12 +386,17 @@ const TIMELINE_PAGES = 20
  */
 type ListingEnd = "total" | "empty"
 
+/**
+ * What Tabulo reads and writes, and nothing more. `write:notification` marks a notification read
+ * and includes reading notifications. Forgejo keeps the scopes of a user's first grant to the
+ * application, so a grant made before a scope joined this list goes without it.
+ */
 export const OAUTH_SCOPES = [
   "read:user",
   "read:organization",
   "read:repository",
   "write:issue",
-  "read:notification",
+  "write:notification",
   "read:misc",
 ].join(" ")
 
@@ -401,7 +414,7 @@ export const makeForgejoClient = (
     query: Record<string, string>,
     write?:
       | { readonly method: "PATCH" | "POST"; readonly body: unknown }
-      | { readonly method: "DELETE" },
+      | { readonly method: "DELETE" | "PATCH" },
   ) =>
     Effect.gen(function* () {
       const url = `${config.baseUrl}/api/v1${path}?${new URLSearchParams(query)}`
@@ -644,6 +657,14 @@ export const makeForgejoClient = (
       page(token, "/notifications", { limit: String(limit) }, ForgejoNotification).pipe(
         Effect.map(knownTotal),
       ),
+    // Forgejo answers 205 with the thread, which Tabulo does not read.
+    markNotificationRead: (token, id) =>
+      request(
+        token,
+        `/notifications/threads/${id}`,
+        { "to-status": "read" },
+        { method: "PATCH" },
+      ).pipe(Effect.asVoid),
     userOrgs: (token) => all(token, "/user/orgs", {}, ForgejoOrg),
     org: (token, org) =>
       api(token, `/orgs/${encodeURIComponent(org)}`, {}, ForgejoOrg).pipe(

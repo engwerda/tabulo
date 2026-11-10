@@ -1,5 +1,6 @@
-import type { ReactNode } from "react"
+import type { MouseEvent, ReactNode } from "react"
 import type { DashboardItem, NotificationItem } from "../shared/api.ts"
+import { itemRef, notificationRef, numberIn } from "./dashboard-preview.ts"
 import { absoluteTime, relativeTime } from "./format.ts"
 import { IssueRef } from "./ui/IssueRef.tsx"
 import { BellIcon, CommentIcon, IssueOpenIcon, PullIcon } from "./ui/icons.tsx"
@@ -35,6 +36,24 @@ const glyphClass =
   "mt-0.5 flex shrink-0 text-zinc-400 group-hover:text-zinc-500 dark:text-zinc-500 dark:group-hover:text-zinc-400"
 const metaClass = "text-xs leading-5 text-zinc-500 dark:text-zinc-400"
 const refClass = "font-medium text-zinc-600 tabular-nums dark:text-zinc-300"
+
+/** Opens the preview of `ref` from the row link that was clicked. */
+export type OpenPreview = (ref: string, link: HTMLAnchorElement) => void
+
+/**
+ * A plain primary click, or Enter, opens the preview. The link keeps Forgejo's address, so a
+ * click with a modifier key or the middle button still opens Forgejo in a new tab.
+ */
+const previewLink = (ref: string, onPreview: OpenPreview) => ({
+  "data-preview-ref": ref,
+  onClick: (event: MouseEvent<HTMLAnchorElement>) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return
+    }
+    event.preventDefault()
+    onPreview(ref, event.currentTarget)
+  },
+})
 
 const Comments = ({ count }: { count: number }) =>
   count === 0 ? null : (
@@ -77,11 +96,20 @@ const Labels = ({ labels }: { labels: DashboardItem["labels"] }) => {
  * it in full; the row then keeps only its title and reference, so a repeated item takes one
  * quiet row instead of a second copy of its labels and authorship.
  */
-export const ItemRow = ({ item, alsoIn }: { item: DashboardItem; alsoIn?: string | undefined }) => (
+export const ItemRow = ({
+  item,
+  alsoIn,
+  onPreview,
+}: {
+  item: DashboardItem
+  alsoIn?: string | undefined
+  onPreview: OpenPreview
+}) => (
   <div className={rowClass}>
     <span className={glyphClass}>{item.kind === "pull" ? <PullIcon /> : <IssueOpenIcon />}</span>
     <div className="min-w-0 flex-1">
       <a
+        {...previewLink(itemRef(item), onPreview)}
         href={item.url}
         target="_blank"
         rel="noreferrer"
@@ -89,7 +117,6 @@ export const ItemRow = ({ item, alsoIn }: { item: DashboardItem; alsoIn?: string
       >
         <span className="sr-only">{item.kind === "pull" ? "Pull request: " : "Issue: "}</span>
         {item.title}
-        <span className="sr-only"> (opens in Forgejo)</span>
       </a>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs leading-5">
         <p className={`min-w-0 truncate ${metaClass}`}>
@@ -110,14 +137,16 @@ export const ItemRow = ({ item, alsoIn }: { item: DashboardItem; alsoIn?: string
   </div>
 )
 
-/** A notification names no number, but an issue's or pull request's address ends in one. */
-const numberIn = (url: string) => {
-  const match = /\/(?:issues|pulls)\/(\d+)(?:[/?#]|$)/.exec(url)
-  return match?.[1] === undefined ? null : Number(match[1])
-}
-
-export const NotificationRow = ({ notification }: { notification: NotificationItem }) => {
+/** A notification about an issue or pull request opens the preview; others open Forgejo. */
+export const NotificationRow = ({
+  notification,
+  onPreview,
+}: {
+  notification: NotificationItem
+  onPreview: OpenPreview
+}) => {
   const number = numberIn(notification.url)
+  const ref = notificationRef(notification)
   return (
     <div className={rowClass}>
       <span className={glyphClass}>{SUBJECT_ICONS[notification.subjectType] ?? <BellIcon />}</span>
@@ -126,13 +155,14 @@ export const NotificationRow = ({ notification }: { notification: NotificationIt
           <p className={titleClass}>{notification.title}</p>
         ) : (
           <a
+            {...(ref === null ? {} : previewLink(ref, onPreview))}
             href={notification.url}
             target="_blank"
             rel="noreferrer"
             className={`block ${titleClass} ${stretchedLink}`}
           >
             {notification.title}
-            <span className="sr-only"> (opens in Forgejo)</span>
+            {ref === null && <span className="sr-only"> (opens in Forgejo)</span>}
           </a>
         )}
         <p className={`truncate ${metaClass}`}>
