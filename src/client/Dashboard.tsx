@@ -255,10 +255,23 @@ const usePreview = (data: Dashboard | undefined, fresh: boolean) => {
   }
 
   const opener = useRef<PreviewOrigin | null>(null)
-  const open: OpenPreview = (next, link) => {
+  const originOf = (link: HTMLElement): PreviewOrigin | null => {
     const section = link.closest("section")
-    opener.current =
-      section === null ? null : { section: section.id, index: rowLinks(section).indexOf(link) }
+    return section === null ? null : { section: section.id, index: rowLinks(section).indexOf(link) }
+  }
+  // A preview restored by a reload or reached through history takes its issue's row as its opener
+  // while the row is there, so focus can return to that place after Mark read removes it.
+  useEffect(() => {
+    if (ref === null) opener.current = null
+    else if (preview !== undefined && opener.current === null) {
+      const row = document.querySelector<HTMLElement>(
+        `a[data-preview-ref="${CSS.escape(preview.ref)}" i]`,
+      )
+      if (row !== null) opener.current = originOf(row)
+    }
+  })
+  const open: OpenPreview = (next, link) => {
+    opener.current = originOf(link)
     setRef(
       next,
       ref === null

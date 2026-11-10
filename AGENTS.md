@@ -80,10 +80,11 @@ major version.
   `CardPanel` composes it with the status menu, the pickers, and previous and next; the
   dashboard's `DashboardPanel` composes it with read-only properties and Mark read. Both read the
   same `issue-detail` and `issue-pulls` queries and keep the same comment draft.
-- `src/client/dashboard-preview.ts` owns the dashboard preview's lookup: `findPreview` finds what
-  `?item=` names in the loaded sections, and `notificationRef` decides which notifications open
-  a preview. `PanelIssue` lives in `src/client/issue/panel-issue.ts`, so the worker tsconfig can
-  compile the lookup for tests without React.
+- `src/client/dashboard-preview.ts` owns the dashboard preview's logic: `findPreview` finds what
+  `?item=` names in the loaded sections, `notificationRef` decides which notifications open a
+  preview, `notificationState` says whether Mark read applies, and `focusAfterPreview` decides
+  where focus goes when a preview closes. `PanelIssue` lives in `src/client/issue/panel-issue.ts`,
+  so the worker tsconfig can compile this module for tests without React.
 - `src/client/scope/` owns the organization scope of the org-level views: `ORG_VIEWS` in
   `views.ts` lists them with their routes, `orgViewHref` builds every link to a view,
   `useRepoSelection` owns the `?repos=` of insights and epics, `remembered.ts` owns the remembered

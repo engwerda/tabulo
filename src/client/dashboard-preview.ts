@@ -147,9 +147,9 @@ export type FocusTarget =
 /**
  * Where focus goes when the preview of `ref` closes: the issue's row in the section it was opened
  * from, else its first row on the page, else the row now in the opener's place, else that
- * section's heading. A preview that no row opened, such as one restored by a reload, counts as
- * opened from the first row of `fallback`, the section that Mark read takes rows from. `sections`
- * come in page order; null when the section to fall back on is not on the page.
+ * section's heading. Without an origin, it counts as opened from the first row of `fallback`, the
+ * section that Mark read takes rows from. `sections` come in page order; null when the section to
+ * fall back on is not on the page.
  */
 export const focusAfterPreview = (
   sections: ReadonlyArray<SectionRows>,
@@ -160,9 +160,6 @@ export const focusAfterPreview = (
   const wanted = ref.toLowerCase()
   const isIssue = (row: string | null) => row?.toLowerCase() === wanted
   const home = sections.find((rows) => rows.section === (origin?.section ?? fallback))
-  if (home !== undefined && origin !== null && isIssue(home.refs[origin.index] ?? null)) {
-    return { section: home.section, row: origin.index }
-  }
   for (const rows of home === undefined ? sections : [home, ...sections]) {
     const row = rows.refs.findIndex(isIssue)
     if (row !== -1) return { section: rows.section, row }
