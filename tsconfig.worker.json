@@ -22,6 +22,7 @@
     "src/client/insights/people.ts",
     "src/client/epics/epics-view.ts",
     "src/client/issue/panel-issue.ts",
+    "src/client/issue/preview.ts",
     "src/client/palette/fuzzy.ts",
     "src/client/palette/item.ts",
     "src/client/palette/rank.ts",

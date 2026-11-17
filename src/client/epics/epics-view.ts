@@ -1,4 +1,6 @@
-import type { Epic, Epics } from "../../shared/api.ts"
+import type { Epic, EpicChild, Epics } from "../../shared/api.ts"
+import { type PanelIssue, panelIssue } from "../issue/panel-issue.ts"
+import type { MissNotice } from "../issue/preview.ts"
 import { boardHref } from "../scope/views.ts"
 
 /** A repository of the page's organization by its bare name, as the epic and the board name it. */
@@ -133,3 +135,102 @@ export const backlinksRead = (
   incomplete: Epics["incomplete"],
   epic: Pick<Epic, "repo" | "number">,
 ) => !incomplete.backlinks.some(({ repo, number }) => repo === epic.repo && number === epic.number)
+
+export type EpicIssue = Extract<EpicChild, { readonly _tag: "Issue" }>
+
+/** `owner/repo#number` of an epic of the page's organization, as its title writes `?item=`. */
+export const epicRef = (org: string, epic: Pick<Epic, "repo" | "number">) =>
+  `${org}/${epic.repo}#${epic.number}`
+
+/**
+ * `owner/repo#number` of a child by Forgejo's current name of its repository. Its `key` is the
+ * reference as the epic wrote it, which can name the repository before a rename.
+ */
+export const childRef = (child: Pick<EpicIssue, "repo" | "number">) =>
+  `${child.repo}#${child.number}`
+
+/** What the Epics page's preview shows: an epic or a child, and the epics that list it. */
+export type EpicPreview = {
+  readonly issue: PanelIssue
+  readonly item:
+    | { readonly _tag: "Epic"; readonly epic: Epic; readonly backlinksRead: boolean }
+    | { readonly _tag: "Child"; readonly child: EpicIssue }
+  /** The epics that list it as a child, in the response's order, without itself. */
+  readonly parents: ReadonlyArray<Epic>
+}
+
+/**
+ * The preview of `ref` among every epic of the response, whatever the filters show, matching
+ * without regard to case. An epic wins over a child with the same reference.
+ */
+export const findEpicPreview = (data: Epics, ref: string): EpicPreview | undefined => {
+  const wanted = ref.toLowerCase()
+  const names = (issue: string) => issue.toLowerCase() === wanted
+  const childOf = (epic: Epic) =>
+    epic.children.find(
+      (child): child is EpicIssue => child._tag === "Issue" && names(childRef(child)),
+    )
+  const epic = data.epics.find((candidate) => names(epicRef(data.org, candidate)))
+  const parents = data.epics.filter(
+    (candidate) => candidate !== epic && childOf(candidate) !== undefined,
+  )
+  if (epic !== undefined) {
+    return {
+      issue: panelIssue(`${data.org}/${epic.repo}`, epic.number, {
+        kind: "issue",
+        title: epic.title,
+        url: epic.url,
+        closed: epic.state === "closed",
+      }),
+      item: { _tag: "Epic", epic, backlinksRead: backlinksRead(data.incomplete, epic) },
+      parents,
+    }
+  }
+  const child = parents[0] === undefined ? undefined : childOf(parents[0])
+  if (child === undefined) return undefined
+  return {
+    issue: panelIssue(child.repo, child.number, {
+      kind: child.kind,
+      title: child.title,
+      url: child.url,
+      closed: child.state === "closed",
+    }),
+    item: { _tag: "Child", child },
+    parents,
+  }
+}
+
+/**
+ * The notice that closes a preview of `ref`, which these epics do not list, with its likeliest
+ * reason; null while a repository failed to load, as the next read may list it.
+ */
+export const epicPreviewMiss = (data: Epics, ref: string): MissNotice | null => {
+  if (data.failedRepos.length > 0) return null
+  const { listings, children, backlinks } = data.incomplete
+  const unavailable = data.epics.some((epic) =>
+    epic.children.some(
+      (child) => child._tag === "Unavailable" && child.ref.toLowerCase() === ref.toLowerCase(),
+    ),
+  )
+  return {
+    title: `${ref} is not among these epics`,
+    detail: unavailable
+      ? children === 0
+        ? "It is not available to you, or not found in Forgejo."
+        : "Tabulo did not look up every child, so it may have skipped this one, or it is not available to you."
+      : listings.length > 0 || children > 0 || backlinks.length > 0
+        ? "Tabulo read only part of these repositories, so it may be missing."
+        : "It is not an epic or a child of one in the chosen repositories.",
+  }
+}
+
+/**
+ * The card a preview belongs to when no row opened it, among the epics the page shows in its
+ * order: the epic's own card, else the first card that lists the item; null when none shows.
+ */
+export const epicPreviewHome = (preview: EpicPreview, shown: ReadonlyArray<Epic>) => {
+  const own = preview.item._tag === "Epic" ? preview.item.epic.key : null
+  if (own !== null && shown.some(({ key }) => key === own)) return own
+  const parents = new Set(preview.parents.map(({ key }) => key))
+  return shown.find(({ key }) => parents.has(key))?.key ?? null
+}

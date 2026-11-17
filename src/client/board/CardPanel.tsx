@@ -174,8 +174,8 @@ type CardPanelProps = {
   readonly onToggleAssigned: () => void
   /** Runs a change to the card's labels, milestone, or assignees and shows its result. */
   readonly onUpdate: (change: CardUpdate) => void
-  /** The card with its new comment count after the viewer commented. */
-  readonly onCommented: (card: BoardCard) => void
+  /** The key of the card the viewer commented on, which may no longer be the one shown. */
+  readonly onCommented: (key: string) => void
   readonly updating: boolean
   readonly onClose: () => void
 }
@@ -545,7 +545,7 @@ export const CardPanel = ({
           </Property>
         </>
       }
-      onCommented={() => onCommented({ ...card, comments: card.comments + 1 })}
+      onCommented={() => onCommented(card.key)}
       restoreFocus={() =>
         document
           .querySelector<HTMLElement>(`[data-card-key="${CSS.escape(card.key)}"] a[data-card-link]`)

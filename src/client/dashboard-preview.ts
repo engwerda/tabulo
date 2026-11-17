@@ -1,8 +1,5 @@
 import type { Dashboard, DashboardItem, NotificationItem } from "../shared/api.ts"
-import type { PanelIssue } from "./issue/panel-issue.ts"
-
-/** The address parameter that names the previewed issue as `owner/repo#12`, percent-encoded. */
-export const PREVIEW_PARAM = "item"
+import { type PanelIssue, panelIssue } from "./issue/panel-issue.ts"
 
 /** The dashboard's item sections in page order. */
 export const ITEM_SECTIONS = ["reviewRequests", "assigned", "mentioned", "created"] as const
@@ -58,21 +55,6 @@ const notificationTarget = (notification: NotificationItem): NotificationTarget 
 export const notificationRef = (notification: NotificationItem) =>
   notificationTarget(notification)?.ref ?? null
 
-const panelIssue = (
-  repo: string,
-  number: number,
-  rest: Pick<PanelIssue, "kind" | "title" | "url" | "closed">,
-): PanelIssue => {
-  const slash = repo.indexOf("/")
-  return {
-    key: `${repo}#${number}`.toLowerCase(),
-    owner: repo.slice(0, slash),
-    repo: repo.slice(slash + 1),
-    number,
-    ...rest,
-  }
-}
-
 /**
  * The preview of `ref` from the loaded sections, matching without regard to case as Forgejo's
  * names do; undefined when no loaded section lists it.
@@ -127,49 +109,6 @@ export const notificationState = (
     return "unread"
   }
   return marked === null ? null : "marked"
-}
-
-/** Where a preview was opened from: a section, by its element id, and the row's place in it. */
-export type PreviewOrigin = { readonly section: string; readonly index: number }
-
-/** A section of the page as focus sees it: the preview reference of each row link, in order. */
-export type SectionRows = {
-  readonly section: string
-  /** Null for a row whose link opens Forgejo rather than a preview. */
-  readonly refs: ReadonlyArray<string | null>
-}
-
-/** A row link to focus, by its place in its section, or the section's heading. */
-export type FocusTarget =
-  | { readonly section: string; readonly row: number }
-  | { readonly section: string; readonly row: "heading" }
-
-/**
- * Where focus goes when the preview of `ref` closes: the issue's row in the section it was opened
- * from, else its first row on the page, else the row now in the opener's place, else that
- * section's heading. Without an origin, it counts as opened from the first row of `fallback`, the
- * section that Mark read takes rows from. `sections` come in page order; null when the section to
- * fall back on is not on the page.
- */
-export const focusAfterPreview = (
-  sections: ReadonlyArray<SectionRows>,
-  ref: string,
-  origin: PreviewOrigin | null,
-  fallback: string,
-): FocusTarget | null => {
-  const wanted = ref.toLowerCase()
-  const isIssue = (row: string | null) => row?.toLowerCase() === wanted
-  const home = sections.find((rows) => rows.section === (origin?.section ?? fallback))
-  for (const rows of home === undefined ? sections : [home, ...sections]) {
-    const row = rows.refs.findIndex(isIssue)
-    if (row !== -1) return { section: rows.section, row }
-  }
-  if (home === undefined) return null
-  if (home.refs.length === 0) return { section: home.section, row: "heading" }
-  return {
-    section: home.section,
-    row: Math.min(Math.max(origin?.index ?? 0, 0), home.refs.length - 1),
-  }
 }
 
 /** The dashboard without the notification `id`, as Forgejo lists it once it is read. */

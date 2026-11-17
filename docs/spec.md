@@ -593,6 +593,23 @@ epics closed within `BOARD_DONE_DAYS`; pull requests cannot themselves be epics.
   and child-count sorts run descending with update time and key as tie breakers. The summary
   covers all selected epics, counts child completions across those epics, and marks open epics
   that have children but none completed as at risk. The client refreshes every minute.
+- **Preview.** A plain click on an epic's title or on a child opens a preview over the page, for
+  issues and pull requests, open or closed, in any organization. A click with a modifier key or
+  the middle button still opens Forgejo in a new tab, and an unavailable child has no link. The
+  address names the preview as `item=<owner>/<repo>#<number>`, percent-encoded, so Back closes it
+  and a reload keeps it. `findEpicPreview` looks it up among every epic in the response, whatever
+  the filters show. An epic wins over a child with the same reference, and a child matches by
+  its repository's current full name and its number, not by the reference the epic wrote. An
+  address that the epics do not list once a read since the page opened has succeeded closes with
+  a notice that gives the likeliest reason, unless a repository failed to load. A preview keeps
+  showing its issue when a refresh no longer lists it, until it closes. It reads and comments
+  through the endpoints of the dashboard's preview. An epic shows its column, progress,
+  assignees, every label, milestone, and update time; a child shows its column and assignees.
+  **Part of** lists the other epics that list the item, and a click there switches the preview
+  to that epic. When the organization's last board, as this tab loaded it, shows an open issue of
+  the organization, **Open on board** goes to its card there. The preview changes no column,
+  assignee, label, or milestone. While it is open, `O` opens the issue in Forgejo and `Escape`
+  closes the preview.
 
 ### Search
 
@@ -622,8 +639,8 @@ dialog is open.
 The shortcuts are one list in `src/client/palette/shortcuts.ts`, which the key handler and the
 shortcut list both read. On the board, `?` opens the board's own list in
 `src/client/board/ShortcutsDialog.tsx`, which includes these; the board handles its single-key
-shortcuts first, so they win over a sequence that starts with the same key. On the dashboard,
-the list also shows the preview's keys.
+shortcuts first, so they win over a sequence that starts with the same key. On the dashboard
+and the Epics page, the list also shows the preview's keys.
 
 ### Configuration
 

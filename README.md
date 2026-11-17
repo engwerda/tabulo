@@ -354,6 +354,15 @@ The address `/epics/<org>?repos=<repo>,<repo>` keeps your selection, filters, an
 so you can bookmark or share it. Search by title or reference, filter by state or epic assignee,
 and sort by recent updates, completion, or child count.
 
+Click an epic's title or a child to preview it in a panel over the page: its description, the
+latest 20 comments, its column and assignees, and for an epic its progress, labels, milestone,
+and last update. You can comment there. **Part of** lists the other epics that list the item;
+click one to preview it. When the last board you opened in this tab shows an open issue,
+**Open on board** opens its card there, where you can change its column, assignees, and labels.
+The address names the preview, so a reload keeps it open and Back closes it. Press `O` to open
+the item in Forgejo and `Esc` to close the preview. Cmd-click or Ctrl-click, or a middle click,
+opens Forgejo in a new tab instead.
+
 Progress comes from each child's actual Forgejo state and the board's column rules, regardless
 of its checkbox. Closed children count as Done, even when closed before the board's Done window.
 Epics themselves appear while open or closed within `BOARD_DONE_DAYS`. Unavailable children
