@@ -1,7 +1,8 @@
-import type { MouseEvent, ReactNode } from "react"
+import type { ReactNode } from "react"
 import type { DashboardItem, NotificationItem } from "../shared/api.ts"
 import { itemRef, notificationRef, numberIn } from "./dashboard-preview.ts"
 import { absoluteTime, relativeTime } from "./format.ts"
+import { type OpenPreview, previewLink } from "./issue/use-issue-preview.tsx"
 import { IssueRef } from "./ui/IssueRef.tsx"
 import { BellIcon, CommentIcon, IssueOpenIcon, PullIcon } from "./ui/icons.tsx"
 import { LabelList } from "./ui/LabelChip.tsx"
@@ -36,24 +37,6 @@ const glyphClass =
   "mt-0.5 flex shrink-0 text-zinc-400 group-hover:text-zinc-500 dark:text-zinc-500 dark:group-hover:text-zinc-400"
 const metaClass = "text-xs leading-5 text-zinc-500 dark:text-zinc-400"
 const refClass = "font-medium text-zinc-600 tabular-nums dark:text-zinc-300"
-
-/** Opens the preview of `ref` from the row link that was clicked. */
-export type OpenPreview = (ref: string, link: HTMLAnchorElement) => void
-
-/**
- * A plain primary click, or Enter, opens the preview. The link keeps Forgejo's address, so a
- * click with a modifier key or the middle button still opens Forgejo in a new tab.
- */
-const previewLink = (ref: string, onPreview: OpenPreview) => ({
-  "data-preview-ref": ref,
-  onClick: (event: MouseEvent<HTMLAnchorElement>) => {
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-      return
-    }
-    event.preventDefault()
-    onPreview(ref, event.currentTarget)
-  },
-})
 
 const Comments = ({ count }: { count: number }) =>
   count === 0 ? null : (
@@ -155,7 +138,7 @@ export const NotificationRow = ({
           <p className={titleClass}>{notification.title}</p>
         ) : (
           <a
-            {...(ref === null ? {} : previewLink(ref, onPreview))}
+            {...previewLink(ref, onPreview)}
             href={notification.url}
             target="_blank"
             rel="noreferrer"

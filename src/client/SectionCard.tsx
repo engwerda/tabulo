@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import type { Section } from "../shared/api.ts"
+import { previewSection } from "./issue/use-issue-preview.tsx"
 import { ErrorNotice } from "./ui/ErrorNotice.tsx"
 import { CheckIcon } from "./ui/icons.tsx"
 import { cardClass } from "./ui/primitives.tsx"
@@ -33,6 +34,7 @@ export const SectionCard = <A,>({
   const isEmpty = section._tag === "Loaded" && section.items.length === 0
   return (
     <section
+      {...previewSection(id)}
       id={id}
       aria-labelledby={headingId}
       className={`${cardClass} min-w-0 scroll-mt-20 overflow-hidden`}
