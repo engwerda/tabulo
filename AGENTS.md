@@ -78,13 +78,23 @@ major version.
 - `src/client/issue/IssuePanel.tsx` is the shared issue panel: the frame, the description and
   comments, the comment box, and the pull requests that reference an issue. The board's
   `CardPanel` composes it with the status menu, the pickers, and previous and next; the
-  dashboard's `DashboardPanel` composes it with read-only properties and Mark read. Both read the
-  same `issue-detail` and `issue-pulls` queries and keep the same comment draft.
-- `src/client/dashboard-preview.ts` owns the dashboard preview's logic: `findPreview` finds what
-  `?item=` names in the loaded sections, `notificationRef` decides which notifications open a
-  preview, `notificationState` says whether Mark read applies, and `focusAfterPreview` decides
-  where focus goes when a preview closes. `PanelIssue` lives in `src/client/issue/panel-issue.ts`,
-  so the worker tsconfig can compile this module for tests without React.
+  dashboard's `DashboardPanel` composes it with read-only properties and Mark read; the Epics
+  page's `EpicPanel` composes it with read-only properties, Part of, and Open on board. All three
+  read the same `issue-detail` and `issue-pulls` queries and keep the same comment draft.
+- `useIssuePreview` in `src/client/issue/use-issue-preview.tsx` owns the preview that `?item=`
+  names on the dashboard and the Epics page: the address, the history entry, the preview it holds
+  when a refresh no longer lists the issue, the notice for an address the page does not list, `O`
+  and `Escape`, and where focus returns. Its pure rules, `focusAfterPreview` among them, are in
+  `src/client/issue/preview.ts`. Rows open a preview through `previewLink`, inside elements
+  marked with `previewSection`. A page gives the hook its finder, whether its read is current,
+  its miss notice, the section a preview without an opener belongs to, and its panel. The board
+  keeps its own `?card=` history.
+- `src/client/dashboard-preview.ts` owns the dashboard's side of the preview: `findPreview` finds
+  what `?item=` names in the loaded sections, `notificationRef` decides which notifications open
+  a preview, and `notificationState` says whether Mark read applies. `findEpicPreview`,
+  `epicPreviewMiss`, and `epicPreviewHome` in `src/client/epics/epics-view.ts` are the Epics
+  page's side. `PanelIssue` and `panelIssue` live in `src/client/issue/panel-issue.ts`, so the
+  worker tsconfig can compile these modules for tests without React.
 - `src/client/scope/` owns the organization scope of the org-level views: `ORG_VIEWS` in
   `views.ts` lists them with their routes, `orgViewHref` builds every link to a view,
   `useRepoSelection` owns the `?repos=` of insights and epics, `remembered.ts` owns the remembered
