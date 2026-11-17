@@ -196,16 +196,52 @@ const forgejoLink =
   "flex w-fit items-center gap-1.5 text-xs font-medium text-indigo-700 hover:underline dark:text-indigo-300"
 
 const CommentBox = ({
-  draftKey,
+  issue,
   ready,
-  onSubmit,
+  onCommented,
 }: {
-  /** Where the unsent text is kept, so closing the panel or stepping to another card keeps it. */
-  draftKey: string
+  /**
+   * The issue the comment goes to. The panel keys the box by it, so a comment still pending when
+   * the panel steps to another issue goes to, and shows on, the one it was written for.
+   */
+  issue: PanelIssue
   /** False until the comments have loaded, so a new one cannot land before the ones it follows. */
   ready: boolean
-  onSubmit: (body: string) => Promise<unknown>
+  onCommented: () => void
 }) => {
+  const queryClient = useQueryClient()
+  const toast = useToast()
+  // A comment changes the comment count that boards show, so it is a board write.
+  const comment = useMutation({
+    mutationKey: [...boardWriteKey(issue.owner), "comment"],
+    mutationFn: (body: string) =>
+      addComment({ org: issue.owner, repo: issue.repo, number: issue.number, body }),
+    onMutate: () => {
+      if (!navigator.onLine) {
+        toast({
+          tone: "info",
+          title: "You are offline",
+          detail: "The comment is sent once you are back online.",
+        })
+      }
+    },
+    onSuccess: ({ comment: added }) => {
+      queryClient.setQueryData<CardDetail>(issueQueryKey("issue-detail", issue), (current) =>
+        current === undefined
+          ? current
+          : {
+              ...current,
+              comments: [...current.comments, added],
+              commentCount: current.commentCount + 1,
+            },
+      )
+      onCommented()
+    },
+    onError: (error) =>
+      toast({ tone: "error", title: "Could not add the comment", detail: error.message }),
+  })
+  // Where the unsent text is kept, so closing the panel or stepping to another card keeps it.
+  const draftKey = commentDraftKey(issue.key)
   const [body, setBodyState] = useState(() => drafts.read(draftKey))
   const setBody = (next: string) => {
     setBodyState(next)
@@ -218,7 +254,8 @@ const CommentBox = ({
     const trimmed = body.trim()
     if (trimmed === "" || pending || !ready) return
     setPending(true)
-    onSubmit(trimmed)
+    comment
+      .mutateAsync(trimmed)
       .then(() => setBody(""))
       .catch(() => {})
       .finally(() => setPending(false))
@@ -430,7 +467,10 @@ type IssuePanelProps = {
   readonly headerControls?: ReactNode
   /** The rows of the property list, built from `Property`. */
   readonly properties: ReactNode
-  /** Runs after a comment is added and shown in the panel. */
+  /**
+   * Runs after a comment is added, which can be after the panel stepped to another issue or
+   * closed, so it acts on the issue it was given then, not on what the panel shows now.
+   */
   readonly onCommented: () => void
   /** Where focus goes when the panel closes while focus is inside it. */
   readonly restoreFocus: () => void
@@ -453,42 +493,11 @@ export const IssuePanel = ({
   restoreFocus,
   onClose,
 }: IssuePanelProps) => {
-  const queryClient = useQueryClient()
   const toast = useToast()
-  const detailKey = issueQueryKey("issue-detail", issue)
   const detail = useQuery({
-    queryKey: detailKey,
+    queryKey: issueQueryKey("issue-detail", issue),
     queryFn: () => fetchCardDetail(issue.owner, issue.repo, issue.number),
     staleTime: 30_000,
-  })
-  // A comment changes the comment count that boards show, so it is a board write.
-  const comment = useMutation({
-    mutationKey: [...boardWriteKey(issue.owner), "comment"],
-    mutationFn: (body: string) =>
-      addComment({ org: issue.owner, repo: issue.repo, number: issue.number, body }),
-    onMutate: () => {
-      if (!navigator.onLine) {
-        toast({
-          tone: "info",
-          title: "You are offline",
-          detail: "The comment is sent once you are back online.",
-        })
-      }
-    },
-    onSuccess: ({ comment: added }) => {
-      queryClient.setQueryData<CardDetail>(detailKey, (current) =>
-        current === undefined
-          ? current
-          : {
-              ...current,
-              comments: [...current.comments, added],
-              commentCount: current.commentCount + 1,
-            },
-      )
-      onCommented()
-    },
-    onError: (error) =>
-      toast({ tone: "error", title: "Could not add the comment", detail: error.message }),
   })
   const heading = useRef<HTMLHeadingElement>(null)
   const layer = useRef<HTMLDivElement>(null)
@@ -717,9 +726,9 @@ export const IssuePanel = ({
                     <div className="mt-4">
                       <CommentBox
                         key={issue.key}
-                        draftKey={commentDraftKey(issue.key)}
+                        issue={issue}
                         ready={detail.data !== undefined}
-                        onSubmit={(body) => comment.mutateAsync(body)}
+                        onCommented={onCommented}
                       />
                     </div>
                   )}

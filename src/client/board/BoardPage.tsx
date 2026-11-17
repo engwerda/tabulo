@@ -1589,7 +1589,16 @@ const BoardView = ({ org, boardId }: { org: string; boardId: string }) => {
               onMoveTo={(column) => moveToTop(selectedCard, column)}
               onToggleAssigned={() => toggleAssigned(selectedCard)}
               onUpdate={(change) => update.mutate(change)}
-              onCommented={putCard}
+              onCommented={(key) =>
+                queryClient.setQueryData<Board>(boardKey, (current) =>
+                  current === undefined
+                    ? current
+                    : replaceCard(current, key, (card) => ({
+                        ...card,
+                        comments: card.comments + 1,
+                      })),
+                )
+              }
               updating={update.isPending}
               onClose={closePanel}
             />
