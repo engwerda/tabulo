@@ -2,14 +2,21 @@ import { describe, expect, it } from "vitest"
 import {
   backlinksRead,
   boardCardHref,
+  childRef,
   completion,
+  type EpicIssue,
+  epicPreviewHome,
+  epicPreviewMiss,
+  epicRef,
   epicSummary,
+  findEpicPreview,
   incompleteNotice,
   readEpicFilters,
   readOpenEpics,
   visibleEpics,
   withEpicOpen,
 } from "../src/client/epics/epics-view.ts"
+import { issueRef } from "../src/client/issue/preview.ts"
 import type { Epic, Epics } from "../src/shared/api.ts"
 
 const epic = (number: number, total: number, done: number, fields: Partial<Epic> = {}): Epic => ({
@@ -184,5 +191,187 @@ describe("open epics in the address", () => {
     expect(withEpicOpen(one, "acme/api#1", true).get("open")).toBe("acme/api#1")
     expect(withEpicOpen(one, "acme/api#1", false).has("open")).toBe(false)
     expect(readOpenEpics(new URLSearchParams("open=,")).size).toBe(0)
+  })
+})
+
+describe("epic preview", () => {
+  const child = (repo: string, number: number, fields: Partial<EpicIssue> = {}): EpicIssue => ({
+    _tag: "Issue",
+    key: `${repo}#${number}`.toLowerCase(),
+    repo,
+    number,
+    title: `Child ${number}`,
+    url: `https://forgejo.example/${repo}/issues/${number}`,
+    state: "open",
+    kind: "issue",
+    column: "todo",
+    assignees: [],
+    ...fields,
+  })
+  const response = (epics: ReadonlyArray<Epic>, fields: Partial<Epics> = {}): Epics => ({
+    org: "acme",
+    repos: ["api", "web"],
+    columns: [],
+    epics,
+    failedRepos: [],
+    incomplete: { listings: [], children: 0, backlinks: [] },
+    ...fields,
+  })
+
+  it("finds an epic of the organization without regard to case", () => {
+    const search = epic(1, 0, 0, {
+      title: "Ship search",
+      url: "https://forgejo.example/acme/api/issues/1",
+      state: "closed",
+    })
+    const preview = findEpicPreview(response([search]), "ACME/Api#1")
+
+    expect(preview).toEqual({
+      issue: {
+        key: "acme/api#1",
+        owner: "acme",
+        repo: "api",
+        number: 1,
+        kind: "issue",
+        title: "Ship search",
+        url: "https://forgejo.example/acme/api/issues/1",
+        closed: true,
+      },
+      item: { _tag: "Epic", epic: search, backlinksRead: true },
+      parents: [],
+    })
+  })
+
+  it("finds a child in another organization by its repository's full name", () => {
+    const outside = child("partner/sdk", 4, { title: "Publish the SDK" })
+    const preview = findEpicPreview(
+      response([epic(1, 1, 0, { children: [outside] })]),
+      "partner/sdk#4",
+    )
+
+    expect(preview?.issue).toEqual({
+      key: "partner/sdk#4",
+      owner: "partner",
+      repo: "sdk",
+      number: 4,
+      kind: "issue",
+      title: "Publish the SDK",
+      url: "https://forgejo.example/partner/sdk/issues/4",
+      closed: false,
+    })
+    expect(preview?.item).toEqual({ _tag: "Child", child: outside })
+  })
+
+  it("finds a child by its repository's current name, not the reference the epic wrote", () => {
+    const renamed = child("acme/frontend", 9, { key: "acme/web#9" })
+    const data = response([epic(1, 1, 0, { children: [renamed] })])
+
+    expect(findEpicPreview(data, "acme/frontend#9")?.item).toEqual({
+      _tag: "Child",
+      child: renamed,
+    })
+    expect(findEpicPreview(data, "acme/web#9")).toBeUndefined()
+  })
+
+  it("previews a pull request child as a pull request and a closed child as closed", () => {
+    const pull = child("acme/api", 7, { kind: "pull", state: "closed" })
+    const preview = findEpicPreview(response([epic(1, 1, 1, { children: [pull] })]), "acme/api#7")
+
+    expect(preview?.issue).toMatchObject({ kind: "pull", closed: true })
+  })
+
+  it("prefers the epic when another epic lists it as a child, and names that epic as its parent", () => {
+    const sub = epic(2, 0, 0, { title: "Sub-epic" })
+    const parent = epic(1, 1, 0, { children: [child("acme/api", 2, { title: "Listed" })] })
+    const preview = findEpicPreview(response([parent, sub]), "acme/api#2")
+
+    expect(preview?.item).toEqual({ _tag: "Epic", epic: sub, backlinksRead: true })
+    expect(preview?.issue.title).toBe("Sub-epic")
+    expect(preview?.parents).toEqual([parent])
+  })
+
+  it("lists every epic that lists the item, in the page's order, once each and never itself", () => {
+    const shared = child("acme/web", 5)
+    const first = epic(1, 1, 0, { children: [shared] })
+    const unrelated = epic(2, 1, 0, { children: [child("acme/web", 6)] })
+    const second = epic(3, 2, 0, { children: [child("acme/web", 8), shared] })
+    const own = epic(4, 1, 0, { children: [child("acme/api", 4)] })
+
+    expect(findEpicPreview(response([first, unrelated, second]), "acme/web#5")?.parents).toEqual([
+      first,
+      second,
+    ])
+    expect(findEpicPreview(response([own]), "acme/api#4")?.parents).toEqual([])
+  })
+
+  it("does not preview an unavailable child or a reference nothing lists", () => {
+    const data = response([
+      epic(1, 1, 0, { children: [{ _tag: "Unavailable", ref: "acme/web#5" }] }),
+    ])
+
+    expect(findEpicPreview(data, "acme/web#5")).toBeUndefined()
+    expect(findEpicPreview(data, "acme/api#2")).toBeUndefined()
+    expect(findEpicPreview(data, "acme/api")).toBeUndefined()
+  })
+
+  it("finds what a row writes into the address, under the same reference", () => {
+    const listed = child("partner/sdk", 4)
+    const parent = epic(1, 1, 0, { children: [listed] })
+    const data = response([parent])
+    const shownRef = (ref: string) => {
+      const preview = findEpicPreview(data, ref)
+      return preview === undefined ? undefined : issueRef(preview.issue)
+    }
+
+    expect(shownRef(epicRef(data.org, parent))).toBe("acme/api#1")
+    expect(shownRef(childRef(listed))).toBe("partner/sdk#4")
+  })
+
+  it("says when Tabulo did not read every issue that links to the epic", () => {
+    const data = response([epic(1, 0, 0)], {
+      incomplete: { listings: [], children: 0, backlinks: [{ repo: "api", number: 1 }] },
+    })
+
+    expect(findEpicPreview(data, "acme/api#1")?.item).toMatchObject({ backlinksRead: false })
+  })
+
+  it("keeps an address it does not list while a repository failed to load", () => {
+    const data = response([], { failedRepos: [{ repo: "web", message: "HTTP 500" }] })
+
+    expect(epicPreviewMiss(data, "acme/web#5")).toBeNull()
+  })
+
+  it("closes an address it does not list with the likeliest reason", () => {
+    const unavailable = response([
+      epic(1, 1, 0, { children: [{ _tag: "Unavailable", ref: "acme/web#5" }] }),
+    ])
+    const partly = response([], {
+      incomplete: { listings: [{ repo: "web", listing: "open" }], children: 0, backlinks: [] },
+    })
+
+    expect(epicPreviewMiss(unavailable, "ACME/web#5")).toEqual({
+      title: "ACME/web#5 is not among these epics",
+      detail: "It is not available to you, or not found in Forgejo.",
+    })
+    expect(epicPreviewMiss(partly, "acme/web#5")?.detail).toBe(
+      "Tabulo read only part of these repositories, so it may be missing.",
+    )
+    expect(epicPreviewMiss(response([]), "acme/web#5")?.detail).toBe(
+      "It is not an epic or a child of one in the chosen repositories.",
+    )
+  })
+
+  it("belongs to the epic itself, or to a child's first parent, when no row opened it", () => {
+    const shared = child("acme/web", 5)
+    const first = epic(1, 1, 0, { children: [shared] })
+    const second = epic(3, 1, 0, { children: [shared] })
+    const data = response([first, second])
+    const home = (ref: string) => {
+      const preview = findEpicPreview(data, ref)
+      return preview === undefined ? undefined : epicPreviewHome(preview)
+    }
+
+    expect(home("acme/api#3")).toBe("acme/api#3")
+    expect(home("acme/web#5")).toBe("acme/api#1")
   })
 })
