@@ -228,15 +228,17 @@ export const EpicsPage = ({ org }: { org: string }) => {
     enabled: hasSelection,
     refetchInterval: 60_000,
   })
+  const all = epics.data?.epics ?? []
+  const shown = visibleEpics(all, params)
   const preview = useIssuePreview({
     find: (ref) => (epics.data === undefined ? undefined : findEpicPreview(epics.data, ref)),
     fresh: epics.isFetchedAfterMount && epics.isSuccess,
     missing: (ref) => (epics.data === undefined ? null : epicPreviewMiss(epics.data, ref)),
-    homeSection: epicPreviewHome,
-    render: (shown, controls) => (
+    homeSection: (previewed) => epicPreviewHome(previewed, shown),
+    render: (previewed, controls) => (
       <EpicPanel
         org={org}
-        preview={shown}
+        preview={previewed}
         columns={epics.data?.columns ?? []}
         board={lastBoard}
         {...controls}
@@ -265,8 +267,6 @@ export const EpicsPage = ({ org }: { org: string }) => {
       { replace: true },
     )
   const filtered = filters.text !== "" || filters.state !== "" || filters.assignee !== ""
-  const all = epics.data?.epics ?? []
-  const shown = visibleEpics(all, params)
   const summary = epicSummary(all)
   const notice = epics.data === undefined ? "" : incompleteNotice(epics.data.incomplete)
   const noneLoaded = epics.data?.failedRepos.length === repoSelection.selected.length

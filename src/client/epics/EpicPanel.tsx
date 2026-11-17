@@ -31,7 +31,9 @@ const Progress = ({ epic, backlinksRead }: { epic: Epic; backlinksRead: boolean 
   <span className={plain}>
     <span className="tabular-nums">
       {epic.progress.total === 0
-        ? "No children"
+        ? backlinksRead
+          ? "No children"
+          : "No children found"
         : `${epic.progress.done} of ${epic.progress.total} done · ${completion(epic.progress)}%`}
     </span>
     {!backlinksRead && (

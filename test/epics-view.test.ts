@@ -290,7 +290,7 @@ describe("epic preview", () => {
     expect(preview?.parents).toEqual([parent])
   })
 
-  it("lists every epic that lists the item, in the page's order, once each and never itself", () => {
+  it("lists every epic that lists the item, in the response's order, once each and never itself", () => {
     const shared = child("acme/web", 5)
     const first = epic(1, 1, 0, { children: [shared] })
     const unrelated = epic(2, 1, 0, { children: [child("acme/web", 6)] })
@@ -361,17 +361,33 @@ describe("epic preview", () => {
     )
   })
 
-  it("belongs to the epic itself, or to a child's first parent, when no row opened it", () => {
+  it("says an unavailable child may be one Tabulo did not look up when it skipped some", () => {
+    const skipped = response(
+      [epic(1, 1, 0, { children: [{ _tag: "Unavailable", ref: "acme/web#5" }] })],
+      { incomplete: { listings: [], children: 1, backlinks: [] } },
+    )
+
+    expect(epicPreviewMiss(skipped, "acme/web#5")?.detail).toBe(
+      "Tabulo did not look up every child, so it may have skipped this one, or it is not available to you.",
+    )
+  })
+
+  it("belongs to the epic's own card, or the first shown card that lists it, when no row opened it", () => {
     const shared = child("acme/web", 5)
     const first = epic(1, 1, 0, { children: [shared] })
-    const second = epic(3, 1, 0, { children: [shared] })
-    const data = response([first, second])
-    const home = (ref: string) => {
+    const sub = epic(2, 1, 0, { children: [child("acme/web", 7)] })
+    const second = epic(3, 1, 0, { children: [shared, child("acme/api", 2)] })
+    const data = response([first, sub, second])
+    const home = (ref: string, shown: ReadonlyArray<Epic>) => {
       const preview = findEpicPreview(data, ref)
-      return preview === undefined ? undefined : epicPreviewHome(preview)
+      return preview === undefined ? undefined : epicPreviewHome(preview, shown)
     }
 
-    expect(home("acme/api#3")).toBe("acme/api#3")
-    expect(home("acme/web#5")).toBe("acme/api#1")
+    expect(home("acme/api#3", [first, sub, second])).toBe("acme/api#3")
+    expect(home("acme/web#5", [first, sub, second])).toBe("acme/api#1")
+    expect(home("acme/web#5", [second, first])).toBe("acme/api#3")
+    expect(home("acme/web#5", [sub, second])).toBe("acme/api#3")
+    expect(home("acme/api#2", [first, second])).toBe("acme/api#3")
+    expect(home("acme/web#5", [sub])).toBeNull()
   })
 })

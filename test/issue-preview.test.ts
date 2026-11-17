@@ -231,4 +231,15 @@ describe("focusAfterPreview", () => {
     })
     expect(focusAfterPreview(sections, "acme/web#4", null, null)).toBeNull()
   })
+
+  it("falls back on the fallback section's first row when a refresh took the opener's section away", () => {
+    const sections = page({
+      "acme/api#1": ["acme/api#1"],
+      "acme/api#3": ["acme/api#3"],
+    })
+
+    expect(
+      focusAfterPreview(sections, "acme/web#5", { section: "acme/api#2", index: 4 }, "acme/api#3"),
+    ).toEqual({ section: "acme/api#3", row: 0 })
+  })
 })

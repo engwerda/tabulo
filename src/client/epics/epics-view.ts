@@ -155,7 +155,7 @@ export type EpicPreview = {
   readonly item:
     | { readonly _tag: "Epic"; readonly epic: Epic; readonly backlinksRead: boolean }
     | { readonly _tag: "Child"; readonly child: EpicIssue }
-  /** The epics that list it as a child, in the page's order, without itself. */
+  /** The epics that list it as a child, in the response's order, without itself. */
   readonly parents: ReadonlyArray<Epic>
 }
 
@@ -215,13 +215,22 @@ export const epicPreviewMiss = (data: Epics, ref: string): MissNotice | null => 
   return {
     title: `${ref} is not among these epics`,
     detail: unavailable
-      ? "It is not available to you, or not found in Forgejo."
+      ? children === 0
+        ? "It is not available to you, or not found in Forgejo."
+        : "Tabulo did not look up every child, so it may have skipped this one, or it is not available to you."
       : listings.length > 0 || children > 0 || backlinks.length > 0
         ? "Tabulo read only part of these repositories, so it may be missing."
         : "It is not an epic or a child of one in the chosen repositories.",
   }
 }
 
-/** The epic a preview belongs to when no row opened it: the epic itself, or a child's first parent. */
-export const epicPreviewHome = (preview: EpicPreview) =>
-  preview.item._tag === "Epic" ? preview.item.epic.key : (preview.parents[0]?.key ?? null)
+/**
+ * The card a preview belongs to when no row opened it, among the epics the page shows in its
+ * order: the epic's own card, else the first card that lists the item; null when none shows.
+ */
+export const epicPreviewHome = (preview: EpicPreview, shown: ReadonlyArray<Epic>) => {
+  const own = preview.item._tag === "Epic" ? preview.item.epic.key : null
+  if (own !== null && shown.some(({ key }) => key === own)) return own
+  const parents = new Set(preview.parents.map(({ key }) => key))
+  return shown.find(({ key }) => parents.has(key))?.key ?? null
+}

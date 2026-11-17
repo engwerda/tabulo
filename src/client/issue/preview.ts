@@ -100,9 +100,10 @@ export type FocusTarget =
 /**
  * Where focus goes when the preview of `ref` closes: the issue's row in the section it was opened
  * from, else its first row on the page, else the row now in the opener's place, else that
- * section's heading. Without an origin, it counts as opened from the first row of `fallback`, the
- * section the page names for it, such as the one that Mark read takes rows from. `sections` come
- * in page order; null when neither the issue nor the section to fall back on is on the page.
+ * section's heading. Without an origin, or when a refresh took the origin's section off the page,
+ * it counts as opened from the first row of `fallback`, the section the page names for it, such
+ * as the one that Mark read takes rows from. `sections` come in page order; null when neither the
+ * issue nor the section to fall back on is on the page.
  */
 export const focusAfterPreview = (
   sections: ReadonlyArray<SectionRows>,
@@ -112,7 +113,9 @@ export const focusAfterPreview = (
 ): FocusTarget | null => {
   const wanted = ref.toLowerCase()
   const isIssue = (row: string | null) => row?.toLowerCase() === wanted
-  const home = sections.find((rows) => rows.section === (origin?.section ?? fallback))
+  const opened =
+    origin === null ? undefined : sections.find((rows) => rows.section === origin.section)
+  const home = opened ?? sections.find((rows) => rows.section === fallback)
   for (const rows of home === undefined ? sections : [home, ...sections]) {
     const row = rows.refs.findIndex(isIssue)
     if (row !== -1) return { section: rows.section, row }
@@ -121,6 +124,9 @@ export const focusAfterPreview = (
   if (home.refs.length === 0) return { section: home.section, row: "heading" }
   return {
     section: home.section,
-    row: Math.min(Math.max(origin?.index ?? 0, 0), home.refs.length - 1),
+    row: Math.min(
+      Math.max(opened === undefined ? 0 : (origin?.index ?? 0), 0),
+      home.refs.length - 1,
+    ),
   }
 }

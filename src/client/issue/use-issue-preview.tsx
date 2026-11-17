@@ -156,8 +156,17 @@ export const useIssuePreview = <P extends { readonly issue: PanelIssue }>({
         : { replace: true, state: window.history.state },
     )
   }
+  // Leaving the page with a preview open unmounts the panel after the next page has rendered, and
+  // focus must not jump to a row of that page.
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
   const restoreFocus = () => {
-    if (shown === undefined) return
+    if (shown === undefined || !mounted.current) return
     const sections = pageSections().map((section) => ({ ...section, rows: rowsOf(section) }))
     const target = focusAfterPreview(
       sections.map(({ id, rows }) => ({ section: id, refs: rows.map(rowRef) })),
