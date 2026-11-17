@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query"
-import type { ReactNode } from "react"
+import { lazy, type ReactNode } from "react"
 import { useSearchParams } from "wouter"
 import { Avatar } from "../Avatar.tsx"
 import { fetchEpics, fetchInstance, fetchOrgRepos } from "../api.ts"
 import { useLastBoard } from "../board/use-last-board.ts"
+import { useIssuePreview } from "../issue/use-issue-preview.tsx"
 import { Glyph } from "../palette/icons.tsx"
 import { ChooseRepos } from "../scope/ChooseRepos.tsx"
 import { ScopeBar } from "../scope/ScopeBar.tsx"
@@ -24,13 +25,19 @@ import { useToast } from "../ui/toast.tsx"
 import { EpicCard } from "./EpicCard.tsx"
 import {
   backlinksRead,
+  epicPreviewHome,
+  epicPreviewMiss,
   epicSummary,
+  findEpicPreview,
   incompleteNotice,
   readEpicFilters,
   readOpenEpics,
   visibleEpics,
   withEpicOpen,
 } from "./epics-view.ts"
+
+// The panel and its HTML sanitizer load when a preview first opens, not with the page.
+const EpicPanel = lazy(() => import("./EpicPanel.tsx").then((m) => ({ default: m.EpicPanel })))
 
 const CHILD_EXAMPLE = "- #12\n- repo#34\n- owner/repo#56"
 
@@ -220,6 +227,21 @@ export const EpicsPage = ({ org }: { org: string }) => {
     queryFn: () => fetchEpics(org, repoSelection.selected),
     enabled: hasSelection,
     refetchInterval: 60_000,
+  })
+  const preview = useIssuePreview({
+    find: (ref) => (epics.data === undefined ? undefined : findEpicPreview(epics.data, ref)),
+    fresh: epics.isFetchedAfterMount && epics.isSuccess,
+    missing: (ref) => (epics.data === undefined ? null : epicPreviewMiss(epics.data, ref)),
+    homeSection: epicPreviewHome,
+    render: (shown, controls) => (
+      <EpicPanel
+        org={org}
+        preview={shown}
+        columns={epics.data?.columns ?? []}
+        board={lastBoard}
+        {...controls}
+      />
+    ),
   })
   const set = (key: string, value: string) =>
     setParams(
@@ -431,13 +453,13 @@ export const EpicsPage = ({ org }: { org: string }) => {
                   <EpicCard
                     key={epic.key}
                     org={org}
-                    board={lastBoard}
                     epic={epic}
                     backlinksRead={backlinksRead(epics.data.incomplete, epic)}
                     columns={epics.data.columns}
                     sharedLabels={sharedLabels}
                     expanded={openEpics.has(epic.key)}
                     onExpandedChange={(open) => setEpicOpen(epic.key, open)}
+                    onPreview={preview.open}
                   />
                 ))}
               </div>
@@ -466,6 +488,7 @@ export const EpicsPage = ({ org }: { org: string }) => {
           </>
         )}
       </div>
+      {preview.panel}
     </main>
   )
 }

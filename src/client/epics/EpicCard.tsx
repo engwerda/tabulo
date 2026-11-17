@@ -1,20 +1,19 @@
-import { type ReactNode, useId } from "react"
-import { Link } from "wouter"
+import { useId } from "react"
 import type { BoardColumn, Epic, EpicChild } from "../../shared/api.ts"
 import { AvatarStack } from "../Avatar.tsx"
 import { absoluteTime, relativeTime } from "../format.ts"
+import { type OpenPreview, previewLink, previewSection } from "../issue/use-issue-preview.tsx"
 import { IssueRef } from "../ui/IssueRef.tsx"
 import {
   ChevronDownIcon,
-  ExternalIcon,
   IssueClosedIcon,
   IssueOpenIcon,
   MilestoneIcon,
   PullIcon,
 } from "../ui/icons.tsx"
 import { LabelChip } from "../ui/LabelChip.tsx"
-import { buttonClass, cardClass } from "../ui/primitives.tsx"
-import { boardCardHref, completion, type LinkedBoard, shortRepo } from "./epics-view.ts"
+import { cardClass } from "../ui/primitives.tsx"
+import { childRef, completion, epicRef, shortRepo } from "./epics-view.ts"
 
 const chipClass =
   "inline-flex max-w-full items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-1.5 py-px text-2xs font-medium text-zinc-700 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-300"
@@ -27,7 +26,7 @@ const columnColor = (column: BoardColumn) =>
       ? "var(--chart-positive)"
       : column.label.color
 
-const ColumnChip = ({
+export const ColumnChip = ({
   column,
   columns,
 }: {
@@ -82,78 +81,16 @@ const ChildIcon = ({ child }: { child: Extract<EpicChild, { _tag: "Issue" }> }) 
   )
 }
 
-/**
- * An issue's link: to its card in the board's side panel when the board shows it, else to
- * Forgejo in a new tab. `board` is that board address.
- */
-const IssueLink = ({
-  board,
-  url,
-  className,
-  children,
-}: {
-  board: string | null
-  url: string
-  className: string
-  children: ReactNode
-}) =>
-  board === null ? (
-    <a href={url} target="_blank" rel="noreferrer" className={className}>
-      {children}
-      <span className="sr-only"> (opens in Forgejo)</span>
-    </a>
-  ) : (
-    <Link href={board} className={className}>
-      {children}
-    </Link>
-  )
-
-/**
- * Forgejo's page of an issue whose title opens its board card. It shows on hover or focus of
- * its row, where a pointer can hover, so that only the always-shown `ForgejoMark` reads as
- * "this row opens Forgejo".
- */
-const ForgejoLink = ({
-  url,
-  name,
-  className,
-}: {
-  url: string
-  name: string
-  className: string
-}) => (
-  <a
-    href={url}
-    target="_blank"
-    rel="noreferrer"
-    aria-label={`Open ${name} in Forgejo`}
-    title="Open in Forgejo"
-    className={`${buttonClass.iconSmall} z-10 shrink-0 opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100 [@media(hover:none)]:opacity-100 ${className}`}
-  >
-    <ExternalIcon className="size-3.5" />
-  </a>
-)
-
-/** Marks a row whose own link opens Forgejo, in the slot where other rows keep `ForgejoLink`. */
-const ForgejoMark = ({ className }: { className: string }) => (
-  <span
-    aria-hidden="true"
-    className={`inline-flex size-7 shrink-0 items-center justify-center text-zinc-500 dark:text-zinc-400 ${className}`}
-  >
-    <ExternalIcon className="size-3.5" />
-  </span>
-)
-
 const ChildRow = ({
   org,
-  board,
   child,
   columns,
+  onPreview,
 }: {
   org: string
-  board: LinkedBoard | undefined
   child: EpicChild
   columns: ReadonlyArray<BoardColumn>
+  onPreview: OpenPreview
 }) => {
   if (child._tag === "Unavailable") {
     return (
@@ -169,26 +106,26 @@ const ChildRow = ({
       </li>
     )
   }
-  const repo = shortRepo(org, child.repo)
-  const cardHref = boardCardHref(org, board, child)
   return (
     // The title's link stretches over the row, so the whole row is one target.
-    <li className="group/row relative flex items-start gap-3 px-4 py-2.5 transition hover:bg-zinc-100/60 sm:px-5 dark:hover:bg-zinc-800/40">
+    <li className="relative flex items-start gap-3 px-4 py-2.5 transition hover:bg-zinc-100/60 sm:px-5 dark:hover:bg-zinc-800/40">
       <ChildIcon child={child} />
       <div className="min-w-0 flex-1">
-        <IssueLink
-          board={cardHref}
-          url={child.url}
+        <a
+          {...previewLink(childRef(child), onPreview)}
+          href={child.url}
+          target="_blank"
+          rel="noreferrer"
           className="block rounded-sm text-sm font-medium wrap-anywhere text-zinc-900 before:absolute before:inset-0 hover:text-indigo-700 dark:text-zinc-100 dark:hover:text-indigo-300"
         >
           <span className="sr-only">
             {child.kind === "pull" ? "Pull request" : "Issue"}, {child.state},{" "}
           </span>
           {child.title}
-        </IssueLink>
+        </a>
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
           <IssueRef
-            repo={repo}
+            repo={shortRepo(org, child.repo)}
             number={child.number}
             className="text-xs text-zinc-500 dark:text-zinc-400"
           />
@@ -196,31 +133,25 @@ const ChildRow = ({
         </div>
       </div>
       {child.assignees.length > 0 && <AvatarStack people={child.assignees} size="xs" />}
-      {cardHref === null ? (
-        <ForgejoMark className="-my-1" />
-      ) : (
-        <ForgejoLink url={child.url} name={`${repo}#${child.number}`} className="-my-1" />
-      )}
     </li>
   )
 }
 
 const codeClass = "font-mono text-xs text-zinc-700 dark:text-zinc-300"
 
-const UNREAD_LINKS = "Tabulo did not read every issue that links to this epic"
+export const UNREAD_LINKS = "Tabulo did not read every issue that links to this epic"
 
 export const EpicCard = ({
   org,
-  board,
   epic,
   backlinksRead,
   columns,
   sharedLabels,
   expanded,
   onExpandedChange,
+  onPreview,
 }: {
   org: string
-  board: LinkedBoard | undefined
   epic: Epic
   backlinksRead: boolean
   columns: ReadonlyArray<BoardColumn>
@@ -229,6 +160,7 @@ export const EpicCard = ({
   /** Whether the children show; the page keeps it, so Back brings it back. */
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
+  onPreview: OpenPreview
 }) => {
   const childrenId = useId()
   const headingId = useId()
@@ -266,9 +198,12 @@ export const EpicCard = ({
   const filled = segments.filter(({ count }) => count > 0)
   const percent = completion(epic.progress)
   const count = epic.children.length
-  const epicBoard = boardCardHref(org, board, epic)
   return (
-    <article aria-labelledby={headingId} className={`${cardClass} min-w-0 overflow-hidden`}>
+    <article
+      {...previewSection(epic.key)}
+      aria-labelledby={headingId}
+      className={`${cardClass} min-w-0 overflow-hidden`}
+    >
       <div className="p-4 sm:p-5">
         <div className="flex items-center justify-between gap-3">
           <IssueRef
@@ -278,23 +213,18 @@ export const EpicCard = ({
           />
           <StateChip state={epic.state} />
         </div>
-        <div className="group/row mt-2 flex items-start gap-2">
-          <h3 id={headingId} className="min-w-0 flex-1 text-base/6 font-semibold tracking-tight">
-            {/* On touch the link reaches into the space above and below it, to 44px. */}
-            <IssueLink
-              board={epicBoard}
-              url={epic.url}
-              className="relative block rounded-sm wrap-anywhere hover:text-indigo-700 pointer-coarse:before:absolute pointer-coarse:before:inset-x-0 pointer-coarse:before:-inset-y-2.5 dark:hover:text-indigo-300"
-            >
-              {epic.title}
-            </IssueLink>
-          </h3>
-          {epicBoard === null ? (
-            <ForgejoMark className="-my-0.5" />
-          ) : (
-            <ForgejoLink url={epic.url} name={`${epic.repo}#${epic.number}`} className="-my-0.5" />
-          )}
-        </div>
+        <h3 id={headingId} className="mt-2 text-base/6 font-semibold tracking-tight">
+          {/* On touch the link reaches into the space above and below it, to 44px. */}
+          <a
+            {...previewLink(epicRef(org, epic), onPreview)}
+            href={epic.url}
+            target="_blank"
+            rel="noreferrer"
+            className="relative block rounded-sm wrap-anywhere hover:text-indigo-700 pointer-coarse:before:absolute pointer-coarse:before:inset-x-0 pointer-coarse:before:-inset-y-2.5 dark:hover:text-indigo-300"
+          >
+            {epic.title}
+          </a>
+        </h3>
         <ul aria-label="Column and labels" className="mt-2.5 flex flex-wrap items-center gap-1">
           <li className="min-w-0 max-w-full">
             <ColumnChip column={epic.column} columns={columns} />
@@ -424,10 +354,10 @@ export const EpicCard = ({
             {epic.children.map((child) => (
               <ChildRow
                 org={org}
-                board={board}
                 key={child._tag === "Issue" ? child.key : child.ref}
                 child={child}
                 columns={columns}
+                onPreview={onPreview}
               />
             ))}
           </ul>
